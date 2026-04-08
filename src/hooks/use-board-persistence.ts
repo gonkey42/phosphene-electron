@@ -18,6 +18,11 @@ type PersistenceAction =
   | { type: "LOAD_SUCCESS"; boardId: string; initialData: ExcalidrawInitialDataState | null }
   | { type: "LOAD_ERROR"; boardId: string; error: Error }
   | { type: "RESET" }
+  | {
+      type: "UPDATE_LOCAL_SNAPSHOT";
+      boardId: string;
+      initialData: ExcalidrawInitialDataState;
+    }
   | { type: "MARK_UNSAVED"; boardId: string }
   | { type: "MARK_SAVING"; boardId: string }
   | { type: "MARK_SAVED"; boardId: string }
@@ -59,6 +64,19 @@ function persistenceReducer(state: PersistenceState, action: PersistenceAction):
 
     case "RESET":
       return { phase: { type: "idle" }, saveStatus: "saved" };
+
+    case "UPDATE_LOCAL_SNAPSHOT":
+      if (state.phase.type !== "loaded" || state.phase.boardId !== action.boardId) {
+        return state;
+      }
+
+      return {
+        phase: {
+          ...state.phase,
+          initialData: action.initialData,
+        },
+        saveStatus: "unsaved",
+      };
 
     case "MARK_UNSAVED":
       if (state.phase.type === "idle" || state.phase.boardId !== action.boardId) {
@@ -125,8 +143,10 @@ export function useBoardPersistence(boardId: string | null | undefined) {
 
   const currentBoardIdRef = useRef<string | null>(boardId ?? null);
   const loadRequestRef = useRef(0);
+  const boardSessionRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveSequenceRef = useRef(0);
+  const pendingSaveRef = useRef<null | { boardId: string; flush: () => void }>(null);
   const hasBoardId = boardId !== undefined && boardId !== null;
 
   const initialData =
@@ -155,8 +175,25 @@ export function useBoardPersistence(boardId: string | null | undefined) {
   }, [boardId]);
 
   useEffect(() => {
+    const flushPendingSave = () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+
+      const pendingSave = pendingSaveRef.current;
+      pendingSaveRef.current = null;
+      pendingSave?.flush();
+    };
+
+    if (pendingSaveRef.current && pendingSaveRef.current.boardId !== boardId) {
+      flushPendingSave();
+    }
+
     loadRequestRef.current += 1;
     const requestId = loadRequestRef.current;
+    boardSessionRef.current += 1;
+    const sessionId = boardSessionRef.current;
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -174,7 +211,11 @@ export function useBoardPersistence(boardId: string | null | undefined) {
       try {
         const board = await getBoard(boardId);
 
-        if (loadRequestRef.current !== requestId || currentBoardIdRef.current !== boardId) {
+        if (
+          loadRequestRef.current !== requestId ||
+          currentBoardIdRef.current !== boardId ||
+          boardSessionRef.current !== sessionId
+        ) {
           return;
         }
 
@@ -199,7 +240,11 @@ export function useBoardPersistence(boardId: string | null | undefined) {
 
         const files = parsed.files ? await injectImagesFromFilesystem(parsed.files) : {};
 
-        if (loadRequestRef.current !== requestId || currentBoardIdRef.current !== boardId) {
+        if (
+          loadRequestRef.current !== requestId ||
+          currentBoardIdRef.current !== boardId ||
+          boardSessionRef.current !== sessionId
+        ) {
           return;
         }
 
@@ -213,7 +258,11 @@ export function useBoardPersistence(boardId: string | null | undefined) {
           },
         });
       } catch (error) {
-        if (loadRequestRef.current === requestId && currentBoardIdRef.current === boardId) {
+        if (
+          loadRequestRef.current === requestId &&
+          currentBoardIdRef.current === boardId &&
+          boardSessionRef.current === sessionId
+        ) {
           console.error("Failed to load board canvas data", error);
           dispatch({
             type: "LOAD_ERROR",
@@ -225,10 +274,7 @@ export function useBoardPersistence(boardId: string | null | undefined) {
     })();
 
     return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
+      flushPendingSave();
     };
   }, [boardId]);
 
@@ -248,16 +294,28 @@ export function useBoardPersistence(boardId: string | null | undefined) {
 
       const scheduledBoardId = boardId;
       const saveToken = ++saveSequenceRef.current;
-      dispatch({ type: "MARK_UNSAVED", boardId: scheduledBoardId });
+      const saveSessionId = boardSessionRef.current;
+      dispatch({
+        type: "UPDATE_LOCAL_SNAPSHOT",
+        boardId: scheduledBoardId,
+        initialData: {
+          elements,
+          appState: {
+            viewBackgroundColor: appState.viewBackgroundColor,
+            gridSize: appState.gridSize,
+            gridColor: appState.gridColor,
+          } as ExcalidrawInitialDataState["appState"],
+          files,
+        },
+      });
 
-      saveTimerRef.current = setTimeout(() => {
-        saveTimerRef.current = null;
-
-        if (currentBoardIdRef.current !== scheduledBoardId) {
-          return;
+      const flushSave = () => {
+        if (
+          currentBoardIdRef.current === scheduledBoardId &&
+          boardSessionRef.current === saveSessionId
+        ) {
+          dispatch({ type: "MARK_SAVING", boardId: scheduledBoardId });
         }
-
-        dispatch({ type: "MARK_SAVING", boardId: scheduledBoardId });
 
         void (async () => {
           try {
@@ -270,7 +328,8 @@ export function useBoardPersistence(boardId: string | null | undefined) {
 
             if (
               currentBoardIdRef.current === scheduledBoardId &&
-              saveSequenceRef.current === saveToken
+              saveSequenceRef.current === saveToken &&
+              boardSessionRef.current === saveSessionId
             ) {
               dispatch({ type: "MARK_SAVED", boardId: scheduledBoardId });
             }
@@ -279,12 +338,28 @@ export function useBoardPersistence(boardId: string | null | undefined) {
 
             if (
               currentBoardIdRef.current === scheduledBoardId &&
-              saveSequenceRef.current === saveToken
+              saveSequenceRef.current === saveToken &&
+              boardSessionRef.current === saveSessionId
             ) {
               dispatch({ type: "MARK_SAVE_FAILED", boardId: scheduledBoardId });
             }
           }
         })();
+      };
+
+      pendingSaveRef.current = {
+        boardId: scheduledBoardId,
+        flush: flushSave,
+      };
+
+      saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = null;
+
+        if (pendingSaveRef.current?.boardId === scheduledBoardId) {
+          pendingSaveRef.current = null;
+        }
+
+        flushSave();
       }, DEBOUNCE_MS);
     },
     [boardId],

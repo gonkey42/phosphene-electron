@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const readFileMock = vi.fn();
 
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  readFile: readFileMock,
+vi.mock("../platform/desktop-api", () => ({
+  fs: {
+    readFile: readFileMock,
+  },
 }));
 
 describe("drop handler utilities", () => {

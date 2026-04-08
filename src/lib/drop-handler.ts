@@ -1,8 +1,5 @@
-import { readFile } from "@tauri-apps/plugin-fs";
+import { fs } from "../platform/desktop-api";
 
-/**
- * Read a dropped File as a base64 data URL.
- */
 export function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -12,25 +9,16 @@ export function readFileAsDataURL(file: File): Promise<string> {
   });
 }
 
-/**
- * Check if a file is a supported image type.
- */
 export function isSupportedImageFile(file: File): boolean {
   return ["image/png", "image/jpeg", "image/gif", "image/svg+xml", "image/webp"].includes(
     file.type,
   );
 }
 
-/**
- * Check if a dropped filesystem path points to a supported image type.
- */
 export function isSupportedImagePath(path: string): boolean {
   return getMimeTypeFromPath(path) !== null;
 }
 
-/**
- * Read a dropped filesystem image path into a browser File object.
- */
 export async function readImagePathAsFile(path: string): Promise<File> {
   const mimeType = getMimeTypeFromPath(path);
 
@@ -38,7 +26,7 @@ export async function readImagePathAsFile(path: string): Promise<File> {
     throw new Error(`Unsupported dropped image path: ${path}`);
   }
 
-  const bytes = await readFile(path);
+  const bytes = await fs.readFile(path);
   return new File([bytes], getFileName(path), { type: mimeType });
 }
 

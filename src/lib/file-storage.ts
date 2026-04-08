@@ -1,26 +1,25 @@
-import { appDataDir, join } from "@tauri-apps/api/path";
-import { exists, mkdir } from "@tauri-apps/plugin-fs";
+import { paths, fs } from "../platform/desktop-api";
 
 export async function ensureStorageDirectories(): Promise<void> {
-  const appData = await appDataDir();
-  const imagesDir = await join(appData, "images");
-  const capturesDir = await join(appData, "captures");
+  const appData = await paths.appDataDir();
+  const imagesDir = await paths.join(appData, "images");
+  const capturesDir = await paths.join(appData, "captures");
 
-  if (!(await exists(imagesDir))) {
-    await mkdir(imagesDir, { recursive: true });
+  if (!(await fs.exists(imagesDir))) {
+    await fs.mkdir(imagesDir);
   }
 
-  if (!(await exists(capturesDir))) {
-    await mkdir(capturesDir, { recursive: true });
+  if (!(await fs.exists(capturesDir))) {
+    await fs.mkdir(capturesDir);
   }
 }
 
 export async function getImagesDir(): Promise<string> {
-  const appData = await appDataDir();
-  return join(appData, "images");
+  const appData = await paths.appDataDir();
+  return paths.join(appData, "images");
 }
 
 export async function getCapturesDir(): Promise<string> {
-  const appData = await appDataDir();
-  return join(appData, "captures");
+  const appData = await paths.appDataDir();
+  return paths.join(appData, "captures");
 }

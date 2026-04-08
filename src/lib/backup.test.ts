@@ -8,17 +8,18 @@ const removeMock = vi.fn();
 const appDataDirMock = vi.fn();
 const joinMock = vi.fn();
 
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  exists: existsMock,
-  mkdir: mkdirMock,
-  readDir: readDirMock,
-  copyFile: copyFileMock,
-  remove: removeMock,
-}));
-
-vi.mock("@tauri-apps/api/path", () => ({
-  appDataDir: appDataDirMock,
-  join: joinMock,
+vi.mock("../platform/desktop-api", () => ({
+  fs: {
+    exists: existsMock,
+    mkdir: mkdirMock,
+    readDir: readDirMock,
+    copyFile: copyFileMock,
+    remove: removeMock,
+  },
+  paths: {
+    appDataDir: appDataDirMock,
+    join: joinMock,
+  },
 }));
 
 describe("runDailyBackup", () => {
@@ -41,27 +42,16 @@ describe("runDailyBackup", () => {
 
   it("creates a dated backup when today's backup does not exist yet", async () => {
     existsMock.mockImplementation(async (path: string) => {
-      if (path === "/app/data/backups") {
-        return false;
-      }
-
-      if (path === "/app/data/backups/phosphene-2026-03-30.db") {
-        return false;
-      }
-
-      if (path === "/app/data/phosphene.db") {
-        return true;
-      }
-
+      if (path === "/app/data/backups") return false;
+      if (path === "/app/data/backups/phosphene-2026-03-30.db") return false;
+      if (path === "/app/data/phosphene.db") return true;
       return false;
     });
 
     const { runDailyBackup } = await import("./backup");
     await runDailyBackup();
 
-    expect(mkdirMock).toHaveBeenCalledWith("/app/data/backups", {
-      recursive: true,
-    });
+    expect(mkdirMock).toHaveBeenCalledWith("/app/data/backups");
     expect(copyFileMock).toHaveBeenCalledWith(
       "/app/data/phosphene.db",
       "/app/data/backups/phosphene-2026-03-30.db",
@@ -70,18 +60,9 @@ describe("runDailyBackup", () => {
 
   it("skips copying when today's backup already exists", async () => {
     existsMock.mockImplementation(async (path: string) => {
-      if (path === "/app/data/backups") {
-        return true;
-      }
-
-      if (path === "/app/data/backups/phosphene-2026-03-30.db") {
-        return true;
-      }
-
-      if (path === "/app/data/phosphene.db") {
-        return true;
-      }
-
+      if (path === "/app/data/backups") return true;
+      if (path === "/app/data/backups/phosphene-2026-03-30.db") return true;
+      if (path === "/app/data/phosphene.db") return true;
       return false;
     });
 
@@ -94,18 +75,9 @@ describe("runDailyBackup", () => {
 
   it("removes the oldest backup once more than seven dated backups exist", async () => {
     existsMock.mockImplementation(async (path: string) => {
-      if (path === "/app/data/backups") {
-        return true;
-      }
-
-      if (path === "/app/data/backups/phosphene-2026-03-30.db") {
-        return false;
-      }
-
-      if (path === "/app/data/phosphene.db") {
-        return true;
-      }
-
+      if (path === "/app/data/backups") return true;
+      if (path === "/app/data/backups/phosphene-2026-03-30.db") return false;
+      if (path === "/app/data/phosphene.db") return true;
       return false;
     });
     readDirMock.mockResolvedValue([
