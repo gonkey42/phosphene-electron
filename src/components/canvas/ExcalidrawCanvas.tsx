@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { Excalidraw } from "@excalidraw/excalidraw";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
 
-import { isSupportedImagePath, readImagePathAsFile } from "../../lib/drop-handler";
 import { useKeyboardContext } from "../../contexts/KeyboardContext";
 
 import "./ExcalidrawCanvas.css";
@@ -58,72 +56,6 @@ export function ExcalidrawCanvas({
       window.clearTimeout(timeoutId);
     };
   }, [boardId, reactivationKey]);
-
-  useEffect(() => {
-    if (!isInteractive || !hasTauriInternals()) {
-      return;
-    }
-
-    let isDisposed = false;
-    let unlisten: (() => void) | null = null;
-
-    const setupDragDropListener = async () => {
-      try {
-        unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
-          if (event.payload.type !== "drop") {
-            return;
-          }
-
-          const wrapper = wrapperRef.current;
-          if (!wrapper) {
-            return;
-          }
-
-          const logicalPosition = event.payload.position.toLogical(window.devicePixelRatio || 1);
-          const dropPoint = { x: logicalPosition.x, y: logicalPosition.y };
-
-          if (!isPointInsideRect(dropPoint, wrapper.getBoundingClientRect())) {
-            return;
-          }
-
-          const imagePaths = event.payload.paths.filter(isSupportedImagePath);
-          if (imagePaths.length === 0) {
-            return;
-          }
-
-          const files: File[] = [];
-
-          for (const path of imagePaths) {
-            try {
-              files.push(await readImagePathAsFile(path));
-            } catch (error) {
-              console.error("Failed to read dropped image path", error);
-            }
-          }
-
-          if (files.length === 0) {
-            return;
-          }
-
-          getDropTarget(wrapper).dispatchEvent(createSyntheticDropEvent(files, dropPoint));
-        });
-
-        if (isDisposed) {
-          unlisten?.();
-          unlisten = null;
-        }
-      } catch (error) {
-        console.error("Failed to subscribe to native drag-drop events", error);
-      }
-    };
-
-    void setupDragDropListener();
-
-    return () => {
-      isDisposed = true;
-      unlisten?.();
-    };
-  }, [isInteractive]);
 
   useEffect(() => {
     apiRef.current?.updateScene({
@@ -185,10 +117,6 @@ export function ExcalidrawCanvas({
       />
     </div>
   );
-}
-
-function hasTauriInternals(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 function isPointInsideRect(point: { x: number; y: number }, rect: DOMRect): boolean {

@@ -1,6 +1,5 @@
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
-import { BaseDirectory } from "@tauri-apps/api/path";
-import { exists, readFile, writeFile } from "@tauri-apps/plugin-fs";
+import { fs, paths } from "../platform/desktop-api";
 
 const FILE_REF_PREFIX = "phosphene-file://";
 const IMAGES_DIR = "images";
@@ -17,6 +16,7 @@ export async function extractImagesToFilesystem(
   files: ExcalidrawFiles,
 ): Promise<ExcalidrawFiles> {
   const extractedFiles: ExcalidrawFiles = {};
+  const appData = await paths.appDataDir();
 
   for (const [fileId, fileData] of Object.entries(files)) {
     if (!fileData.dataURL.startsWith("data:")) {
@@ -32,7 +32,8 @@ export async function extractImagesToFilesystem(
         continue;
       }
 
-      const filePath = getImagePath(boardId, fileId, fileData.mimeType);
+      const relativePath = getImagePath(boardId, fileId, fileData.mimeType);
+      const absolutePath = await paths.join(appData, relativePath);
       const binary = atob(base64Data);
       const bytes = new Uint8Array(binary.length);
 
@@ -40,11 +41,11 @@ export async function extractImagesToFilesystem(
         bytes[index] = binary.charCodeAt(index);
       }
 
-      await writeFile(filePath, bytes, { baseDir: BaseDirectory.AppData });
+      await fs.writeFile(absolutePath, bytes);
 
       extractedFiles[fileId] = {
         ...fileData,
-        dataURL: asDataURL(`${FILE_REF_PREFIX}${filePath}`),
+        dataURL: asDataURL(`${FILE_REF_PREFIX}${relativePath}`),
       };
     } catch (error) {
       console.error(`Failed to extract image ${fileId}:`, error);
@@ -57,6 +58,7 @@ export async function extractImagesToFilesystem(
 
 export async function injectImagesFromFilesystem(files: ExcalidrawFiles): Promise<ExcalidrawFiles> {
   const injectedFiles: ExcalidrawFiles = {};
+  const appData = await paths.appDataDir();
 
   for (const [fileId, fileData] of Object.entries(files)) {
     if (!fileData.dataURL.startsWith(FILE_REF_PREFIX)) {
@@ -65,15 +67,16 @@ export async function injectImagesFromFilesystem(files: ExcalidrawFiles): Promis
     }
 
     try {
-      const filePath = fileData.dataURL.slice(FILE_REF_PREFIX.length);
+      const relativePath = fileData.dataURL.slice(FILE_REF_PREFIX.length);
+      const absolutePath = await paths.join(appData, relativePath);
 
-      if (!(await exists(filePath, { baseDir: BaseDirectory.AppData }))) {
-        console.warn(`Image file not found: ${filePath}`);
+      if (!(await fs.exists(absolutePath))) {
+        console.warn(`Image file not found: ${relativePath}`);
         injectedFiles[fileId] = fileData;
         continue;
       }
 
-      const bytes = await readFile(filePath, { baseDir: BaseDirectory.AppData });
+      const bytes = await fs.readFile(absolutePath);
       let binary = "";
 
       for (const byte of bytes) {

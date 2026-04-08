@@ -1,20 +1,29 @@
-import Database from "@tauri-apps/plugin-sql";
-
+import { db } from "../platform/desktop-api";
 import { generateId } from "./uuid";
 
-let db: Database | null = null;
+type DatabaseLike = {
+  execute: (sql: string, params?: unknown[]) => Promise<{ rowsAffected: number }>;
+  select: <T>(sql: string, params?: unknown[]) => Promise<T>;
+};
 
-export async function getDb(): Promise<Database> {
-  if (db) {
-    return db;
+let dbPromise: Promise<DatabaseLike> | null = null;
+
+export async function getDb(): Promise<DatabaseLike> {
+  if (!dbPromise) {
+    dbPromise = (async () => {
+      const database = db as DatabaseLike;
+      await initializeSchema(database);
+      return database;
+    })().catch((error) => {
+      dbPromise = null;
+      throw error;
+    });
   }
 
-  db = await Database.load("sqlite:phosphene.db");
-  await initializeSchema(db);
-  return db;
+  return dbPromise;
 }
 
-async function initializeSchema(database: Database): Promise<void> {
+async function initializeSchema(database: DatabaseLike): Promise<void> {
   await database.execute("PRAGMA journal_mode=WAL");
   await database.execute("PRAGMA foreign_keys=ON");
 
@@ -109,7 +118,7 @@ async function initializeSchema(database: Database): Promise<void> {
   if (workspaces[0]?.count === 0) {
     await database.execute(
       "INSERT INTO workspaces (id, name, icon, position) VALUES ($1, $2, $3, $4)",
-      [generateId(), "Home", "🏠", 0],
+      [generateId(), "Home", "\u{1F3E0}", 0],
     );
   }
 }
