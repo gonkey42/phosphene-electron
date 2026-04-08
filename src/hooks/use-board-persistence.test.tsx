@@ -376,15 +376,8 @@ describe("useBoardPersistence", () => {
     );
   });
 
-  it("drops stale loads and cancels a pending save when the board changes", async () => {
-    let resolveBoardOne: (value: { canvas_data: string | null }) => void = () => undefined;
-
-    getBoardMock.mockImplementationOnce(
-      () =>
-        new Promise<{ canvas_data: string | null }>((resolve) => {
-          resolveBoardOne = resolve;
-        }),
-    );
+  it("flushes pending changes for the previous board before switching boards", async () => {
+    getBoardMock.mockResolvedValueOnce({ canvas_data: null });
     getBoardMock.mockResolvedValueOnce({
       canvas_data: JSON.stringify({
         elements: [element("board-2-element")],
@@ -401,16 +394,14 @@ describe("useBoardPersistence", () => {
       initialProps: { boardId: "board-1" },
     });
 
-    expect(result.current.isLoading).toBe(true);
-
     await act(async () => {
-      await Promise.resolve();
+      await flush();
     });
 
     vi.useFakeTimers();
 
     act(() => {
-      result.current.handleChange([], {}, {});
+      result.current.handleChange([element("board-1-element")], {}, {});
     });
 
     rerender({ boardId: "board-2" });
@@ -419,6 +410,18 @@ describe("useBoardPersistence", () => {
       await Promise.resolve();
     });
 
+    expect(saveBoardCanvasDataMock).toHaveBeenCalledWith(
+      "board-1",
+      JSON.stringify({
+        elements: [element("board-1-element")],
+        appState: {
+          viewBackgroundColor: undefined,
+          gridSize: undefined,
+          gridColor: undefined,
+        },
+        files: {},
+      }),
+    );
     expect(result.current.initialData).toEqual({
       elements: [element("board-2-element")],
       appState: {
@@ -428,27 +431,6 @@ describe("useBoardPersistence", () => {
       },
       files: {},
     });
-
-    act(() => {
-      resolveBoardOne({
-        canvas_data: JSON.stringify({
-          elements: [element("stale-board-element")],
-          appState: {
-            viewBackgroundColor: "#000000",
-            gridSize: 1,
-            gridColor: "#111111",
-          },
-          files: {},
-        }),
-      });
-    });
-
-    await act(async () => {
-      vi.advanceTimersByTime(500);
-      await Promise.resolve();
-    });
-
-    expect(saveBoardCanvasDataMock).not.toHaveBeenCalled();
   });
 
   it("does not expose the previous board snapshot during a board switch render", async () => {

@@ -127,6 +127,7 @@ export function useBoardPersistence(boardId: string | null | undefined) {
   const loadRequestRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveSequenceRef = useRef(0);
+  const pendingSaveRef = useRef<null | { boardId: string; flush: () => void }>(null);
   const hasBoardId = boardId !== undefined && boardId !== null;
 
   const initialData =
@@ -155,6 +156,17 @@ export function useBoardPersistence(boardId: string | null | undefined) {
   }, [boardId]);
 
   useEffect(() => {
+    if (pendingSaveRef.current && pendingSaveRef.current.boardId !== boardId) {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+
+      const pendingSave = pendingSaveRef.current;
+      pendingSaveRef.current = null;
+      pendingSave.flush();
+    }
+
     loadRequestRef.current += 1;
     const requestId = loadRequestRef.current;
 
@@ -250,14 +262,10 @@ export function useBoardPersistence(boardId: string | null | undefined) {
       const saveToken = ++saveSequenceRef.current;
       dispatch({ type: "MARK_UNSAVED", boardId: scheduledBoardId });
 
-      saveTimerRef.current = setTimeout(() => {
-        saveTimerRef.current = null;
-
-        if (currentBoardIdRef.current !== scheduledBoardId) {
-          return;
+      const flushSave = () => {
+        if (currentBoardIdRef.current === scheduledBoardId) {
+          dispatch({ type: "MARK_SAVING", boardId: scheduledBoardId });
         }
-
-        dispatch({ type: "MARK_SAVING", boardId: scheduledBoardId });
 
         void (async () => {
           try {
@@ -285,6 +293,21 @@ export function useBoardPersistence(boardId: string | null | undefined) {
             }
           }
         })();
+      };
+
+      pendingSaveRef.current = {
+        boardId: scheduledBoardId,
+        flush: flushSave,
+      };
+
+      saveTimerRef.current = setTimeout(() => {
+        saveTimerRef.current = null;
+
+        if (pendingSaveRef.current?.boardId === scheduledBoardId) {
+          pendingSaveRef.current = null;
+        }
+
+        flushSave();
       }, DEBOUNCE_MS);
     },
     [boardId],
