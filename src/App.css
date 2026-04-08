@@ -1,0 +1,52 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  color: #0f172a;
+  background: #f5f7fb;
+}
+
+.app-shell {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+.app-shell--loading,
+.app-shell__main {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  justify-content: center;
+}
+
+.app-shell__header {
+  border-bottom: 1px solid #d9e1ec;
+  font-size: 0.875rem;
+  padding: 0.75rem 1rem;
+}

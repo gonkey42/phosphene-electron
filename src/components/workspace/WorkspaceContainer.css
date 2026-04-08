@@ -1,0 +1,19 @@
+.workspace-viewport {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.workspace-page.hidden {
+  visibility: hidden;
+  pointer-events: none;
+}

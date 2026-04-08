@@ -1,0 +1,149 @@
+.workspace-tab-bar {
+  align-items: center;
+  background: #f5f5f7;
+  border-bottom: 1px solid #d9d9e0;
+  display: flex;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.workspace-tab-bar__tabs {
+  display: flex;
+  flex: 1;
+  gap: 0.125rem;
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.workspace-tab-bar__tab-item {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.workspace-tab-bar__tab-item--active .workspace-tab-bar__tab-row {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.workspace-tab-bar__tab-row {
+  align-items: center;
+  display: flex;
+  gap: 0.25rem;
+  -webkit-app-region: no-drag;
+}
+
+.workspace-tab-bar__tab-button,
+.workspace-tab-bar__rename-input,
+.workspace-tab-bar__close-button,
+.workspace-tab-bar__create-button {
+  font: inherit;
+}
+
+.workspace-tab-bar__tab-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0.625rem;
+  color: #516074;
+  cursor: pointer;
+  display: flex;
+  gap: 0.5rem;
+  max-width: 15rem;
+  min-width: 0;
+  padding: 0.45rem 0.75rem;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.workspace-tab-bar__tab-button:hover {
+  background: rgba(255, 255, 255, 0.68);
+  color: #0f172a;
+}
+
+.workspace-tab-bar__tab-button--active {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.workspace-tab-bar__icon {
+  flex: 0 0 auto;
+}
+
+.workspace-tab-bar__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-tab-bar__shortcut {
+  color: #64748b;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.workspace-tab-bar__rename-input {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.625rem;
+  color: #0f172a;
+  min-width: 0;
+  padding: 0.45rem 0.75rem;
+  width: 15rem;
+}
+
+.workspace-tab-bar__close-button,
+.workspace-tab-bar__create-button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.625rem;
+  color: #475569;
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  line-height: 1;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.workspace-tab-bar__create-button {
+  -webkit-app-region: no-drag;
+}
+
+.workspace-tab-bar__close-button {
+  flex: 0 0 auto;
+  height: 1.75rem;
+  width: 1.75rem;
+}
+
+.workspace-tab-bar__create-button {
+  flex: 0 0 auto;
+  height: 1.875rem;
+  width: 1.875rem;
+}
+
+.workspace-tab-bar__close-button:hover,
+.workspace-tab-bar__create-button:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.workspace-tab-bar__tab-button:focus-visible,
+.workspace-tab-bar__rename-input:focus-visible,
+.workspace-tab-bar__close-button:focus-visible,
+.workspace-tab-bar__create-button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}

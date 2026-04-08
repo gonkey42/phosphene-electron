@@ -1,0 +1,58 @@
+.panel-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.panel-primary {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.panel-secondary {
+  align-items: center;
+  background: #fafafa;
+  color: #999;
+  display: flex;
+  font-size: 13px;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.panel-resize-handle {
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+  transition: background 0.15s ease;
+  width: 4px;
+}
+
+.panel-resize-handle:hover,
+.panel-resize-handle[data-separator="hover"],
+.panel-resize-handle[data-separator="active"] {
+  background: #4a6cf7;
+}
+
+.panel-resize-handle::after {
+  background: #ccc;
+  border-radius: 1px;
+  content: "";
+  height: 32px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transition: background 0.15s ease;
+  width: 2px;
+}
+
+.panel-resize-handle:hover::after,
+.panel-resize-handle[data-separator="hover"]::after,
+.panel-resize-handle[data-separator="active"]::after {
+  background: #fff;
+}

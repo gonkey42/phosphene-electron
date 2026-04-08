@@ -1,0 +1,10 @@
+.excalidraw-wrapper {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.excalidraw-wrapper .excalidraw {
+  height: 100% !important;
+  width: 100% !important;
+}
