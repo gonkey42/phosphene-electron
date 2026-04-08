@@ -9,6 +9,8 @@ export default defineConfig({
     setupFiles: "./src/test/setup.ts",
     exclude: [
       ...configDefaults.exclude,
+      "**/dist/**",
+      "**/dist-electron/**",
       "**/.worktrees/**",
       "**/.codex-review-worktrees/**",
     ],

@@ -317,6 +317,42 @@ describe("useBoardPersistence", () => {
     );
   });
 
+  it("keeps the latest in-memory snapshot available while a save is pending", async () => {
+    getBoardMock.mockResolvedValue({ canvas_data: null });
+
+    const { result } = renderHook(() => useBoardPersistence("board-1"));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    vi.useFakeTimers();
+
+    act(() => {
+      result.current.handleChange(
+        [element("element-live")],
+        {
+          viewBackgroundColor: "#fafafa",
+          gridSize: 12,
+          gridColor: "#bbbbbb",
+        },
+        files,
+      );
+    });
+
+    expect(result.current.initialData).toEqual({
+      elements: [element("element-live")],
+      appState: {
+        viewBackgroundColor: "#fafafa",
+        gridSize: 12,
+        gridColor: "#bbbbbb",
+      },
+      files,
+    });
+    expect(result.current.saveStatus).toBe("unsaved");
+    expect(saveBoardCanvasDataMock).not.toHaveBeenCalled();
+  });
+
   it("extracts image files before persisting canvas changes", async () => {
     vi.useFakeTimers();
     getBoardMock.mockResolvedValue({ canvas_data: null });
@@ -433,6 +469,40 @@ describe("useBoardPersistence", () => {
     });
   });
 
+  it("flushes pending changes when the persistence hook unmounts", async () => {
+    getBoardMock.mockResolvedValue({ canvas_data: null });
+
+    const { result, unmount } = renderHook(() => useBoardPersistence("board-1"));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    vi.useFakeTimers();
+
+    act(() => {
+      result.current.handleChange([element("before-unmount")], {}, {});
+    });
+
+    await act(async () => {
+      unmount();
+      await Promise.resolve();
+    });
+
+    expect(saveBoardCanvasDataMock).toHaveBeenCalledWith(
+      "board-1",
+      JSON.stringify({
+        elements: [element("before-unmount")],
+        appState: {
+          viewBackgroundColor: undefined,
+          gridSize: undefined,
+          gridColor: undefined,
+        },
+        files: {},
+      }),
+    );
+  });
+
   it("does not expose the previous board snapshot during a board switch render", async () => {
     getBoardMock.mockResolvedValueOnce({
       canvas_data: JSON.stringify({
@@ -534,6 +604,88 @@ describe("useBoardPersistence", () => {
       await Promise.resolve();
     });
 
+    expect(result.current.saveStatus).toBe("saved");
+  });
+
+  it("ignores an old save completion after switching away from and back to the same board", async () => {
+    vi.useFakeTimers();
+
+    const firstSave = deferred<void>();
+    saveBoardCanvasDataMock.mockImplementationOnce(() => firstSave.promise);
+
+    getBoardMock.mockResolvedValueOnce({ canvas_data: null });
+    getBoardMock.mockResolvedValueOnce({
+      canvas_data: JSON.stringify({
+        elements: [element("board-2-loaded")],
+        appState: {
+          viewBackgroundColor: "#eeeeee",
+          gridSize: 10,
+          gridColor: "#cccccc",
+        },
+        files: {},
+      }),
+    });
+    getBoardMock.mockResolvedValueOnce({
+      canvas_data: JSON.stringify({
+        elements: [element("board-1-reloaded")],
+        appState: {
+          viewBackgroundColor: "#dddddd",
+          gridSize: 6,
+          gridColor: "#bbbbbb",
+        },
+        files: {},
+      }),
+    });
+
+    const { result, rerender } = renderHook(({ boardId }) => useBoardPersistence(boardId), {
+      initialProps: { boardId: "board-1" },
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleChange([element("board-1-unsaved")], {}, {});
+    });
+
+    rerender({ boardId: "board-2" });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    rerender({ boardId: "board-1" });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.initialData).toEqual({
+      elements: [element("board-1-reloaded")],
+      appState: {
+        viewBackgroundColor: "#dddddd",
+        gridSize: 6,
+        gridColor: "#bbbbbb",
+      },
+      files: {},
+    });
+    expect(result.current.saveStatus).toBe("saved");
+
+    await act(async () => {
+      firstSave.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.initialData).toEqual({
+      elements: [element("board-1-reloaded")],
+      appState: {
+        viewBackgroundColor: "#dddddd",
+        gridSize: 6,
+        gridColor: "#bbbbbb",
+      },
+      files: {},
+    });
     expect(result.current.saveStatus).toBe("saved");
   });
 });
