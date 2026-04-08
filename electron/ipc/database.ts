@@ -15,6 +15,12 @@ export function getDatabase(userDataPath: string): Database.Database {
   return db;
 }
 
+/**
+ * Translate `$1`, `$2`, ... positional placeholders to `?` anonymous placeholders.
+ * The existing codebase uses Tauri's `$N` positional syntax, but `better-sqlite3`
+ * treats `$N` as named parameters (expecting an object like `{ 1: val }`).
+ * Anonymous `?` placeholders work with positional spread arguments.
+ */
 function translateParams(sql: string): string {
   return sql.replace(/\$\d+/g, "?");
 }
