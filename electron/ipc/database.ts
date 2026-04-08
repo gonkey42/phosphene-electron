@@ -31,14 +31,8 @@ export function registerDatabaseIPC(userDataPath: string): void {
   ipcMain.handle("db:execute", (_event, sql: string, params?: unknown[]) => {
     const translated = translateParams(sql);
     const statement = database.prepare(translated);
-
-    if (params && params.length > 0) {
-      const result = statement.run(...params);
-      return { rowsAffected: result.changes };
-    }
-
-    statement.run();
-    return { rowsAffected: 0 };
+    const result = statement.run(...(params ?? []));
+    return { rowsAffected: result.changes };
   });
 
   ipcMain.handle("db:select", (_event, sql: string, params?: unknown[]) => {
