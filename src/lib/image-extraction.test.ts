@@ -1,15 +1,22 @@
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
-import { BaseDirectory } from "@tauri-apps/api/path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const writeFileMock = vi.fn();
 const readFileMock = vi.fn();
 const existsMock = vi.fn();
+const appDataDirMock = vi.fn();
+const joinMock = vi.fn();
 
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  writeFile: writeFileMock,
-  readFile: readFileMock,
-  exists: existsMock,
+vi.mock("../platform/desktop-api", () => ({
+  fs: {
+    writeFile: writeFileMock,
+    readFile: readFileMock,
+    exists: existsMock,
+  },
+  paths: {
+    appDataDir: appDataDirMock,
+    join: joinMock,
+  },
 }));
 
 function toBase64(value: string): string {
@@ -39,6 +46,8 @@ describe("image extraction", () => {
     writeFileMock.mockReset();
     readFileMock.mockReset();
     existsMock.mockReset();
+    appDataDirMock.mockReset().mockResolvedValue("/app/data");
+    joinMock.mockReset().mockImplementation(async (...parts: string[]) => parts.join("/"));
   });
 
   it("extracts inline Excalidraw image data to the filesystem and rewrites the file reference", async () => {
@@ -49,9 +58,10 @@ describe("image extraction", () => {
       "file-1": createFile(`data:image/png;base64,${base64Data}`),
     });
 
-    expect(writeFileMock).toHaveBeenCalledWith("images/board-1_file-1.png", toBytes("png-bytes"), {
-      baseDir: BaseDirectory.AppData,
-    });
+    expect(writeFileMock).toHaveBeenCalledWith(
+      "/app/data/images/board-1_file-1.png",
+      toBytes("png-bytes"),
+    );
     expect(extractedFiles).toEqual({
       "file-1": createFile("phosphene-file://images/board-1_file-1.png"),
     });
@@ -66,12 +76,8 @@ describe("image extraction", () => {
       "file-1": createFile("phosphene-file://images/board-1_file-1.png"),
     });
 
-    expect(existsMock).toHaveBeenCalledWith("images/board-1_file-1.png", {
-      baseDir: BaseDirectory.AppData,
-    });
-    expect(readFileMock).toHaveBeenCalledWith("images/board-1_file-1.png", {
-      baseDir: BaseDirectory.AppData,
-    });
+    expect(existsMock).toHaveBeenCalledWith("/app/data/images/board-1_file-1.png");
+    expect(readFileMock).toHaveBeenCalledWith("/app/data/images/board-1_file-1.png");
     expect(injectedFiles).toEqual({
       "file-1": createFile(`data:image/png;base64,${toBase64("png-bytes")}`),
     });

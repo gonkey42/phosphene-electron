@@ -1,30 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const loadMock = vi.fn();
+const executeMock = vi.fn();
+const selectMock = vi.fn();
 
-vi.mock("@tauri-apps/plugin-sql", () => ({
-  default: {
-    load: loadMock,
+vi.mock("../platform/desktop-api", () => ({
+  db: {
+    execute: executeMock,
+    select: selectMock,
   },
 }));
 
 describe("getDb", () => {
   beforeEach(() => {
-    loadMock.mockReset();
+    executeMock.mockReset().mockResolvedValue({ rowsAffected: 0 });
+    selectMock.mockReset();
     vi.resetModules();
   });
 
   it("initializes the schema and seeds a default workspace", async () => {
-    const executeMock = vi.fn().mockResolvedValue(undefined);
-    const selectMock = vi.fn().mockResolvedValue([{ count: 0 }]);
-    const dbMock = { execute: executeMock, select: selectMock };
-    loadMock.mockResolvedValue(dbMock);
+    selectMock.mockResolvedValue([{ count: 0 }]);
 
     const { getDb } = await import("./database");
     const db = await getDb();
 
-    expect(db).toBe(dbMock);
-    expect(loadMock).toHaveBeenCalledWith("sqlite:phosphene.db");
+    expect(db).toBeDefined();
     expect(executeMock).toHaveBeenCalledWith("PRAGMA journal_mode=WAL");
     expect(executeMock).toHaveBeenCalledWith("PRAGMA foreign_keys=ON");
     expect(
@@ -37,21 +36,17 @@ describe("getDb", () => {
     );
     expect(executeMock).toHaveBeenCalledWith(
       "INSERT INTO workspaces (id, name, icon, position) VALUES ($1, $2, $3, $4)",
-      expect.arrayContaining([expect.any(String), "Home", "🏠", 0]),
+      expect.arrayContaining([expect.any(String), "Home", "\u{1F3E0}", 0]),
     );
   });
 
   it("reuses an existing connection after the first load", async () => {
-    const executeMock = vi.fn().mockResolvedValue(undefined);
-    const selectMock = vi.fn().mockResolvedValue([{ count: 1 }]);
-    const dbMock = { execute: executeMock, select: selectMock };
-    loadMock.mockResolvedValue(dbMock);
+    selectMock.mockResolvedValue([{ count: 1 }]);
 
     const { getDb } = await import("./database");
     const first = await getDb();
     const second = await getDb();
 
     expect(first).toBe(second);
-    expect(loadMock).toHaveBeenCalledTimes(1);
   });
 });

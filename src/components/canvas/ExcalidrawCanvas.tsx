@@ -119,17 +119,17 @@ export function ExcalidrawCanvas({
   );
 }
 
-function isPointInsideRect(point: { x: number; y: number }, rect: DOMRect): boolean {
+export function isPointInsideRect(point: { x: number; y: number }, rect: DOMRect): boolean {
   return (
     point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom
   );
 }
 
-function getDropTarget(wrapper: HTMLDivElement): HTMLElement {
+export function getDropTarget(wrapper: HTMLDivElement): HTMLElement {
   return wrapper.firstElementChild instanceof HTMLElement ? wrapper.firstElementChild : wrapper;
 }
 
-function createSyntheticDropEvent(files: File[], point: { x: number; y: number }): Event {
+export function createSyntheticDropEvent(files: File[], point: { x: number; y: number }): Event {
   const event = new Event("drop", {
     bubbles: true,
     cancelable: true,

@@ -1,4 +1,4 @@
-import { render, act, screen, within } from "@testing-library/react";
+import { render, act, screen } from "@testing-library/react";
 import { useLayoutEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,20 +8,6 @@ const claimFocusMock = vi.fn();
 const updateSceneMock = vi.fn();
 const refreshMock = vi.fn();
 let latestExcalidrawProps: Record<string, unknown> | null = null;
-const { readImagePathAsFileMock, onDragDropEventMock, nativeDropUnlistenMock } = vi.hoisted(() => ({
-  readImagePathAsFileMock: vi.fn(),
-  onDragDropEventMock: vi.fn(),
-  nativeDropUnlistenMock: vi.fn(),
-}));
-let latestNativeDropHandler:
-  | ((event: {
-      payload: {
-        type: string;
-        paths?: string[];
-        position?: { toLogical: (scaleFactor: number) => { x: number; y: number } };
-      };
-    }) => unknown)
-  | null = null;
 
 vi.mock("@excalidraw/excalidraw", () => ({
   Excalidraw: (props: Record<string, unknown>) => {
@@ -41,17 +27,6 @@ vi.mock("@excalidraw/excalidraw", () => ({
   },
 }));
 
-vi.mock("@tauri-apps/api/webview", () => ({
-  getCurrentWebview: () => ({
-    onDragDropEvent: onDragDropEventMock,
-  }),
-}));
-
-vi.mock("../../lib/drop-handler", () => ({
-  readImagePathAsFile: readImagePathAsFileMock,
-  isSupportedImagePath: (path: string) => /\.(png|jpe?g|gif|svg|webp)$/i.test(path),
-}));
-
 vi.mock("../../contexts/KeyboardContext", () => ({
   useKeyboardContext: () => ({
     focus: "global",
@@ -65,38 +40,18 @@ vi.mock("../../contexts/KeyboardContext", () => ({
 import { ExcalidrawCanvas } from "./ExcalidrawCanvas";
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 
-type ObservedDropEvent = Event & {
-  dataTransfer: { files: File[] | FileList };
-  clientX: number;
-  clientY: number;
-};
-
 describe("ExcalidrawCanvas", () => {
   beforeEach(() => {
     latestExcalidrawProps = null;
-    latestNativeDropHandler = null;
     excalidrawMock.mockClear();
     excalidrawApiMountMock.mockReset();
     claimFocusMock.mockReset();
     refreshMock.mockReset();
     updateSceneMock.mockReset();
-    readImagePathAsFileMock.mockReset();
-    onDragDropEventMock.mockReset();
-    nativeDropUnlistenMock.mockReset();
-    onDragDropEventMock.mockImplementation((handler: typeof latestNativeDropHandler) => {
-      latestNativeDropHandler = handler;
-      return Promise.resolve(nativeDropUnlistenMock);
-    });
-    vi.stubGlobal("__TAURI_INTERNALS__", {
-      metadata: {
-        currentWebview: { label: "main" },
-      },
-    });
     vi.useFakeTimers();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -314,114 +269,6 @@ describe("ExcalidrawCanvas", () => {
     expect(secondProps?.onChange).toBe(firstProps?.onChange);
     expect(secondProps?.UIOptions).toBe(firstProps?.UIOptions);
     expect(secondProps?.excalidrawAPI).toBe(firstProps?.excalidrawAPI);
-  });
-
-  it("bridges native Tauri image drops onto the inner Excalidraw surface", async () => {
-    const onChange = vi.fn();
-    const droppedFile = new File(["png"], "image.png", { type: "image/png" });
-    readImagePathAsFileMock.mockResolvedValue(droppedFile);
-
-    const { container } = render(
-      <ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />,
-    );
-
-    const wrapper = container.firstElementChild as HTMLDivElement;
-    const excalidrawSurface = within(container).getByTestId("mock-excalidraw");
-    const wrapperBounds = vi.spyOn(wrapper, "getBoundingClientRect").mockReturnValue({
-      x: 0,
-      y: 0,
-      left: 0,
-      top: 0,
-      right: 500,
-      bottom: 500,
-      width: 500,
-      height: 500,
-      toJSON: () => ({}),
-    } as DOMRect);
-    let observedDropEvent!: ObservedDropEvent;
-
-    excalidrawSurface.addEventListener("drop", (event) => {
-      observedDropEvent = event as ObservedDropEvent;
-    });
-
-    await act(async () => {
-      await Promise.resolve();
-      await latestNativeDropHandler?.({
-        payload: {
-          type: "drop",
-          paths: ["/Users/hal9000/Desktop/image.png"],
-          position: {
-            toLogical: () => ({ x: 100, y: 120 }),
-          },
-        },
-      });
-    });
-
-    expect(onDragDropEventMock).toHaveBeenCalledTimes(1);
-    expect(readImagePathAsFileMock).toHaveBeenCalledWith("/Users/hal9000/Desktop/image.png");
-    expect(observedDropEvent).toBeDefined();
-    expect(observedDropEvent.type).toBe("drop");
-    expect(observedDropEvent.clientX).toBe(100);
-    expect(observedDropEvent.clientY).toBe(120);
-    expect(Array.from(observedDropEvent.dataTransfer.files)).toEqual([droppedFile]);
-    wrapperBounds.mockRestore();
-  });
-
-  it("does not subscribe to native Tauri drag-drop when non-interactive", () => {
-    render(
-      <ExcalidrawCanvas
-        boardId="board-1"
-        initialData={null}
-        onChange={vi.fn()}
-        isInteractive={false}
-      />,
-    );
-
-    expect(onDragDropEventMock).not.toHaveBeenCalled();
-  });
-
-  it("ignores native Tauri drops outside the canvas bounds", async () => {
-    const onChange = vi.fn();
-    const droppedFile = new File(["png"], "image.png", { type: "image/png" });
-    readImagePathAsFileMock.mockResolvedValue(droppedFile);
-
-    const { container } = render(
-      <ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />,
-    );
-
-    const wrapper = container.firstElementChild as HTMLDivElement;
-    const excalidrawSurface = within(container).getByTestId("mock-excalidraw");
-    const wrapperBounds = vi.spyOn(wrapper, "getBoundingClientRect").mockReturnValue({
-      x: 0,
-      y: 0,
-      left: 0,
-      top: 0,
-      right: 500,
-      bottom: 500,
-      width: 500,
-      height: 500,
-      toJSON: () => ({}),
-    } as DOMRect);
-    const dropListener = vi.fn();
-
-    excalidrawSurface.addEventListener("drop", dropListener);
-
-    await act(async () => {
-      await Promise.resolve();
-      await latestNativeDropHandler?.({
-        payload: {
-          type: "drop",
-          paths: ["/Users/hal9000/Desktop/image.png"],
-          position: {
-            toLogical: () => ({ x: 700, y: 720 }),
-          },
-        },
-      });
-    });
-
-    expect(readImagePathAsFileMock).not.toHaveBeenCalled();
-    expect(dropListener).not.toHaveBeenCalled();
-    wrapperBounds.mockRestore();
   });
 
   it("claims canvas focus on pointer interaction", () => {
