@@ -48,5 +48,12 @@ describe("getDb", () => {
     const second = await getDb();
 
     expect(first).toBe(second);
+    expect(selectMock).toHaveBeenCalledTimes(1);
+    expect(
+      executeMock.mock.calls.filter(([sql]) => sql === "PRAGMA journal_mode=WAL"),
+    ).toHaveLength(1);
+    expect(
+      executeMock.mock.calls.filter(([sql]) => sql === "PRAGMA foreign_keys=ON"),
+    ).toHaveLength(1);
   });
 });
