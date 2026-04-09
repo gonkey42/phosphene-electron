@@ -94,6 +94,21 @@ describe("WorkspaceTabBar", () => {
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
   });
 
+  it("accepts theme controller props without affecting workspace behavior", async () => {
+    listWorkspacesMock.mockResolvedValue([createWorkspaceItem()]);
+    const onThemePreferenceChange = vi.fn();
+
+    render(
+      <WorkspaceTabBar
+        themePreference="dark"
+        onThemePreferenceChange={onThemePreferenceChange}
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
+    expect(onThemePreferenceChange).not.toHaveBeenCalled();
+  });
+
   it("shows platform-aware shortcuts for the first nine workspaces", async () => {
     setPlatform("MacIntel");
     listWorkspacesMock.mockResolvedValue([

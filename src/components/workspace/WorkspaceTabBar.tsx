@@ -8,6 +8,7 @@ import {
   renameWorkspace,
   type WorkspaceListItem,
 } from "../../lib/workspace-operations";
+import type { ThemePreference } from "../../lib/theme-settings";
 import { useCancellableEffect } from "../../hooks/use-cancellable-effect";
 import { useErrorReporter } from "../../hooks/use-error-reporter";
 import { useInlineRename } from "../../hooks/use-inline-rename";
@@ -34,7 +35,12 @@ const WORKSPACE_CREATE_ERROR_CHANNEL = "workspace-tab-bar:create";
 const WORKSPACE_RENAME_ERROR_CHANNEL = "workspace-tab-bar:rename";
 const WORKSPACE_DELETE_ERROR_CHANNEL = "workspace-tab-bar:delete";
 
-export function WorkspaceTabBar() {
+export interface WorkspaceTabBarProps {
+  themePreference?: ThemePreference;
+  onThemePreferenceChange?: (preference: ThemePreference) => Promise<void>;
+}
+
+export function WorkspaceTabBar(_props: WorkspaceTabBarProps = {}) {
   const workspaces = useAppStore((state) => state.workspaces);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const initialized = useAppStore((state) => state.initialized);
