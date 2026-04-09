@@ -1,35 +1,175 @@
+/// <reference lib="dom" />
 import { contextBridge, ipcRenderer } from "electron";
+
+const LIFECYCLE_FLUSH_REQUEST_EVENT = "phosphene:lifecycle:flush-request";
+const LIFECYCLE_FLUSH_COMPLETE_EVENT = "phosphene:lifecycle:flush-complete";
+const LIFECYCLE_READY_EVENT = "phosphene:lifecycle:ready";
+const LIFECYCLE_READY_FLAG = "__PHOSPHENE_LIFECYCLE_READY__";
+
+type FlushCompletionDetail = {
+  requestId: string;
+  ok: boolean;
+  error?: string;
+};
+
+type SerializedFilesystemError = {
+  code?: string;
+  message: string;
+};
+
+type FilesystemResult<T> =
+  | {
+      ok: true;
+      value: T;
+    }
+  | {
+      ok: false;
+      error: SerializedFilesystemError;
+    };
+
+type MutationResult = {
+  rowsAffected: number;
+};
+
+let lifecycleRequestSequence = 0;
+let lifecycleReady =
+  (window as Window & { [LIFECYCLE_READY_FLAG]?: boolean })[LIFECYCLE_READY_FLAG] === true;
+
+window.addEventListener(LIFECYCLE_READY_EVENT, () => {
+  lifecycleReady = true;
+});
+
+function isFilesystemResult<T>(value: unknown): value is FilesystemResult<T> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "ok" in value &&
+    typeof (value as { ok: unknown }).ok === "boolean"
+  );
+}
+
+function deserializeFilesystemError(error: SerializedFilesystemError): Error & { code?: string } {
+  const reconstructedError = new Error(error.message) as Error & { code?: string };
+
+  if (error.code) {
+    reconstructedError.code = error.code;
+  }
+
+  return reconstructedError;
+}
+
+async function invokeFilesystem<T>(channel: string, ...args: unknown[]): Promise<T> {
+  const result = await ipcRenderer.invoke(channel, ...args);
+
+  if (!isFilesystemResult<T>(result)) {
+    return result as T;
+  }
+
+  if (!result.ok) {
+    throw deserializeFilesystemError(result.error);
+  }
+
+  return result.value;
+}
+
+function requestRendererFlush(requestId: string): Promise<void> {
+  if (
+    !lifecycleReady &&
+    (window as Window & { [LIFECYCLE_READY_FLAG]?: boolean })[LIFECYCLE_READY_FLAG] !== true
+  ) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const handleComplete = (event: Event) => {
+      const detail = (event as CustomEvent<FlushCompletionDetail>).detail;
+
+      if (detail.requestId !== requestId) {
+        return;
+      }
+
+      window.removeEventListener(LIFECYCLE_FLUSH_COMPLETE_EVENT, handleComplete);
+
+      if (!detail.ok) {
+        reject(new Error(detail.error ?? "Renderer flush failed"));
+        return;
+      }
+
+      resolve();
+    };
+
+    window.addEventListener(LIFECYCLE_FLUSH_COMPLETE_EVENT, handleComplete);
+    window.dispatchEvent(
+      new CustomEvent(LIFECYCLE_FLUSH_REQUEST_EVENT, {
+        detail: { requestId },
+      }),
+    );
+  });
+}
+
+ipcRenderer.on("lifecycle:flush-request", (_event, requestId: string) => {
+  void requestRendererFlush(requestId)
+    .then(() => {
+      ipcRenderer.send("lifecycle:flush-response", { requestId, ok: true });
+    })
+    .catch((error) => {
+      ipcRenderer.send("lifecycle:flush-response", {
+        requestId,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+});
 
 contextBridge.exposeInMainWorld("desktop", {
   db: {
-    execute(sql: string, params?: unknown[]) {
+    execute(sql: string, params?: unknown[]): Promise<MutationResult> {
       return ipcRenderer.invoke("db:execute", sql, params);
     },
-    select(sql: string, params?: unknown[]) {
+    select<TRows extends readonly unknown[] = unknown[]>(
+      sql: string,
+      params?: unknown[],
+    ): Promise<TRows> {
       return ipcRenderer.invoke("db:select", sql, params);
+    },
+    backup(destinationPath: string) {
+      return ipcRenderer.invoke("db:backup", destinationPath);
+    },
+  },
+  boards: {
+    createBoard(name: string, workspaceId: string | null) {
+      return ipcRenderer.invoke("boards:create", name, workspaceId);
+    },
+  },
+  workspaces: {
+    createWorkspace(name: string, icon?: string) {
+      return ipcRenderer.invoke("workspaces:create", name, icon);
+    },
+    reorderWorkspaces(orderedIds: string[]) {
+      return ipcRenderer.invoke("workspaces:reorder", orderedIds);
     },
   },
   fs: {
     exists(path: string) {
-      return ipcRenderer.invoke("fs:exists", path);
+      return invokeFilesystem<boolean>("fs:exists", path);
     },
     mkdir(path: string) {
-      return ipcRenderer.invoke("fs:mkdir", path);
+      return invokeFilesystem<void>("fs:mkdir", path);
     },
     readFile(path: string): Promise<Uint8Array> {
-      return ipcRenderer.invoke("fs:readFile", path);
+      return invokeFilesystem<Uint8Array>("fs:readFile", path);
     },
     writeFile(path: string, data: Uint8Array) {
-      return ipcRenderer.invoke("fs:writeFile", path, data);
+      return invokeFilesystem<void>("fs:writeFile", path, data);
     },
     copyFile(src: string, dest: string) {
-      return ipcRenderer.invoke("fs:copyFile", src, dest);
+      return invokeFilesystem<void>("fs:copyFile", src, dest);
     },
     readDir(path: string) {
-      return ipcRenderer.invoke("fs:readDir", path);
+      return invokeFilesystem<Array<{ name: string }>>("fs:readDir", path);
     },
     remove(path: string) {
-      return ipcRenderer.invoke("fs:remove", path);
+      return invokeFilesystem<void>("fs:remove", path);
     },
   },
   paths: {
@@ -38,6 +178,12 @@ contextBridge.exposeInMainWorld("desktop", {
     },
     join(...parts: string[]) {
       return ipcRenderer.invoke("paths:join", ...parts);
+    },
+  },
+  lifecycle: {
+    flushPendingWork() {
+      lifecycleRequestSequence += 1;
+      return requestRendererFlush(`renderer-${lifecycleRequestSequence}`);
     },
   },
 });

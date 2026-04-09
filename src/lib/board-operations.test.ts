@@ -3,14 +3,41 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const executeMock = vi.fn();
 const selectMock = vi.fn();
 const loadMock = vi.fn();
-const generateIdMock = vi.fn();
+const createBoardMock = vi.fn();
+const mainDbPragmaMock = vi.fn();
+const mainDbExecMock = vi.fn();
+const mainDbPrepareMock = vi.fn();
+const mainDbTransactionMock = vi.fn();
+
+vi.mock("electron", () => ({
+  ipcMain: {
+    handle: vi.fn(),
+  },
+}));
+
+vi.mock("better-sqlite3", () => {
+  const DatabaseMock = function () {
+    return {
+      pragma: mainDbPragmaMock,
+      exec: mainDbExecMock,
+      prepare: mainDbPrepareMock,
+      transaction: mainDbTransactionMock,
+      backup: vi.fn(),
+      close: vi.fn(),
+    };
+  };
+
+  return { default: DatabaseMock };
+});
 
 vi.mock("./database", () => ({
   getDb: loadMock,
 }));
 
-vi.mock("./uuid", () => ({
-  generateId: generateIdMock,
+vi.mock("../platform/desktop-api", () => ({
+  boards: {
+    createBoard: createBoardMock,
+  },
 }));
 
 describe("board operations", () => {
@@ -19,8 +46,13 @@ describe("board operations", () => {
     executeMock.mockReset();
     selectMock.mockReset();
     loadMock.mockReset();
-    generateIdMock.mockReset();
+    createBoardMock.mockReset();
+    mainDbPragmaMock.mockReset();
+    mainDbExecMock.mockReset();
+    mainDbPrepareMock.mockReset();
+    mainDbTransactionMock.mockReset();
     loadMock.mockResolvedValue({ execute: executeMock, select: selectMock });
+    executeMock.mockResolvedValue({ rowsAffected: 1 });
   });
 
   it("lists non-deleted boards ordered by position without loading canvas data", async () => {
@@ -105,39 +137,15 @@ describe("board operations", () => {
     );
   });
 
-  it("creates a board in the null workspace at the next position", async () => {
-    selectMock.mockResolvedValueOnce([{ position: 5 }]);
-    generateIdMock.mockReturnValue("new-board-id");
+  it("creates a board through the desktop bridge", async () => {
+    createBoardMock.mockResolvedValueOnce("new-board-id");
 
     const { createBoard } = await import("./board-operations");
     await expect(createBoard("New board", null)).resolves.toBe("new-board-id");
 
-    expect(generateIdMock).toHaveBeenCalledTimes(1);
-    expect(selectMock).toHaveBeenCalledWith(
-      "SELECT COALESCE(MAX(position), -1) + 1 as position FROM boards WHERE deleted_at IS NULL AND workspace_id IS NULL",
-      [],
-    );
-    expect(executeMock).toHaveBeenCalledWith(
-      "INSERT INTO boards (id, workspace_id, name, position) VALUES ($1, $2, $3, $4)",
-      ["new-board-id", null, "New board", 5],
-    );
-  });
-
-  it("creates a board in a workspace at the next position", async () => {
-    selectMock.mockResolvedValueOnce([{ position: 2 }]);
-    generateIdMock.mockReturnValue("new-board-id");
-
-    const { createBoard } = await import("./board-operations");
-    await createBoard("Workspace board", "workspace-1");
-
-    expect(selectMock).toHaveBeenCalledWith(
-      "SELECT COALESCE(MAX(position), -1) + 1 as position FROM boards WHERE deleted_at IS NULL AND workspace_id = $1",
-      ["workspace-1"],
-    );
-    expect(executeMock).toHaveBeenCalledWith(
-      "INSERT INTO boards (id, workspace_id, name, position) VALUES ($1, $2, $3, $4)",
-      ["new-board-id", "workspace-1", "Workspace board", 2],
-    );
+    expect(createBoardMock).toHaveBeenCalledWith("New board", null);
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(executeMock).not.toHaveBeenCalled();
   });
 
   it("renames, soft deletes, and updates board assets with SQL timestamps intact", async () => {
@@ -169,5 +177,110 @@ describe("board operations", () => {
       "UPDATE boards SET thumbnail = $2 WHERE id = $1 AND deleted_at IS NULL",
       ["board-1", "thumbnail-data"],
     );
+  });
+
+  it("throws when renaming a board affects zero rows", async () => {
+    executeMock.mockResolvedValueOnce({ rowsAffected: 0 });
+
+    const { renameBoard } = await import("./board-operations");
+
+    await expect(renameBoard("missing-board", "Renamed")).rejects.toThrow(
+      "Board rename affected 0 rows",
+    );
+  });
+
+  it("throws when deleting a board affects zero rows", async () => {
+    executeMock.mockResolvedValueOnce({ rowsAffected: 0 });
+
+    const { deleteBoard } = await import("./board-operations");
+
+    await expect(deleteBoard("missing-board")).rejects.toThrow("Board delete affected 0 rows");
+  });
+
+  it("throws when saving board canvas data affects zero rows", async () => {
+    executeMock.mockResolvedValueOnce({ rowsAffected: 0 });
+
+    const { saveBoardCanvasData } = await import("./board-operations");
+
+    await expect(saveBoardCanvasData("missing-board", '{"type":"excalidraw"}')).rejects.toThrow(
+      "Board save affected 0 rows",
+    );
+  });
+
+  it("throws when saving a board thumbnail affects zero rows", async () => {
+    executeMock.mockResolvedValueOnce({ rowsAffected: 0 });
+
+    const { saveBoardThumbnail } = await import("./board-operations");
+
+    await expect(saveBoardThumbnail("missing-board", "thumbnail-data")).rejects.toThrow(
+      "Board thumbnail save affected 0 rows",
+    );
+  });
+
+  it("creates a board atomically through the main-process helper", async () => {
+    const state = {
+      boards: [
+        { id: "board-1", workspace_id: null, position: 0 },
+        { id: "board-2", workspace_id: null, position: 1 },
+      ] as Array<{ id: string; workspace_id: string | null; position: number }>,
+    };
+    let inTransaction = false;
+    let insertedBoardId: string | null = null;
+
+    mainDbTransactionMock.mockImplementation((callback: (...args: any[]) => unknown) => {
+      return (...args: any[]) => {
+        inTransaction = true;
+        try {
+          return callback(...args);
+        } finally {
+          inTransaction = false;
+        }
+      };
+    });
+    mainDbPrepareMock.mockImplementation((sql: string) => {
+      if (
+        sql ===
+        "SELECT COALESCE(MAX(position), -1) + 1 as position FROM boards WHERE deleted_at IS NULL AND workspace_id IS NULL"
+      ) {
+        return {
+          get() {
+            expect(inTransaction).toBe(true);
+            return { position: Math.max(...state.boards.map((board) => board.position)) + 1 };
+          },
+        };
+      }
+
+      if (sql === "INSERT INTO boards (id, workspace_id, name, position) VALUES (?, ?, ?, ?)") {
+        return {
+          run(id: string, workspaceId: string | null, name: string, position: number) {
+            expect(inTransaction).toBe(true);
+            expect(name).toBe("New board");
+            expect(workspaceId).toBeNull();
+            insertedBoardId = id;
+            state.boards.push({ id, workspace_id: workspaceId, position });
+            return { changes: 1 };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+
+    const { createBoard } = await import("../../electron/ipc/database");
+    const boardId = createBoard(
+      {
+        prepare: mainDbPrepareMock,
+        transaction: mainDbTransactionMock,
+      } as never,
+      "New board",
+      null,
+    );
+
+    expect(boardId).toBe(insertedBoardId);
+    expect(state.boards).toEqual([
+      { id: "board-1", workspace_id: null, position: 0 },
+      { id: "board-2", workspace_id: null, position: 1 },
+      { id: boardId, workspace_id: null, position: 2 },
+    ]);
   });
 });

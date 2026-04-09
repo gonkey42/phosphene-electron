@@ -12,6 +12,14 @@ const { extractImagesToFilesystemMock, injectImagesFromFilesystemMock } = vi.hoi
   injectImagesFromFilesystemMock: vi.fn(),
 }));
 
+const { reportErrorMock } = vi.hoisted(() => ({
+  reportErrorMock: vi.fn(),
+}));
+
+const { lifecycleHandlers } = vi.hoisted(() => ({
+  lifecycleHandlers: new Set<() => Promise<void> | void>(),
+}));
+
 vi.mock("../lib/board-operations", () => ({
   getBoard: getBoardMock,
   saveBoardCanvasData: saveBoardCanvasDataMock,
@@ -20,6 +28,22 @@ vi.mock("../lib/board-operations", () => ({
 vi.mock("../lib/image-extraction", () => ({
   extractImagesToFilesystem: extractImagesToFilesystemMock,
   injectImagesFromFilesystem: injectImagesFromFilesystemMock,
+}));
+
+vi.mock("./use-error-reporter", () => ({
+  useErrorReporter: () => reportErrorMock,
+}));
+
+vi.mock("../platform/desktop-api", () => ({
+  lifecycle: {
+    registerPendingWork(handler: () => Promise<void> | void) {
+      lifecycleHandlers.add(handler);
+      return () => {
+        lifecycleHandlers.delete(handler);
+      };
+    },
+    flushPendingWork: vi.fn(),
+  },
 }));
 
 import { useBoardPersistence } from "./use-board-persistence";
@@ -31,14 +55,18 @@ describe("useBoardPersistence", () => {
     saveBoardCanvasDataMock.mockReset();
     extractImagesToFilesystemMock.mockReset();
     injectImagesFromFilesystemMock.mockReset();
+    reportErrorMock.mockReset();
+    lifecycleHandlers.clear();
     extractImagesToFilesystemMock.mockImplementation(async (_boardId, files) => files);
     injectImagesFromFilesystemMock.mockImplementation(async (files) => files);
+    saveBoardCanvasDataMock.mockResolvedValue(undefined);
     vi.useRealTimers();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
+    lifecycleHandlers.clear();
   });
 
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -412,6 +440,101 @@ describe("useBoardPersistence", () => {
     );
   });
 
+  it("keeps the board unsaved and reports the error when save rejects", async () => {
+    vi.useFakeTimers();
+    getBoardMock.mockResolvedValue({ canvas_data: null });
+    const saveError = new Error("Board save affected 0 rows");
+    saveBoardCanvasDataMock.mockRejectedValueOnce(saveError);
+
+    const { result } = renderHook(() => useBoardPersistence("board-1"));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleChange(
+        [element("element-1")],
+        {
+          viewBackgroundColor: "#fefefe",
+          gridSize: 8,
+          gridColor: "#cccccc",
+        },
+        files,
+      );
+    });
+
+    expect(result.current.saveStatus).toBe("unsaved");
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.saveStatus).toBe("unsaved");
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "Failed to save board canvas data for board board-1",
+      saveError,
+      expect.objectContaining({
+        boardId: "board-1",
+        saveToken: 1,
+        saveSessionId: 1,
+      }),
+    );
+  });
+
+  it("suppresses stale save failure reporting when a newer save succeeds", async () => {
+    vi.useFakeTimers();
+    getBoardMock.mockResolvedValue({ canvas_data: null });
+    const firstSave = deferred<void>();
+    const staleSaveError = new Error("Board save affected 0 rows");
+
+    saveBoardCanvasDataMock
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockResolvedValueOnce(undefined);
+
+    const { result } = renderHook(() => useBoardPersistence("board-1"));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleChange([element("older-element")], {}, {});
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+
+    expect(result.current.saveStatus).toBe("saving");
+
+    act(() => {
+      result.current.handleChange([element("newer-element")], {}, {});
+    });
+
+    expect(result.current.saveStatus).toBe("unsaved");
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+
+    expect(result.current.saveStatus).toBe("unsaved");
+
+    await act(async () => {
+      firstSave.reject(staleSaveError);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.saveStatus).toBe("saved");
+    expect(result.current.saveStatus).toBe("saved");
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
   it("flushes pending changes for the previous board before switching boards", async () => {
     getBoardMock.mockResolvedValueOnce({ canvas_data: null });
     getBoardMock.mockResolvedValueOnce({
@@ -467,6 +590,58 @@ describe("useBoardPersistence", () => {
       },
       files: {},
     });
+  });
+
+  it("reports a forced flush failure for the board being left without regressing the next board state", async () => {
+    const saveError = new Error("Board save affected 0 rows during switch");
+    getBoardMock.mockResolvedValueOnce({ canvas_data: null });
+    getBoardMock.mockResolvedValueOnce({
+      canvas_data: JSON.stringify({
+        elements: [element("board-2-element")],
+        appState: {
+          viewBackgroundColor: "#222222",
+        },
+        files: {},
+      }),
+    });
+    saveBoardCanvasDataMock.mockRejectedValueOnce(saveError);
+
+    const { result, rerender } = renderHook(({ boardId }) => useBoardPersistence(boardId), {
+      initialProps: { boardId: "board-1" },
+    });
+
+    await act(async () => {
+      await flush();
+    });
+
+    vi.useFakeTimers();
+
+    act(() => {
+      result.current.handleChange([element("board-1-unsaved")], {}, {});
+    });
+
+    rerender({ boardId: "board-2" });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(reportErrorMock).toHaveBeenCalledWith(
+      "Failed to save board canvas data for board board-1",
+      saveError,
+      expect.objectContaining({
+        boardId: "board-1",
+      }),
+    );
+    expect(result.current.initialData).toEqual({
+      elements: [element("board-2-element")],
+      appState: {
+        viewBackgroundColor: "#222222",
+      },
+      files: {},
+    });
+    expect(result.current.saveStatus).toBe("saved");
   });
 
   it("flushes pending changes when the persistence hook unmounts", async () => {
@@ -686,6 +861,167 @@ describe("useBoardPersistence", () => {
       },
       files: {},
     });
+    expect(result.current.saveStatus).toBe("saved");
+  });
+
+  it("exposes a flushPendingSave promise that resolves after extraction and persistence finish", async () => {
+    vi.useFakeTimers();
+    getBoardMock.mockResolvedValue({ canvas_data: null });
+
+    const extraction = deferred<ExcalidrawInitialDataState["files"]>();
+    const save = deferred<void>();
+    extractImagesToFilesystemMock.mockImplementationOnce(() => extraction.promise);
+    saveBoardCanvasDataMock.mockImplementationOnce(() => save.promise);
+
+    const { result } = renderHook(() => useBoardPersistence("board-1"));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleChange([element("pending-flush")], {}, files);
+    });
+
+    let resolved = false;
+    const flushPromise = result.current.flushPendingSave().then(() => {
+      resolved = true;
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(extractImagesToFilesystemMock).toHaveBeenCalledWith("board-1", files);
+    expect(saveBoardCanvasDataMock).not.toHaveBeenCalled();
+    expect(resolved).toBe(false);
+
+    await act(async () => {
+      extraction.resolve(files);
+      await Promise.resolve();
+    });
+
+    expect(saveBoardCanvasDataMock).toHaveBeenCalledTimes(1);
+    expect(resolved).toBe(false);
+
+    await act(async () => {
+      save.resolve();
+      await flushPromise;
+    });
+
+    expect(resolved).toBe(true);
+    expect(result.current.saveStatus).toBe("saved");
+  });
+
+  it("flushes the latest pending change through the forced flush path", async () => {
+    vi.useFakeTimers();
+    getBoardMock.mockResolvedValue({ canvas_data: null });
+
+    const { result } = renderHook(() => useBoardPersistence("board-1"));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleChange([element("older-change")], {}, {});
+      result.current.handleChange(
+        [element("newest-change")],
+        {
+          viewBackgroundColor: "#123456",
+          gridSize: 9,
+          gridColor: "#654321",
+        },
+        files,
+      );
+    });
+
+    await act(async () => {
+      await result.current.flushPendingSave();
+    });
+
+    expect(saveBoardCanvasDataMock).toHaveBeenCalledTimes(1);
+    expect(saveBoardCanvasDataMock).toHaveBeenCalledWith(
+      "board-1",
+      JSON.stringify({
+        elements: [element("newest-change")],
+        appState: {
+          viewBackgroundColor: "#123456",
+          gridSize: 9,
+          gridColor: "#654321",
+        },
+        files,
+      }),
+    );
+    expect(result.current.initialData).toEqual({
+      elements: [element("newest-change")],
+      appState: {
+        viewBackgroundColor: "#123456",
+        gridSize: 9,
+        gridColor: "#654321",
+      },
+      files,
+    });
+  });
+
+  it("waits for the older in-flight save before writing and resolving a forced newer flush", async () => {
+    vi.useFakeTimers();
+    getBoardMock.mockResolvedValue({ canvas_data: null });
+
+    const firstSave = deferred<void>();
+    const secondSave = deferred<void>();
+    saveBoardCanvasDataMock
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementationOnce(() => secondSave.promise);
+
+    const { result } = renderHook(() => useBoardPersistence("board-1"));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleChange([element("older-change")], {}, {});
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(500);
+      await Promise.resolve();
+    });
+
+    expect(saveBoardCanvasDataMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.handleChange([element("newer-change")], {}, {});
+    });
+
+    let resolved = false;
+    const flushPromise = result.current.flushPendingSave().then(() => {
+      resolved = true;
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(saveBoardCanvasDataMock).toHaveBeenCalledTimes(1);
+    expect(resolved).toBe(false);
+
+    await act(async () => {
+      firstSave.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(saveBoardCanvasDataMock).toHaveBeenCalledTimes(2);
+    expect(resolved).toBe(false);
+
+    await act(async () => {
+      secondSave.resolve();
+      await flushPromise;
+    });
+
+    expect(resolved).toBe(true);
     expect(result.current.saveStatus).toBe("saved");
   });
 });

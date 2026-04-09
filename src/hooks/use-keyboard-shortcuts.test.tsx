@@ -1,10 +1,27 @@
-import { act, cleanup, fireEvent, renderHook, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createBoardMock, createWorkspaceMock, listWorkspacesMock, mapWorkspaceMock } = vi.hoisted(
+import { clearSharedErrors, getSharedErrors } from "./shared-error-store";
+
+const {
+  createBoardMock,
+  createWorkspaceMock,
+  listBoardsMock,
+  listWorkspacesMock,
+  mapWorkspaceMock,
+} = vi.hoisted(
   () => ({
     createBoardMock: vi.fn(),
     createWorkspaceMock: vi.fn(),
+    listBoardsMock: vi.fn(),
     listWorkspacesMock: vi.fn(),
     mapWorkspaceMock: vi.fn((item) => ({
       id: item.id,
@@ -17,6 +34,7 @@ const { createBoardMock, createWorkspaceMock, listWorkspacesMock, mapWorkspaceMo
 
 vi.mock("../lib/board-operations", () => ({
   createBoard: createBoardMock,
+  listBoards: listBoardsMock,
 }));
 
 vi.mock("../lib/workspace-operations", () => ({
@@ -26,13 +44,27 @@ vi.mock("../lib/workspace-operations", () => ({
 }));
 
 import { useAppStore } from "../stores/app-store";
+import { BoardList } from "../components/sidebar/BoardList";
+import { SharedErrorBanner } from "../components/shared/SharedErrorBanner";
 
 import { useKeyboardShortcuts } from "./use-keyboard-shortcuts";
 
+function KeyboardBoardHarness() {
+  useKeyboardShortcuts();
+  return <BoardList />;
+}
+
+function KeyboardErrorHarness() {
+  useKeyboardShortcuts();
+  return <SharedErrorBanner />;
+}
+
 describe("useKeyboardShortcuts", () => {
   beforeEach(() => {
+    clearSharedErrors();
     createBoardMock.mockReset();
     createWorkspaceMock.mockReset();
+    listBoardsMock.mockReset();
     listWorkspacesMock.mockReset();
     useAppStore.setState({
       workspaces: [
@@ -50,6 +82,7 @@ describe("useKeyboardShortcuts", () => {
 
   afterEach(() => {
     cleanup();
+    clearSharedErrors();
     vi.restoreAllMocks();
   });
 
@@ -142,7 +175,7 @@ describe("useKeyboardShortcuts", () => {
     listWorkspacesMock.mockResolvedValue([
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
       { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
-      { id: "workspace-3", name: "Workspace 3", icon: null, position: 2 },
+      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
     ]);
     renderHook(() => useKeyboardShortcuts());
 
@@ -158,7 +191,7 @@ describe("useKeyboardShortcuts", () => {
     });
 
     await waitFor(() => {
-      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3");
+      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3", "🪟");
       expect(listWorkspacesMock).toHaveBeenCalledTimes(1);
       expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
     });
@@ -166,7 +199,45 @@ describe("useKeyboardShortcuts", () => {
     expect(useAppStore.getState().workspaces).toEqual([
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
       { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
-      { id: "workspace-3", name: "Workspace 3", icon: "📋", position: 2 },
+      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+    ]);
+  });
+
+  it("keeps the keyboard-created workspace visible and active when reload fails", async () => {
+    const reloadError = new Error("workspace refresh failed");
+    createWorkspaceMock.mockResolvedValue("workspace-3");
+    listWorkspacesMock.mockRejectedValue(reloadError);
+    renderHook(() => useKeyboardShortcuts());
+
+    fireEvent.keyDown(window, {
+      key: "t",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    await waitFor(() => {
+      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3", "🪟");
+      expect(listWorkspacesMock).toHaveBeenCalledTimes(1);
+      expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to reload workspaces from keyboard shortcut",
+          source: "KeyboardShortcuts",
+          error: reloadError,
+          channel: "keyboard-shortcut:reload-workspaces",
+          retry: {
+            label: "Retry",
+            run: expect.any(Function),
+          },
+        }),
+      ]);
+    });
+
+    expect(useAppStore.getState().workspaces).toEqual([
+      { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
+      { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
+      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
     ]);
   });
 
@@ -192,7 +263,91 @@ describe("useKeyboardShortcuts", () => {
         workspaceId: "workspace-1",
         nonce: 1,
       });
+      expect(useAppStore.getState().activeBoardPerWorkspace).toEqual({
+        "workspace-1": "board-9",
+      });
     });
+  });
+
+  it("keeps the board list selection in sync after a keyboard-created board", async () => {
+    createBoardMock.mockResolvedValue("board-9");
+    listWorkspacesMock.mockResolvedValue([
+      { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
+      { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
+    ]);
+    listBoardsMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "board-9",
+          name: "New Board",
+          description: null,
+          position: 0,
+          updated_at: "2026-03-29T12:00:00Z",
+          workspace_id: "workspace-1",
+        },
+      ]);
+
+    render(<KeyboardBoardHarness />);
+
+    await screen.findByText("No boards yet.");
+
+    fireEvent.keyDown(window, {
+      key: "n",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    const activeBoardButton = await screen.findByRole("button", { name: "New Board" });
+    expect(activeBoardButton.closest("li")).toHaveClass("board-list__item--active");
+    expect(useAppStore.getState().activeBoardPerWorkspace).toEqual({
+      "workspace-1": "board-9",
+    });
+  });
+
+  it("clears keyboard workspace reload errors after retrying from the banner", async () => {
+    const reloadError = new Error("workspace refresh failed");
+    createWorkspaceMock.mockResolvedValue("workspace-3");
+    listWorkspacesMock
+      .mockRejectedValueOnce(reloadError)
+      .mockResolvedValueOnce([
+        { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
+        { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
+        { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+      ]);
+
+    render(<KeyboardErrorHarness />);
+
+    fireEvent.keyDown(window, {
+      key: "t",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    const alert = await screen.findByRole("alert", { name: "KeyboardShortcuts" });
+    expect(alert).toHaveTextContent("Failed to reload workspaces from keyboard shortcut");
+    expect(useAppStore.getState().workspaces).toEqual([
+      { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
+      { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
+      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+    ]);
+    expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(getSharedErrors()).toEqual([]);
+    });
+    expect(useAppStore.getState().workspaces).toEqual([
+      { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
+      { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
+      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+    ]);
+    expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
+    expect(listWorkspacesMock).toHaveBeenCalledTimes(2);
+    expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3", "🪟");
+    expect(reloadError).toBeInstanceOf(Error);
   });
 
   it("does not handle shortcuts from editable targets", () => {
@@ -232,9 +387,8 @@ describe("useKeyboardShortcuts", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it("logs workspace shortcut failures without surfacing them", async () => {
+  it("records workspace shortcut failures in the shared channel", async () => {
     const workspaceError = new Error("workspace create failed");
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     createWorkspaceMock.mockRejectedValue(workspaceError);
     renderHook(() => useKeyboardShortcuts());
 
@@ -246,17 +400,20 @@ describe("useKeyboardShortcuts", () => {
     });
 
     await waitFor(() => {
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Failed to create workspace from keyboard shortcut",
-        workspaceError,
-      );
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to create workspace from keyboard shortcut",
+          source: "KeyboardShortcuts",
+          error: workspaceError,
+          channel: "keyboard-shortcut:create-workspace",
+        }),
+      ]);
     });
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-1");
   });
 
-  it("logs board shortcut failures without surfacing them", async () => {
+  it("records board shortcut failures in the shared channel", async () => {
     const boardError = new Error("board create failed");
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     createBoardMock.mockRejectedValue(boardError);
     renderHook(() => useKeyboardShortcuts());
 
@@ -268,10 +425,14 @@ describe("useKeyboardShortcuts", () => {
     });
 
     await waitFor(() => {
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Failed to create board from keyboard shortcut",
-        boardError,
-      );
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to create board from keyboard shortcut",
+          source: "KeyboardShortcuts",
+          error: boardError,
+          channel: "keyboard-shortcut:create-board",
+        }),
+      ]);
     });
     expect(useAppStore.getState().activeBoardId).toBeNull();
   });

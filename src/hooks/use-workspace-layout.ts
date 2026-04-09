@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Layout } from "react-resizable-panels";
 
-import { debounce } from "../lib/debounce";
+import { debounce, type DebouncedFunction } from "../lib/debounce";
 import { getWorkspaceLayout, saveWorkspaceLayout } from "../lib/workspace-operations";
+import { lifecycle } from "../platform/desktop-api";
 import { useAppStore } from "../stores/app-store";
 import { useCancellableEffect } from "./use-cancellable-effect";
 import { useErrorReporter } from "./use-error-reporter";
@@ -19,31 +20,98 @@ export const DEFAULT_LAYOUT: WorkspaceLayoutConfig = {
 
 const SAVE_DEBOUNCE_MS = 500;
 
+type PendingLayoutSave = {
+  workspaceId: string;
+  layout: WorkspaceLayoutConfig;
+};
+
 export function useWorkspaceLayout(workspaceId: string | null) {
   const [layout, setLayout] = useState<WorkspaceLayoutConfig>(DEFAULT_LAYOUT);
   const [isLoaded, setIsLoaded] = useState(false);
   const reportError = useErrorReporter("WorkspaceLayout");
   const workspaceIdRef = useRef<string | null>(workspaceId);
+  const reportErrorRef = useRef(reportError);
+  const pendingLayoutSaveRef = useRef<PendingLayoutSave | null>(null);
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const latestQueuedSavePromiseRef = useRef<Promise<void> | null>(null);
   const saveLayoutRef = useRef<
-    ((targetWorkspaceId: string, nextLayout: WorkspaceLayoutConfig) => void) | null
+    DebouncedFunction<(targetWorkspaceId: string, nextLayout: WorkspaceLayoutConfig) => Promise<void>>
+    | null
   >(null);
 
   workspaceIdRef.current = workspaceId;
+  reportErrorRef.current = reportError;
 
   if (!saveLayoutRef.current) {
-    saveLayoutRef.current = debounce(
-      (targetWorkspaceId: string, nextLayout: WorkspaceLayoutConfig) => {
-        void (async () => {
-          try {
-            await saveWorkspaceLayout(targetWorkspaceId, nextLayout);
-          } catch (error) {
-            reportError("Failed to save workspace layout", error);
+    const queuePendingLayoutSave = () => {
+      const pendingLayoutSave = pendingLayoutSaveRef.current;
+
+      if (!pendingLayoutSave) {
+        return Promise.resolve();
+      }
+
+      pendingLayoutSaveRef.current = null;
+
+      const queuedSavePromise = saveChainRef.current.catch(() => undefined).then(async () => {
+        try {
+          await saveWorkspaceLayout(pendingLayoutSave.workspaceId, pendingLayoutSave.layout);
+        } catch (error) {
+          reportErrorRef.current("Failed to save workspace layout", error);
+          throw error;
+        }
+      });
+
+      saveChainRef.current = queuedSavePromise;
+      latestQueuedSavePromiseRef.current = queuedSavePromise;
+
+      void queuedSavePromise.then(
+        () => {
+          if (latestQueuedSavePromiseRef.current === queuedSavePromise) {
+            latestQueuedSavePromiseRef.current = null;
           }
-        })();
-      },
-      SAVE_DEBOUNCE_MS,
-    );
+        },
+        () => {
+          if (latestQueuedSavePromiseRef.current === queuedSavePromise) {
+            latestQueuedSavePromiseRef.current = null;
+          }
+        },
+      );
+      void queuedSavePromise.catch(() => undefined);
+
+      return queuedSavePromise;
+    };
+
+    saveLayoutRef.current = debounce((targetWorkspaceId: string, nextLayout: WorkspaceLayoutConfig) => {
+      pendingLayoutSaveRef.current = {
+        workspaceId: targetWorkspaceId,
+        layout: nextLayout,
+      };
+
+      return queuePendingLayoutSave();
+    }, SAVE_DEBOUNCE_MS);
   }
+
+  const flushPendingLayoutSave = useCallback(async () => {
+    const flushResult = saveLayoutRef.current?.flush();
+
+    if (flushResult) {
+      await flushResult;
+    }
+
+    if (latestQueuedSavePromiseRef.current) {
+      await latestQueuedSavePromiseRef.current;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      void Promise.resolve(flushPendingLayoutSave()).catch(() => undefined);
+    };
+  }, [flushPendingLayoutSave, workspaceId]);
+
+  useEffect(() => {
+    return lifecycle.registerPendingWork(() => flushPendingLayoutSave());
+  }, [flushPendingLayoutSave]);
 
   useCancellableEffect(
     (token) => {
@@ -104,6 +172,10 @@ export function useWorkspaceLayout(workspaceId: string | null) {
         primaryPanelSize: sizes.primary ?? currentLayout.primaryPanelSize,
       };
 
+      pendingLayoutSaveRef.current = {
+        workspaceId,
+        layout: nextLayout,
+      };
       saveLayoutRef.current?.(workspaceId, nextLayout);
       return nextLayout;
     });
@@ -122,6 +194,10 @@ export function useWorkspaceLayout(workspaceId: string | null) {
         activeBoardId,
       };
 
+      pendingLayoutSaveRef.current = {
+        workspaceId,
+        layout: nextLayout,
+      };
       saveLayoutRef.current?.(workspaceId, nextLayout);
       return nextLayout;
     });
@@ -132,5 +208,6 @@ export function useWorkspaceLayout(workspaceId: string | null) {
     isLoaded,
     updatePanelSize,
     updateActiveBoard,
+    flushPendingLayoutSave,
   };
 }

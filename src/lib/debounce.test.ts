@@ -21,4 +21,39 @@ describe("debounce", () => {
 
     vi.useRealTimers();
   });
+
+  it("flushes the pending invocation immediately", async () => {
+    vi.useFakeTimers();
+
+    const { debounce } = await import("./debounce");
+    const handler = vi.fn();
+    const debounced = debounce(handler, 200);
+
+    debounced("latest");
+    debounced.flush();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith("latest");
+
+    vi.advanceTimersByTime(200);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
+  it("cancels a pending invocation", async () => {
+    vi.useFakeTimers();
+
+    const { debounce } = await import("./debounce");
+    const handler = vi.fn();
+    const debounced = debounce(handler, 200);
+
+    debounced("latest");
+    debounced.cancel();
+
+    vi.advanceTimersByTime(200);
+    expect(handler).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
 });

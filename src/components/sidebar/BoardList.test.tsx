@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { clearSharedErrors, getSharedErrors } from "../../hooks/shared-error-store";
+
 const { createBoardMock, deleteBoardMock, mapBoardItemsMock, listBoardsMock, renameBoardMock } =
   vi.hoisted(() => ({
     createBoardMock: vi.fn(),
@@ -66,6 +68,7 @@ function createBoardItem(
 
 describe("BoardList", () => {
   beforeEach(() => {
+    clearSharedErrors();
     vi.useRealTimers();
     createBoardMock.mockReset();
     deleteBoardMock.mockReset();
@@ -103,6 +106,7 @@ describe("BoardList", () => {
 
   afterEach(() => {
     cleanup();
+    clearSharedErrors();
     vi.restoreAllMocks();
   });
 
@@ -312,7 +316,6 @@ describe("BoardList", () => {
 
   it("logs create failures without surfacing them", async () => {
     const createError = new Error("create failed");
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     listBoardsMock.mockResolvedValue([]);
     createBoardMock.mockRejectedValue(createError);
@@ -323,17 +326,21 @@ describe("BoardList", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create board" }));
 
     await waitFor(() => {
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "[BoardList] Failed to create board",
-        createError,
-      );
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to create board",
+          source: "BoardList",
+          error: createError,
+          context: { workspaceId: activeWorkspaceId },
+          channel: "board-list:create",
+        }),
+      ]);
     });
     expect(useAppStore.getState().activeBoardId).toBeNull();
   });
 
   it("preserves the current selection when the initial board load fails", async () => {
     const loadError = new Error("load failed");
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const onBoardSelect = vi.fn();
 
     useAppStore.setState({
@@ -352,12 +359,19 @@ describe("BoardList", () => {
     });
     expect(useAppStore.getState().activeBoardId).toBe("board-1");
     expect(onBoardSelect).not.toHaveBeenCalled();
-    expect(consoleErrorSpy).toHaveBeenCalledWith("[BoardList] Failed to load boards", loadError);
+    expect(getSharedErrors()).toEqual([
+      expect.objectContaining({
+        message: "Failed to load boards",
+        source: "BoardList",
+        error: loadError,
+        context: { workspaceId: activeWorkspaceId },
+        channel: "board-list:load",
+      }),
+    ]);
   });
 
   it("notifies persistence when a later successful refresh confirms the selected board is gone", async () => {
     const loadError = new Error("load failed");
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const onBoardSelect = vi.fn();
 
     useAppStore.setState({
@@ -385,14 +399,16 @@ describe("BoardList", () => {
     });
     expect(useAppStore.getState().activeBoardId).toBeNull();
     expect(onBoardSelect).toHaveBeenCalledWith(null);
-    expect(consoleErrorSpy).toHaveBeenCalledWith("[BoardList] Failed to load boards", loadError);
+    expect(getSharedErrors()).toEqual([]);
   });
 
-  it("logs reload failures after create without surfacing them", async () => {
+  it("surfaces reload failures through the shared channel and clears them after retry succeeds", async () => {
     const refreshError = new Error("reload failed");
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    listBoardsMock.mockResolvedValueOnce([]).mockRejectedValueOnce(refreshError);
+    listBoardsMock
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(refreshError)
+      .mockResolvedValueOnce([createBoardItem({ id: "board-2", name: "Board 1", position: 1 })]);
     createBoardMock.mockResolvedValue("board-2");
 
     render(<BoardList />);
@@ -401,15 +417,36 @@ describe("BoardList", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create board" }));
 
     await waitFor(() => {
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "[BoardList] Failed to reload boards",
-        refreshError,
-      );
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to reload boards",
+          source: "BoardList",
+          error: refreshError,
+          channel: "board-list:reload",
+          retry: {
+            label: "Retry",
+            run: expect.any(Function),
+          },
+        }),
+      ]);
     });
     expect(useAppStore.getState().activeBoardPerWorkspace).toEqual({
       [activeWorkspaceId]: "board-2",
     });
     expect(useAppStore.getState().activeBoardId).toBe("board-2");
+
+    const [errorEntry] = getSharedErrors();
+    expect(errorEntry.retry).toEqual({
+      label: "Retry",
+      run: expect.any(Function),
+    });
+
+    await act(async () => {
+      await errorEntry.retry?.run();
+    });
+
+    expect(getSharedErrors()).toEqual([]);
+    expect(await screen.findByRole("button", { name: /Board 1/ })).toBeInTheDocument();
   });
 
   it("renames a board inline and reloads the list", async () => {
@@ -454,7 +491,6 @@ describe("BoardList", () => {
 
   it("logs rename failures without surfacing them", async () => {
     const renameError = new Error("rename failed");
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     listBoardsMock.mockResolvedValue([createBoardItem()]);
     renameBoardMock.mockRejectedValue(renameError);
@@ -471,10 +507,14 @@ describe("BoardList", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "[BoardList] Failed to rename board",
-        renameError,
-      );
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to rename board",
+          source: "BoardList",
+          error: renameError,
+          channel: "board-list:rename",
+        }),
+      ]);
     });
     expect(screen.getByRole("textbox", { name: "Board name" })).toHaveValue("Updated board");
   });
@@ -534,7 +574,6 @@ describe("BoardList", () => {
 
   it("logs delete failures without surfacing them", async () => {
     const deleteError = new Error("delete failed");
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     useAppStore.setState({
       activeBoardId: "board-1",
@@ -553,10 +592,15 @@ describe("BoardList", () => {
     );
 
     await waitFor(() => {
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "[BoardList] Failed to delete board",
-        deleteError,
-      );
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to delete board",
+          source: "BoardList",
+          error: deleteError,
+          context: { workspaceId: activeWorkspaceId },
+          channel: "board-list:delete",
+        }),
+      ]);
     });
     expect(useAppStore.getState().activeBoardPerWorkspace).toEqual({
       [activeWorkspaceId]: "board-1",

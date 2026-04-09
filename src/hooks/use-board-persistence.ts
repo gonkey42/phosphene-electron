@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import { getBoard, saveBoardCanvasData } from "../lib/board-operations";
+import { debounce, type DebouncedFunction } from "../lib/debounce";
 import { extractImagesToFilesystem, injectImagesFromFilesystem } from "../lib/image-extraction";
+import { lifecycle } from "../platform/desktop-api";
+import { useErrorReporter } from "./use-error-reporter";
 
 export type SaveStatus = "saved" | "saving" | "unsaved";
 
@@ -119,6 +122,15 @@ type CanvasChangeAppState = {
   gridColor?: string;
 };
 
+type PendingSave = {
+  boardId: string;
+  saveToken: number;
+  saveSessionId: number;
+  elements: ExcalidrawInitialDataState["elements"];
+  appState: CanvasChangeAppState;
+  files: ExcalidrawInitialDataState["files"];
+};
+
 function buildCanvasData(
   elements: ExcalidrawInitialDataState["elements"],
   appState: CanvasChangeAppState,
@@ -135,18 +147,27 @@ function buildCanvasData(
   });
 }
 
+function getSaveIdentity(pendingSave: Pick<PendingSave, "boardId" | "saveToken" | "saveSessionId">) {
+  return `${pendingSave.boardId}:${pendingSave.saveSessionId}:${pendingSave.saveToken}`;
+}
+
 export function useBoardPersistence(boardId: string | null | undefined) {
   const [state, dispatch] = useReducer(persistenceReducer, {
     phase: { type: "idle" },
     saveStatus: "saved",
   });
+  const reportError = useErrorReporter("BoardPersistence");
 
   const currentBoardIdRef = useRef<string | null>(boardId ?? null);
   const loadRequestRef = useRef(0);
   const boardSessionRef = useRef(0);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveSequenceRef = useRef(0);
-  const pendingSaveRef = useRef<null | { boardId: string; flush: () => void }>(null);
+  const pendingSaveRef = useRef<PendingSave | null>(null);
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const latestQueuedSavePromiseRef = useRef<Promise<void> | null>(null);
+  const latestQueuedSaveRef = useRef<PendingSave | null>(null);
+  const forcedFailureReportKeysRef = useRef(new Set<string>());
+  const saveDispatcherRef = useRef<DebouncedFunction<() => Promise<void>> | null>(null);
   const hasBoardId = boardId !== undefined && boardId !== null;
 
   const initialData =
@@ -174,31 +195,148 @@ export function useBoardPersistence(boardId: string | null | undefined) {
     currentBoardIdRef.current = boardId ?? null;
   }, [boardId]);
 
-  useEffect(() => {
-    const flushPendingSave = () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
+  const executeSave = useCallback(
+    async (pendingSave: PendingSave) => {
+      dispatch({ type: "MARK_SAVING", boardId: pendingSave.boardId });
+
+      try {
+        const extractedFiles =
+          pendingSave.files && Object.keys(pendingSave.files).length > 0
+            ? await extractImagesToFilesystem(pendingSave.boardId, pendingSave.files)
+            : {};
+        const canvasData = buildCanvasData(
+          pendingSave.elements,
+          pendingSave.appState,
+          extractedFiles,
+        );
+        await saveBoardCanvasData(pendingSave.boardId, canvasData);
+
+        if (
+          currentBoardIdRef.current === pendingSave.boardId &&
+          saveSequenceRef.current === pendingSave.saveToken &&
+          boardSessionRef.current === pendingSave.saveSessionId
+        ) {
+          dispatch({ type: "MARK_SAVED", boardId: pendingSave.boardId });
+        }
+      } catch (error) {
+        const saveIdentity = getSaveIdentity(pendingSave);
+        const shouldReportFailure =
+          forcedFailureReportKeysRef.current.has(saveIdentity) ||
+          (currentBoardIdRef.current === pendingSave.boardId &&
+            saveSequenceRef.current === pendingSave.saveToken &&
+            boardSessionRef.current === pendingSave.saveSessionId);
+
+        if (shouldReportFailure) {
+          reportError(`Failed to save board canvas data for board ${pendingSave.boardId}`, error, {
+            boardId: pendingSave.boardId,
+            saveToken: pendingSave.saveToken,
+            saveSessionId: pendingSave.saveSessionId,
+            forcedFlush: forcedFailureReportKeysRef.current.has(saveIdentity),
+          });
+        }
+
+        if (
+          currentBoardIdRef.current === pendingSave.boardId &&
+          saveSequenceRef.current === pendingSave.saveToken &&
+          boardSessionRef.current === pendingSave.saveSessionId
+        ) {
+          dispatch({ type: "MARK_SAVE_FAILED", boardId: pendingSave.boardId });
+        }
+
+        throw error;
+      } finally {
+        forcedFailureReportKeysRef.current.delete(getSaveIdentity(pendingSave));
+      }
+    },
+    [reportError],
+  );
+
+  const queuePendingSave = useCallback(() => {
+    const pendingSave = pendingSaveRef.current;
+
+    if (!pendingSave) {
+      return undefined;
+    }
+
+    pendingSaveRef.current = null;
+    latestQueuedSaveRef.current = pendingSave;
+
+    const queuedSavePromise = saveChainRef.current.catch(() => undefined).then(() => {
+      return executeSave(pendingSave);
+    });
+
+    saveChainRef.current = queuedSavePromise;
+    latestQueuedSavePromiseRef.current = queuedSavePromise;
+
+    void queuedSavePromise.then(
+      () => {
+        if (latestQueuedSavePromiseRef.current === queuedSavePromise) {
+          latestQueuedSavePromiseRef.current = null;
+        }
+        if (latestQueuedSaveRef.current === pendingSave) {
+          latestQueuedSaveRef.current = null;
+        }
+      },
+      () => {
+        if (latestQueuedSavePromiseRef.current === queuedSavePromise) {
+          latestQueuedSavePromiseRef.current = null;
+        }
+        if (latestQueuedSaveRef.current === pendingSave) {
+          latestQueuedSaveRef.current = null;
+        }
+      },
+    );
+
+    return queuedSavePromise;
+  }, [executeSave]);
+
+  if (!saveDispatcherRef.current) {
+    saveDispatcherRef.current = debounce(() => {
+      const savePromise = queuePendingSave();
+
+      if (!savePromise) {
+        return Promise.resolve();
       }
 
-      const pendingSave = pendingSaveRef.current;
-      pendingSaveRef.current = null;
-      pendingSave?.flush();
-    };
+      void savePromise.catch(() => undefined);
+      return savePromise;
+    }, DEBOUNCE_MS);
+  }
+
+  const flushPendingSave = useCallback(async () => {
+    if (pendingSaveRef.current) {
+      forcedFailureReportKeysRef.current.add(getSaveIdentity(pendingSaveRef.current));
+    }
+    if (latestQueuedSaveRef.current) {
+      forcedFailureReportKeysRef.current.add(getSaveIdentity(latestQueuedSaveRef.current));
+    }
+
+    const flushResult = saveDispatcherRef.current?.flush();
+
+    if (flushResult) {
+      await flushResult;
+    }
+
+    if (latestQueuedSavePromiseRef.current) {
+      await latestQueuedSavePromiseRef.current;
+    }
+  }, []);
+
+  useEffect(() => {
+    return lifecycle.registerPendingWork(() => flushPendingSave());
+  }, [flushPendingSave]);
+
+  useEffect(() => {
+    const flushCurrentPendingSave = () => flushPendingSave();
 
     if (pendingSaveRef.current && pendingSaveRef.current.boardId !== boardId) {
-      flushPendingSave();
+      void flushCurrentPendingSave().catch(() => undefined);
     }
 
     loadRequestRef.current += 1;
     const requestId = loadRequestRef.current;
     boardSessionRef.current += 1;
     const sessionId = boardSessionRef.current;
-
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
 
     if (boardId === undefined || boardId === null) {
       dispatch({ type: "RESET" });
@@ -274,9 +412,9 @@ export function useBoardPersistence(boardId: string | null | undefined) {
     })();
 
     return () => {
-      flushPendingSave();
+      void flushCurrentPendingSave().catch(() => undefined);
     };
-  }, [boardId]);
+  }, [boardId, flushPendingSave]);
 
   const handleChange = useCallback(
     (
@@ -286,10 +424,6 @@ export function useBoardPersistence(boardId: string | null | undefined) {
     ) => {
       if (boardId === undefined || boardId === null) {
         return;
-      }
-
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
       }
 
       const scheduledBoardId = boardId;
@@ -309,58 +443,15 @@ export function useBoardPersistence(boardId: string | null | undefined) {
         },
       });
 
-      const flushSave = () => {
-        if (
-          currentBoardIdRef.current === scheduledBoardId &&
-          boardSessionRef.current === saveSessionId
-        ) {
-          dispatch({ type: "MARK_SAVING", boardId: scheduledBoardId });
-        }
-
-        void (async () => {
-          try {
-            const extractedFiles =
-              files && Object.keys(files).length > 0
-                ? await extractImagesToFilesystem(scheduledBoardId, files)
-                : {};
-            const canvasData = buildCanvasData(elements, appState, extractedFiles);
-            await saveBoardCanvasData(scheduledBoardId, canvasData);
-
-            if (
-              currentBoardIdRef.current === scheduledBoardId &&
-              saveSequenceRef.current === saveToken &&
-              boardSessionRef.current === saveSessionId
-            ) {
-              dispatch({ type: "MARK_SAVED", boardId: scheduledBoardId });
-            }
-          } catch (error) {
-            console.error("Failed to save board canvas data", error);
-
-            if (
-              currentBoardIdRef.current === scheduledBoardId &&
-              saveSequenceRef.current === saveToken &&
-              boardSessionRef.current === saveSessionId
-            ) {
-              dispatch({ type: "MARK_SAVE_FAILED", boardId: scheduledBoardId });
-            }
-          }
-        })();
-      };
-
       pendingSaveRef.current = {
         boardId: scheduledBoardId,
-        flush: flushSave,
+        saveToken,
+        saveSessionId,
+        elements,
+        appState,
+        files,
       };
-
-      saveTimerRef.current = setTimeout(() => {
-        saveTimerRef.current = null;
-
-        if (pendingSaveRef.current?.boardId === scheduledBoardId) {
-          pendingSaveRef.current = null;
-        }
-
-        flushSave();
-      }, DEBOUNCE_MS);
+      saveDispatcherRef.current?.();
     },
     [boardId],
   );
@@ -371,5 +462,6 @@ export function useBoardPersistence(boardId: string | null | undefined) {
     isLoading,
     saveStatus,
     handleChange,
+    flushPendingSave,
   };
 }

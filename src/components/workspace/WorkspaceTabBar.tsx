@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import {
   createWorkspace,
@@ -11,6 +11,7 @@ import {
 import { useCancellableEffect } from "../../hooks/use-cancellable-effect";
 import { useErrorReporter } from "../../hooks/use-error-reporter";
 import { useInlineRename } from "../../hooks/use-inline-rename";
+import { clearSharedErrorChannel } from "../../hooks/shared-error-store";
 import { useAppStore } from "../../stores/app-store";
 
 import "./WorkspaceTabBar.css";
@@ -27,16 +28,23 @@ function getShortcutLabel(index: number) {
   return `${isMacPlatform() ? "⌘" : "Ctrl+"}${index + 1}`;
 }
 
+const WORKSPACE_LOAD_ERROR_CHANNEL = "workspace-tab-bar:load";
+const WORKSPACE_RELOAD_ERROR_CHANNEL = "workspace-tab-bar:reload";
+const WORKSPACE_CREATE_ERROR_CHANNEL = "workspace-tab-bar:create";
+const WORKSPACE_RENAME_ERROR_CHANNEL = "workspace-tab-bar:rename";
+const WORKSPACE_DELETE_ERROR_CHANNEL = "workspace-tab-bar:delete";
+
 export function WorkspaceTabBar() {
   const workspaces = useAppStore((state) => state.workspaces);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
+  const initialized = useAppStore((state) => state.initialized);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const setWorkspaces = useAppStore((state) => state.setWorkspaces);
   const reportError = useErrorReporter("WorkspaceTabBar");
   const draftInputRef = useRef<HTMLInputElement | null>(null);
+  const hasAttemptedInitialLoadRef = useRef(false);
 
-  function syncWorkspaces(items: WorkspaceListItem[]) {
-    const nextWorkspaces = items.map(mapWorkspace);
+  function setVisibleWorkspaces(nextWorkspaces: ReturnType<typeof mapWorkspace>[]) {
     setWorkspaces(nextWorkspaces);
 
     const currentActiveWorkspaceId = useAppStore.getState().activeWorkspaceId;
@@ -49,11 +57,56 @@ export function WorkspaceTabBar() {
     }
   }
 
-  async function refreshWorkspaces() {
-    const items = await listWorkspaces();
-    syncWorkspaces(items);
-    return items;
+  function syncWorkspaces(items: WorkspaceListItem[]) {
+    const nextWorkspaces = items.map(mapWorkspace);
+    setVisibleWorkspaces(nextWorkspaces);
+
+    clearSharedErrorChannel(WORKSPACE_LOAD_ERROR_CHANNEL);
+    clearSharedErrorChannel(WORKSPACE_RELOAD_ERROR_CHANNEL);
   }
+
+  const fetchWorkspaces = useCallback(async () => {
+    return await listWorkspaces();
+  }, []);
+
+  const refreshWorkspaces = useCallback(async () => {
+    try {
+      const items = await fetchWorkspaces();
+      syncWorkspaces(items);
+      return items;
+    } catch (error) {
+      reportError("Failed to reload workspaces", error, undefined, {
+        channel: WORKSPACE_RELOAD_ERROR_CHANNEL,
+        retry: {
+          label: "Retry",
+          run: async () => {
+            await refreshWorkspaces();
+          },
+        },
+      });
+      return null;
+    }
+  }, [fetchWorkspaces, reportError, syncWorkspaces]);
+
+  const retryInitialLoad = useCallback(async () => {
+    try {
+      const items = await fetchWorkspaces();
+      syncWorkspaces(items);
+      return items;
+    } catch (error) {
+      reportError("Failed to load workspaces", error, undefined, {
+        channel: WORKSPACE_LOAD_ERROR_CHANNEL,
+        retry: {
+          label: "Retry",
+          run: async () => {
+            await retryInitialLoad();
+          },
+        },
+      });
+      setWorkspaces([]);
+      return null;
+    }
+  }, [fetchWorkspaces, reportError, setWorkspaces, syncWorkspaces]);
 
   const {
     editingId: editingWorkspaceId,
@@ -63,32 +116,60 @@ export function WorkspaceTabBar() {
     cancelRename,
     commitRename,
   } = useInlineRename(async (workspaceId, trimmedName) => {
-    await renameWorkspace(workspaceId, trimmedName);
-    await refreshWorkspaces();
+    try {
+      await renameWorkspace(workspaceId, trimmedName);
+    } catch (error) {
+      reportError("Failed to rename workspace", error, undefined, {
+        channel: WORKSPACE_RENAME_ERROR_CHANNEL,
+      });
+      throw error;
+    }
   });
 
   useCancellableEffect(
     (token) => {
-      if (workspaces.length > 0) {
+      if (initialized || workspaces.length > 0 || hasAttemptedInitialLoadRef.current) {
         return;
       }
 
+      hasAttemptedInitialLoadRef.current = true;
+
       void (async () => {
         try {
-          const items = await listWorkspaces();
+          const items = await fetchWorkspaces();
 
-          if (!token.cancelled) {
-            syncWorkspaces(items);
+          if (token.cancelled) {
+            return;
           }
+
+          syncWorkspaces(items);
         } catch (error) {
-          if (!token.cancelled) {
-            reportError("Failed to load workspaces", error);
-            setWorkspaces([]);
+          if (token.cancelled) {
+            return;
           }
+
+          reportError("Failed to load workspaces", error, undefined, {
+            channel: WORKSPACE_LOAD_ERROR_CHANNEL,
+            retry: {
+              label: "Retry",
+              run: async () => {
+                await retryInitialLoad();
+              },
+            },
+          });
+          setWorkspaces([]);
         }
       })();
     },
-    [setActiveWorkspace, setWorkspaces, workspaces.length],
+    [
+      fetchWorkspaces,
+      initialized,
+      reportError,
+      retryInitialLoad,
+      setActiveWorkspace,
+      setWorkspaces,
+      workspaces.length,
+    ],
   );
 
   useEffect(() => {
@@ -104,10 +185,20 @@ export function WorkspaceTabBar() {
     try {
       const nextName = `Workspace ${workspaces.length + 1}`;
       const workspaceId = await createWorkspace(nextName, "🪟");
+      const nextPosition =
+        workspaces.reduce((maxPosition, workspace) => Math.max(maxPosition, workspace.position), -1) + 1;
+      const nextWorkspaces = workspaces.some((workspace) => workspace.id === workspaceId)
+        ? workspaces
+        : [...workspaces, mapWorkspace({ id: workspaceId, name: nextName, icon: "🪟", position: nextPosition })];
+
+      setVisibleWorkspaces(nextWorkspaces);
+      clearSharedErrorChannel(WORKSPACE_CREATE_ERROR_CHANNEL);
       setActiveWorkspace(workspaceId);
       await refreshWorkspaces();
     } catch (error) {
-      reportError("Failed to create workspace", error);
+      reportError("Failed to create workspace", error, undefined, {
+        channel: WORKSPACE_CREATE_ERROR_CHANNEL,
+      });
     }
   }
 
@@ -119,13 +210,19 @@ export function WorkspaceTabBar() {
         return;
       }
 
+      clearSharedErrorChannel(WORKSPACE_DELETE_ERROR_CHANNEL);
+
       if (editingWorkspaceId === workspaceId) {
         cancelRename();
       }
 
+      const nextWorkspaces = workspaces.filter((workspace) => workspace.id !== workspaceId);
+      setVisibleWorkspaces(nextWorkspaces);
       await refreshWorkspaces();
     } catch (error) {
-      reportError("Failed to delete workspace", error);
+      reportError("Failed to delete workspace", error, undefined, {
+        channel: WORKSPACE_DELETE_ERROR_CHANNEL,
+      });
     }
   }
 
@@ -139,8 +236,10 @@ export function WorkspaceTabBar() {
 
     try {
       await commitRename(workspaceId);
-    } catch (error) {
-      reportError("Failed to rename workspace", error);
+      clearSharedErrorChannel(WORKSPACE_RENAME_ERROR_CHANNEL);
+      await refreshWorkspaces();
+    } catch {
+      // The inline rename callback already reported the failure.
     }
   }
 
