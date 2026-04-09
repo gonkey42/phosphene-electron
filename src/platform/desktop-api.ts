@@ -25,6 +25,22 @@ export type MutationResult = {
   rowsAffected: number;
 };
 
+export type BrowserBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type BrowserState = {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  isLoading: boolean;
+  lastError: string | null;
+};
+
 type PendingWorkHandler = () => Promise<void> | void;
 type FlushCompletionDetail = {
   requestId: string;
@@ -191,5 +207,32 @@ export const lifecycle = {
     return () => {
       pendingWorkHandlers.delete(handler);
     };
+  },
+};
+
+export const browser = {
+  attach(bounds: BrowserBounds) {
+    return getDesktop().browser.attach(bounds);
+  },
+  setBounds(bounds: BrowserBounds) {
+    return getDesktop().browser.setBounds(bounds);
+  },
+  navigate(url: string) {
+    return getDesktop().browser.navigate(url);
+  },
+  goBack() {
+    return getDesktop().browser.goBack();
+  },
+  goForward() {
+    return getDesktop().browser.goForward();
+  },
+  reload() {
+    return getDesktop().browser.reload();
+  },
+  destroy() {
+    return getDesktop().browser.destroy();
+  },
+  onStateChanged(callback: (state: BrowserState) => void) {
+    return getDesktop().browser.onStateChanged(callback);
   },
 };

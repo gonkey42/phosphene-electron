@@ -31,6 +31,22 @@ type MutationResult = {
   rowsAffected: number;
 };
 
+type BrowserBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type BrowserState = {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  isLoading: boolean;
+  lastError: string | null;
+};
+
 let lifecycleRequestSequence = 0;
 let lifecycleReady =
   (window as Window & { [LIFECYCLE_READY_FLAG]?: boolean })[LIFECYCLE_READY_FLAG] === true;
@@ -184,6 +200,40 @@ contextBridge.exposeInMainWorld("desktop", {
     flushPendingWork() {
       lifecycleRequestSequence += 1;
       return requestRendererFlush(`renderer-${lifecycleRequestSequence}`);
+    },
+  },
+  browser: {
+    attach(bounds: BrowserBounds) {
+      return ipcRenderer.invoke("browser:attach", bounds);
+    },
+    setBounds(bounds: BrowserBounds) {
+      return ipcRenderer.invoke("browser:set-bounds", bounds);
+    },
+    navigate(url: string) {
+      return ipcRenderer.invoke("browser:navigate", url);
+    },
+    goBack() {
+      return ipcRenderer.invoke("browser:back");
+    },
+    goForward() {
+      return ipcRenderer.invoke("browser:forward");
+    },
+    reload() {
+      return ipcRenderer.invoke("browser:reload");
+    },
+    destroy() {
+      return ipcRenderer.invoke("browser:destroy");
+    },
+    onStateChanged(callback: (state: BrowserState) => void) {
+      const listener = (_event: unknown, state: BrowserState) => {
+        callback(state);
+      };
+
+      ipcRenderer.on("browser:state-changed", listener);
+
+      return () => {
+        ipcRenderer.off("browser:state-changed", listener);
+      };
     },
   },
 });

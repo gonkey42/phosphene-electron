@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { registerDatabaseIPC, closeDatabase } from "./ipc/database";
 import { registerFilesystemIPC } from "./ipc/filesystem";
+import { registerBrowserIPC } from "./ipc/browser";
 
 const isDev = !app.isPackaged;
 const QUIT_FLUSH_TIMEOUT_MS = 1500;
@@ -276,6 +277,9 @@ async function bootstrap() {
   });
   await runBootstrapPhase("filesystem-ipc", () => {
     registerFilesystemIPC(userDataPath);
+  });
+  await runBootstrapPhase("browser-ipc", () => {
+    registerBrowserIPC();
   });
   await runBootstrapPhase("create-window", async () => {
     await createWindow();

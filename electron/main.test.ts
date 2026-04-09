@@ -5,19 +5,53 @@ const appQuitMock = vi.fn();
 const appWhenReadyMock = vi.fn();
 const appGetPathMock = vi.fn();
 const appSetPathMock = vi.fn();
+const ipcMainHandleMock = vi.fn();
 const ipcMainOnMock = vi.fn();
 const ipcMainOffMock = vi.fn();
 const showErrorBoxMock = vi.fn();
 const browserWindowConstructorMock = vi.fn();
 const browserWindowGetAllWindowsMock = vi.fn();
+const browserWindowFromWebContentsMock = vi.fn();
 const browserWindowLoadFileMock = vi.fn();
 const browserWindowLoadUrlMock = vi.fn();
 const browserWindowShowMock = vi.fn();
 const browserWindowDestroyMock = vi.fn();
+const browserWindowSetBrowserViewMock = vi.fn();
+
+class BrowserViewMock {
+  constructor(_options?: unknown) {}
+
+  listeners = new Map<string, Set<(...args: unknown[]) => void>>();
+
+  setBounds = vi.fn();
+  webContents = {
+    loadURL: vi.fn(),
+    canGoBack: vi.fn(() => false),
+    canGoForward: vi.fn(() => false),
+    goBack: vi.fn(),
+    goForward: vi.fn(),
+    reload: vi.fn(),
+    getURL: vi.fn(() => ""),
+    getTitle: vi.fn(() => ""),
+    close: vi.fn(),
+    on: vi.fn((eventName: string, listener: (...args: unknown[]) => void) => {
+      const listeners = this.listeners.get(eventName) ?? new Set();
+      listeners.add(listener);
+      this.listeners.set(eventName, listeners);
+    }),
+    off: vi.fn((eventName: string, listener: (...args: unknown[]) => void) => {
+      this.listeners.get(eventName)?.delete(listener);
+    }),
+  };
+
+  emit(eventName: string, ...args: unknown[]) {
+    this.listeners.get(eventName)?.forEach((listener) => listener({}, ...args));
+  }
+}
 
 class BrowserWindowMock {
   static getAllWindows = browserWindowGetAllWindowsMock;
-
+  static fromWebContents = browserWindowFromWebContentsMock;
   constructor(options?: unknown) {
     browserWindowConstructorMock(options);
   }
@@ -27,6 +61,7 @@ class BrowserWindowMock {
   loadURL = browserWindowLoadUrlMock;
   show = browserWindowShowMock;
   destroy = browserWindowDestroyMock;
+  setBrowserView = browserWindowSetBrowserViewMock;
   isDestroyed = vi.fn(() => false);
   on = vi.fn();
   off = vi.fn();
@@ -53,10 +88,12 @@ vi.mock("electron", () => ({
     setPath: appSetPathMock,
   },
   BrowserWindow: BrowserWindowMock,
+  BrowserView: BrowserViewMock,
   dialog: {
     showErrorBox: showErrorBoxMock,
   },
   ipcMain: {
+    handle: ipcMainHandleMock,
     on: ipcMainOnMock,
     off: ipcMainOffMock,
   },
@@ -78,15 +115,18 @@ describe("electron main close flushing", () => {
     appWhenReadyMock.mockReset();
     appGetPathMock.mockReset();
     appSetPathMock.mockReset();
+    ipcMainHandleMock.mockClear();
     ipcMainOnMock.mockClear();
     ipcMainOffMock.mockClear();
     showErrorBoxMock.mockReset();
     browserWindowConstructorMock.mockReset();
     browserWindowGetAllWindowsMock.mockReset();
+    browserWindowFromWebContentsMock.mockReset();
     browserWindowLoadFileMock.mockReset();
     browserWindowLoadUrlMock.mockReset();
     browserWindowShowMock.mockReset();
     browserWindowDestroyMock.mockReset();
+    browserWindowSetBrowserViewMock.mockReset();
     appWhenReadyMock.mockResolvedValue(undefined);
     appGetPathMock.mockImplementation((name: string) => {
       if (name === "appData") {
@@ -175,6 +215,148 @@ describe("electron main close flushing", () => {
     expect(browserWindowShowMock.mock.invocationCallOrder[0]).toBeGreaterThan(
       browserWindowLoadFileMock.mock.invocationCallOrder[0],
     );
+  });
+
+  it("registers browser IPC during bootstrap", async () => {
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:attach", expect.any(Function));
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:set-bounds", expect.any(Function));
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:navigate", expect.any(Function));
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:back", expect.any(Function));
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:forward", expect.any(Function));
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:reload", expect.any(Function));
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:destroy", expect.any(Function));
+  });
+
+  it("attaches a browser view and navigates through the registered handlers", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const navigateHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:navigate",
+    )?.[1];
+
+    expect(attachHandler).toEqual(expect.any(Function));
+    expect(navigateHandler).toEqual(expect.any(Function));
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 10, y: 20, width: 300, height: 200 },
+    );
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenCalled();
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+    expect(attachedView.setBounds).toHaveBeenCalledWith({
+      x: 10,
+      y: 20,
+      width: 300,
+      height: 200,
+    });
+
+    await navigateHandler?.({ sender: windowInstance.webContents } as never, "https://example.com");
+
+    expect(attachedView.webContents.loadURL).toHaveBeenCalledWith("https://example.com");
+  });
+
+  it("emits browser state updates and cleans up the attached view", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const destroyHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:destroy",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+    );
+
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+    attachedView.webContents.getURL.mockReturnValue("https://example.com");
+    attachedView.webContents.getTitle.mockReturnValue("Example");
+    attachedView.webContents.canGoBack.mockReturnValue(true);
+    attachedView.webContents.canGoForward.mockReturnValue(false);
+
+    attachedView.emit("did-start-loading");
+    attachedView.emit("did-stop-loading");
+    attachedView.emit("did-fail-load", -2, "Navigation failed");
+
+    expect(windowInstance.webContents.send).toHaveBeenCalledWith(
+      "browser:state-changed",
+      expect.objectContaining({
+        isLoading: true,
+        lastError: null,
+      }),
+    );
+    expect(windowInstance.webContents.send).toHaveBeenCalledWith(
+      "browser:state-changed",
+      expect.objectContaining({
+        url: "https://example.com",
+        title: "Example",
+        canGoBack: true,
+        canGoForward: false,
+        isLoading: false,
+        lastError: null,
+      }),
+    );
+    expect(windowInstance.webContents.send).toHaveBeenCalledWith(
+      "browser:state-changed",
+      expect.objectContaining({
+        isLoading: false,
+        lastError: "Navigation failed",
+      }),
+    );
+
+    await destroyHandler?.({ sender: windowInstance.webContents } as never);
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(null);
+    expect(attachedView.webContents.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans up browser bookkeeping when the owning window closes", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 400, height: 300 },
+    );
+
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+    const closedListener = windowInstance.on.mock.calls.find(([eventName]) => eventName === "closed")?.[1];
+
+    expect(closedListener).toEqual(expect.any(Function));
+
+    closedListener?.();
+    attachedView.emit("did-start-loading");
+
+    expect(windowInstance.webContents.send).toHaveBeenCalledTimes(1);
+    expect(attachedView.webContents.close).toHaveBeenCalledTimes(1);
   });
 
   it("ignores malformed flush responses until a valid payload arrives", async () => {
