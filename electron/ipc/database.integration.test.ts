@@ -12,8 +12,6 @@ const tempFiles: string[] = [];
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const electronBinary = path.join(
   workspaceRoot,
-  "..",
-  "..",
   "node_modules",
   ".bin",
   process.platform === "win32" ? "electron.cmd" : "electron",
