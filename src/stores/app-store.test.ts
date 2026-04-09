@@ -9,6 +9,8 @@ describe("useAppStore", () => {
     const { useAppStore } = await import("./app-store");
     const state = useAppStore.getState();
 
+    expect(state.themePreference).toBe("system");
+    expect(state.resolvedTheme).toBe("light");
     expect(state.workspaces).toEqual([]);
     expect(state.activeWorkspaceId).toBeNull();
     expect(state.boards).toEqual([]);
@@ -115,6 +117,19 @@ describe("useAppStore", () => {
       status: "idle",
       initialized: false,
       initializationError: null,
+    });
+  });
+
+  it("updates theme preference and resolved theme independently", async () => {
+    const { useAppStore } = await import("./app-store");
+
+    useAppStore.getState().setThemePreference("dark");
+    useAppStore.getState().setResolvedTheme("dark");
+    useAppStore.getState().setThemePreference("light");
+
+    expect(useAppStore.getState()).toMatchObject({
+      themePreference: "light",
+      resolvedTheme: "dark",
     });
   });
 });

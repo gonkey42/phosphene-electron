@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { DEFAULT_THEME_PREFERENCE } from "../lib/theme-types";
+import type { ResolvedTheme, ThemePreference } from "../lib/theme-types";
 
 export type FocusTarget = "canvas" | "browser" | "widget" | "global";
 export type InitializationStatus = "idle" | "loading" | "ready" | "error";
@@ -29,6 +31,11 @@ export interface Board {
 }
 
 interface AppState {
+  themePreference: ThemePreference;
+  resolvedTheme: ResolvedTheme;
+  setThemePreference: (preference: ThemePreference) => void;
+  setResolvedTheme: (theme: ResolvedTheme) => void;
+
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   setActiveWorkspace: (id: string) => void;
@@ -57,6 +64,11 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
+  themePreference: DEFAULT_THEME_PREFERENCE,
+  resolvedTheme: "light",
+  setThemePreference: (preference) => set({ themePreference: preference }),
+  setResolvedTheme: (theme) => set({ resolvedTheme: theme }),
+
   workspaces: [],
   activeWorkspaceId: null,
   setActiveWorkspace: (id) =>
