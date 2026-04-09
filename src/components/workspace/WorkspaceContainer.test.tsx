@@ -14,6 +14,15 @@ const { useWorkspaceLayoutMock } = vi.hoisted(() => ({
   useWorkspaceLayoutMock: vi.fn(),
 }));
 
+const workspaceFlushLayoutMocks = {
+  "workspace-1": vi.fn(),
+  "workspace-2": vi.fn(),
+  "workspace-3": vi.fn(),
+  "workspace-4": vi.fn(),
+  "workspace-5": vi.fn(),
+  "workspace-6": vi.fn(),
+};
+
 type MotionDivProps = HTMLAttributes<HTMLDivElement> & {
   animate?: string;
   custom?: number;
@@ -150,6 +159,18 @@ describe("WorkspaceContainer", () => {
     workspaceUpdateActiveBoardMocks["workspace-4"].mockReset();
     workspaceUpdateActiveBoardMocks["workspace-5"].mockReset();
     workspaceUpdateActiveBoardMocks["workspace-6"].mockReset();
+    workspaceFlushLayoutMocks["workspace-1"].mockReset();
+    workspaceFlushLayoutMocks["workspace-2"].mockReset();
+    workspaceFlushLayoutMocks["workspace-3"].mockReset();
+    workspaceFlushLayoutMocks["workspace-4"].mockReset();
+    workspaceFlushLayoutMocks["workspace-5"].mockReset();
+    workspaceFlushLayoutMocks["workspace-6"].mockReset();
+    workspaceFlushLayoutMocks["workspace-1"].mockResolvedValue(undefined);
+    workspaceFlushLayoutMocks["workspace-2"].mockResolvedValue(undefined);
+    workspaceFlushLayoutMocks["workspace-3"].mockResolvedValue(undefined);
+    workspaceFlushLayoutMocks["workspace-4"].mockResolvedValue(undefined);
+    workspaceFlushLayoutMocks["workspace-5"].mockResolvedValue(undefined);
+    workspaceFlushLayoutMocks["workspace-6"].mockResolvedValue(undefined);
     useAppStore.setState({
       workspaces: [
         { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
@@ -175,6 +196,8 @@ describe("WorkspaceContainer", () => {
         workspaceUpdateActiveBoardMocks[
           workspaceId as keyof typeof workspaceUpdateActiveBoardMocks
         ],
+      flushPendingLayoutSave:
+        workspaceFlushLayoutMocks[workspaceId as keyof typeof workspaceFlushLayoutMocks],
     }));
   });
 
@@ -462,6 +485,18 @@ describe("WorkspaceContainer", () => {
       workspaceId: "workspace-4",
       isInteractive: true,
     });
+  });
+
+  it("flushes layout persistence when a mounted workspace becomes inactive", () => {
+    render(<WorkspaceContainer />);
+
+    act(() => {
+      useAppStore.setState({ activeWorkspaceId: "workspace-4" });
+    });
+
+    expect(workspaceFlushLayoutMocks["workspace-3"]).toHaveBeenCalledTimes(1);
+    expect(workspaceFlushLayoutMocks["workspace-2"]).not.toHaveBeenCalled();
+    expect(workspaceFlushLayoutMocks["workspace-4"]).not.toHaveBeenCalled();
   });
 
   it("dispatches a resize event when the active workspace slide completes", () => {

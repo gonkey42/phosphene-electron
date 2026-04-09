@@ -11,6 +11,26 @@ function asDataURL(value: string): ExcalidrawFile["dataURL"] {
   return value as ExcalidrawFile["dataURL"];
 }
 
+function getErrorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code: unknown }).code)
+    : undefined;
+}
+
+function isMissingPathError(error: unknown): boolean {
+  const code = getErrorCode(error);
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+function isPermissionError(error: unknown): boolean {
+  const code = getErrorCode(error);
+  return code === "EACCES" || code === "EPERM";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export async function extractImagesToFilesystem(
   boardId: string,
   files: ExcalidrawFiles,
@@ -41,7 +61,23 @@ export async function extractImagesToFilesystem(
         bytes[index] = binary.charCodeAt(index);
       }
 
-      await fs.writeFile(absolutePath, bytes);
+      try {
+        await fs.writeFile(absolutePath, bytes);
+      } catch (error) {
+        if (isPermissionError(error)) {
+          console.error("Image extraction target is inaccessible:", {
+            fileId,
+            path: absolutePath,
+            code: getErrorCode(error),
+            message: getErrorMessage(error),
+          });
+        } else {
+          console.error(`Failed to extract image ${fileId}:`, error);
+        }
+
+        extractedFiles[fileId] = fileData;
+        continue;
+      }
 
       extractedFiles[fileId] = {
         ...fileData,
@@ -70,13 +106,54 @@ export async function injectImagesFromFilesystem(files: ExcalidrawFiles): Promis
       const relativePath = fileData.dataURL.slice(FILE_REF_PREFIX.length);
       const absolutePath = await paths.join(appData, relativePath);
 
-      if (!(await fs.exists(absolutePath))) {
+      let imageExists = false;
+
+      try {
+        imageExists = await fs.exists(absolutePath);
+      } catch (error) {
+        if (isPermissionError(error)) {
+          console.error("Image file is inaccessible:", {
+            fileId,
+            path: absolutePath,
+            code: getErrorCode(error),
+            message: getErrorMessage(error),
+          });
+        } else {
+          console.error(`Failed to inspect image ${fileId}:`, error);
+        }
+
+        injectedFiles[fileId] = fileData;
+        continue;
+      }
+
+      if (!imageExists) {
         console.warn(`Image file not found: ${relativePath}`);
         injectedFiles[fileId] = fileData;
         continue;
       }
 
-      const bytes = await fs.readFile(absolutePath);
+      let bytes: Uint8Array;
+
+      try {
+        bytes = await fs.readFile(absolutePath);
+      } catch (error) {
+        if (isMissingPathError(error)) {
+          console.warn(`Image file not found: ${relativePath}`);
+        } else if (isPermissionError(error)) {
+          console.error("Image file is inaccessible:", {
+            fileId,
+            path: absolutePath,
+            code: getErrorCode(error),
+            message: getErrorMessage(error),
+          });
+        } else {
+          console.error(`Failed to inject image ${fileId}:`, error);
+        }
+
+        injectedFiles[fileId] = fileData;
+        continue;
+      }
+
       let binary = "";
 
       for (const byte of bytes) {

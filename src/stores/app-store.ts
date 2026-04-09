@@ -1,6 +1,16 @@
 import { create } from "zustand";
 
 export type FocusTarget = "canvas" | "browser" | "widget" | "global";
+export type InitializationStatus = "idle" | "loading" | "ready" | "error";
+
+export interface InitializationError {
+  title: string;
+  detail: string;
+}
+
+export type InitializationState =
+  | { status: "idle" | "loading" | "ready" }
+  | { status: "error"; error: InitializationError };
 
 export interface Workspace {
   id: string;
@@ -40,8 +50,10 @@ interface AppState {
   focus: FocusTarget;
   setFocus: (focus: FocusTarget) => void;
 
+  status: InitializationStatus;
+  initializationError: InitializationError | null;
   initialized: boolean;
-  setInitialized: (initialized: boolean) => void;
+  setInitializationState: (state: InitializationState) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -84,6 +96,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   focus: "global",
   setFocus: (focus) => set({ focus }),
 
+  status: "idle",
+  initializationError: null,
   initialized: false,
-  setInitialized: (initialized) => set({ initialized }),
+  setInitializationState: (initializationState) =>
+    set({
+      status: initializationState.status,
+      initialized: initializationState.status === "ready",
+      initializationError:
+        initializationState.status === "error" ? initializationState.error : null,
+    }),
 }));

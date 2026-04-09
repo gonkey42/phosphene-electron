@@ -103,7 +103,22 @@ export function WorkspaceContainer() {
 }
 
 function WorkspacePage({ workspaceId, isActive }: { workspaceId: string; isActive: boolean }) {
-  const { layout, isLoaded, updatePanelSize, updateActiveBoard } = useWorkspaceLayout(workspaceId);
+  const { layout, isLoaded, updatePanelSize, updateActiveBoard, flushPendingLayoutSave } =
+    useWorkspaceLayout(workspaceId);
+  const wasActiveRef = useRef(isActive);
+
+  useEffect(() => {
+    if (wasActiveRef.current && !isActive) {
+      void Promise.resolve(flushPendingLayoutSave()).catch((error) => {
+        console.error("[WorkspaceContainer] Failed to flush inactive workspace layout", {
+          workspaceId,
+          error,
+        });
+      });
+    }
+
+    wasActiveRef.current = isActive;
+  }, [flushPendingLayoutSave, isActive, workspaceId]);
 
   if (!isLoaded) {
     return null;

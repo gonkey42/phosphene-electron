@@ -1,16 +1,88 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, type WebContents } from "electron";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { registerDatabaseIPC, closeDatabase } from "./ipc/database";
 import { registerFilesystemIPC } from "./ipc/filesystem";
 
 const isDev = !app.isPackaged;
-const legacyUserDataPath = path.join(app.getPath("appData"), "app.phosphene.desktop");
+const QUIT_FLUSH_TIMEOUT_MS = 1500;
+const closeApprovedWindowIds = new Set<number>();
+const closeFlushInProgressWindowIds = new Set<number>();
 
-mkdirSync(legacyUserDataPath, { recursive: true });
-app.setPath("userData", legacyUserDataPath);
+type FlushResponsePayload = {
+  requestId: string;
+  ok: boolean;
+  error?: string;
+};
 
-function createWindow(): BrowserWindow {
+class RendererFlushError extends Error {
+  kind: "failure" | "timeout";
+
+  constructor(kind: "failure" | "timeout", message: string) {
+    super(message);
+    this.name = "RendererFlushError";
+    this.kind = kind;
+  }
+}
+
+function isFlushResponsePayload(payload: unknown): payload is FlushResponsePayload {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    typeof (payload as { requestId?: unknown }).requestId === "string" &&
+    typeof (payload as { ok?: unknown }).ok === "boolean" &&
+    ("error" in payload
+      ? typeof (payload as { error?: unknown }).error === "string" ||
+        typeof (payload as { error?: unknown }).error === "undefined"
+      : true)
+  );
+}
+
+class BootstrapError extends Error {
+  phase: string;
+  cause: unknown;
+
+  constructor(phase: string, cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "BootstrapError";
+    this.phase = phase;
+    this.cause = cause;
+  }
+}
+
+function logBootstrapError(error: unknown) {
+  const bootstrapError =
+    error instanceof BootstrapError ? error : new BootstrapError("startup", error);
+  const cause = bootstrapError.cause instanceof Error ? bootstrapError.cause : null;
+
+  console.error("[bootstrap:error]", {
+    phase: bootstrapError.phase,
+    message: bootstrapError.message,
+    stack: cause?.stack,
+  });
+}
+
+function getBootstrapErrorMessage(error: unknown): string {
+  const bootstrapError =
+    error instanceof BootstrapError ? error : new BootstrapError("startup", error);
+
+  return `Phosphene could not start during ${bootstrapError.phase}.\n\n${bootstrapError.message}\n\nCheck filesystem permissions or reinstall the app if the preload script is missing.`;
+}
+
+function presentBootstrapFailure(title: string, error: unknown) {
+  logBootstrapError(error);
+  dialog.showErrorBox(title, getBootstrapErrorMessage(error));
+}
+
+async function runBootstrapPhase<T>(phase: string, action: () => Promise<T> | T): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    throw new BootstrapError(phase, error);
+  }
+}
+
+async function createWindow(): Promise<BrowserWindow> {
   const preloadPath = path.join(__dirname, "preload.js");
 
   const win = new BrowserWindow({
@@ -19,35 +91,233 @@ function createWindow(): BrowserWindow {
     height: 900,
     minWidth: 800,
     minHeight: 600,
+    show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: preloadPath,
     },
   });
+  attachDurableWindowCloseHandler(win);
 
-  if (isDev) {
-    win.loadURL("http://localhost:5173");
-  } else {
-    win.loadFile(path.join(__dirname, "../dist/index.html"));
+  win.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      console.error("[window:did-fail-load]", {
+        url: validatedURL,
+        errorCode,
+        errorDescription,
+        isMainFrame,
+      });
+    },
+  );
+  win.webContents.on("render-process-gone", (_event, details) => {
+    console.error("[window:render-process-gone]", details);
+  });
+
+  try {
+    if (isDev) {
+      await win.loadURL("http://localhost:5173");
+    } else {
+      await win.loadFile(path.join(__dirname, "../dist/index.html"));
+    }
+  } catch (error) {
+    if (!win.isDestroyed()) {
+      win.destroy();
+    }
+    throw error;
   }
 
+  win.show();
   return win;
 }
 
-app.whenReady().then(() => {
+function waitForRendererFlush(webContents: WebContents, timeoutMs: number): Promise<void> {
+  const requestId = `quit-flush-${webContents.id}-${Date.now()}`;
+
+  return new Promise((resolve, reject) => {
+    if (webContents.isDestroyed()) {
+      resolve();
+      return;
+    }
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      ipcMain.off("lifecycle:flush-response", handleResponse);
+      webContents.off("destroyed", handleDestroyed);
+    };
+
+    const handleResponse = (event: Electron.IpcMainEvent, payload: unknown) => {
+      if (event.sender !== webContents || !isFlushResponsePayload(payload)) {
+        return;
+      }
+
+      if (payload.requestId !== requestId) {
+        return;
+      }
+
+      cleanup();
+
+      if (!payload.ok) {
+        reject(
+          new RendererFlushError(
+            "failure",
+            payload.error ?? `Renderer ${webContents.id} reported a flush failure`,
+          ),
+        );
+        return;
+      }
+
+      resolve();
+    };
+
+    const handleDestroyed = () => {
+      cleanup();
+      resolve();
+    };
+
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      reject(
+        new RendererFlushError(
+          "timeout",
+          `Renderer ${webContents.id} flush timed out after ${timeoutMs}ms`,
+        ),
+      );
+    }, timeoutMs);
+
+    ipcMain.on("lifecycle:flush-response", handleResponse);
+    webContents.on("destroyed", handleDestroyed);
+    webContents.send("lifecycle:flush-request", requestId);
+  });
+}
+
+function allowWindowClose(window: BrowserWindow) {
+  closeApprovedWindowIds.add(window.id);
+  window.close();
+}
+
+function getFlushLogEvent(scope: "window:close" | "quit", error: unknown) {
+  if (scope === "window:close") {
+    return error instanceof RendererFlushError && error.kind === "failure"
+      ? "[window:close-flush-failure]"
+      : "[window:close-flush-timeout]";
+  }
+
+  return error instanceof RendererFlushError && error.kind === "failure"
+    ? "[quit:flush-failure]"
+    : "[quit:flush-timeout]";
+}
+
+export function attachDurableWindowCloseHandler(window: BrowserWindow) {
+  window.on("close", (event) => {
+    if (quitFlushComplete || closeApprovedWindowIds.has(window.id)) {
+      closeApprovedWindowIds.delete(window.id);
+      return;
+    }
+
+    event.preventDefault();
+
+    if (closeFlushInProgressWindowIds.has(window.id)) {
+      return;
+    }
+
+    closeFlushInProgressWindowIds.add(window.id);
+
+    void waitForRendererFlush(window.webContents, QUIT_FLUSH_TIMEOUT_MS)
+      .catch((error) => {
+        console.error(getFlushLogEvent("window:close", error), {
+          windowId: window.id,
+          timeoutMs: QUIT_FLUSH_TIMEOUT_MS,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        closeFlushInProgressWindowIds.delete(window.id);
+
+        if (window.isDestroyed()) {
+          return;
+        }
+
+        allowWindowClose(window);
+      });
+  });
+}
+
+async function flushRenderersBeforeQuit() {
+  const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
+  const results = await Promise.allSettled(
+    windows.map((window) => waitForRendererFlush(window.webContents, QUIT_FLUSH_TIMEOUT_MS)),
+  );
+
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      console.error(getFlushLogEvent("quit", result.reason), {
+        windowId: windows[index]?.id,
+        timeoutMs: QUIT_FLUSH_TIMEOUT_MS,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    }
+  });
+}
+
+async function bootstrap() {
+  const legacyUserDataPath = path.join(app.getPath("appData"), "app.phosphene.desktop");
+
+  await runBootstrapPhase("user-data", () => {
+    mkdirSync(legacyUserDataPath, { recursive: true });
+    app.setPath("userData", legacyUserDataPath);
+  });
+
   const userDataPath = app.getPath("userData");
 
-  registerDatabaseIPC(userDataPath);
-  registerFilesystemIPC(userDataPath);
-
-  createWindow();
+  await runBootstrapPhase("database-ipc", () => {
+    registerDatabaseIPC(userDataPath);
+  });
+  await runBootstrapPhase("filesystem-ipc", () => {
+    registerFilesystemIPC(userDataPath);
+  });
+  await runBootstrapPhase("create-window", async () => {
+    await createWindow();
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      void createWindow().catch((error) => {
+        presentBootstrapFailure(
+          "Phosphene could not reopen a window",
+          new BootstrapError("activate-create-window", error),
+        );
+      });
     }
   });
+}
+
+void app.whenReady().then(bootstrap).catch((error) => {
+  presentBootstrapFailure("Phosphene failed to start", error);
+  app.quit();
+});
+
+let quitFlushComplete = false;
+let quitFlushInProgress = false;
+
+app.on("before-quit", (event) => {
+  if (quitFlushComplete || quitFlushInProgress) {
+    return;
+  }
+
+  event.preventDefault();
+  quitFlushInProgress = true;
+
+  void flushRenderersBeforeQuit()
+    .catch((error) => {
+      console.error("[quit:flush-failed]", error);
+    })
+    .finally(() => {
+      quitFlushComplete = true;
+      quitFlushInProgress = false;
+      app.quit();
+    });
 });
 
 app.on("window-all-closed", () => {

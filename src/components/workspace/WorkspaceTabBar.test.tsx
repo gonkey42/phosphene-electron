@@ -1,5 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { clearSharedErrors, getSharedErrors } from "../../hooks/shared-error-store";
 
 const {
   createWorkspaceMock,
@@ -58,6 +60,7 @@ function setPlatform(platform: string) {
 
 describe("WorkspaceTabBar", () => {
   beforeEach(() => {
+    clearSharedErrors();
     vi.useRealTimers();
     createWorkspaceMock.mockReset();
     deleteWorkspaceMock.mockReset();
@@ -66,12 +69,14 @@ describe("WorkspaceTabBar", () => {
     useAppStore.setState({
       workspaces: [],
       activeWorkspaceId: null,
+      initialized: false,
     });
     setPlatform("Linux x86_64");
   });
 
   afterEach(() => {
     cleanup();
+    clearSharedErrors();
     vi.restoreAllMocks();
   });
 
@@ -141,6 +146,189 @@ describe("WorkspaceTabBar", () => {
     expect(await screen.findByRole("button", { name: "Workspace 3" })).toBeInTheDocument();
     expect(listWorkspacesMock).toHaveBeenCalledTimes(2);
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
+  });
+
+  it("does not refetch the initial empty workspace load on rerender", async () => {
+    listWorkspacesMock.mockResolvedValue([]);
+
+    const { rerender } = render(<WorkspaceTabBar />);
+
+    await screen.findByRole("button", { name: "Create workspace" });
+
+    rerender(<WorkspaceTabBar />);
+
+    expect(listWorkspacesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the initial load when startup has already completed with an empty list", async () => {
+    useAppStore.setState({
+      workspaces: [],
+      activeWorkspaceId: null,
+      initialized: true,
+    });
+
+    render(<WorkspaceTabBar />);
+
+    expect(await screen.findByRole("button", { name: "Create workspace" })).toBeInTheDocument();
+    expect(listWorkspacesMock).not.toHaveBeenCalled();
+  });
+
+  it("does not refetch the initial workspace load after a failed attempt on rerender", async () => {
+    listWorkspacesMock.mockRejectedValue(new Error("db failed"));
+
+    const { rerender } = render(<WorkspaceTabBar />);
+
+    await waitFor(() => {
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to load workspaces",
+          source: "WorkspaceTabBar",
+          channel: "workspace-tab-bar:load",
+        }),
+      ]);
+    });
+
+    rerender(<WorkspaceTabBar />);
+
+    expect(listWorkspacesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not sync workspaces when the initial load resolves after unmount", async () => {
+    let resolveListWorkspaces: ((items: Array<ReturnType<typeof createWorkspaceItem>>) => void) | undefined;
+    const listWorkspacesPromise = new Promise<Array<ReturnType<typeof createWorkspaceItem>>>((resolve) => {
+      resolveListWorkspaces = resolve;
+    });
+    listWorkspacesMock.mockReturnValue(listWorkspacesPromise);
+
+    const { unmount } = render(<WorkspaceTabBar />);
+
+    expect(listWorkspacesMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    await act(async () => {
+      resolveListWorkspaces?.([
+        createWorkspaceItem(),
+        createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
+      ]);
+      await listWorkspacesPromise;
+      await Promise.resolve();
+    });
+
+    expect(useAppStore.getState().workspaces).toEqual([]);
+    expect(useAppStore.getState().activeWorkspaceId).toBeNull();
+  });
+
+  it("does not report or clear the initial load when it rejects after unmount", async () => {
+    let rejectListWorkspaces: ((error: Error) => void) | undefined;
+    const listWorkspacesPromise = new Promise<Array<ReturnType<typeof createWorkspaceItem>>>(
+      (_resolve, reject) => {
+        rejectListWorkspaces = reject;
+      },
+    );
+    listWorkspacesMock.mockReturnValue(listWorkspacesPromise);
+
+    const { unmount } = render(<WorkspaceTabBar />);
+
+    expect(listWorkspacesMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+
+    await act(async () => {
+      rejectListWorkspaces?.(new Error("late failure"));
+      try {
+        await listWorkspacesPromise;
+      } catch {
+        // ignore expected rejection
+      }
+      await Promise.resolve();
+    });
+
+    expect(useAppStore.getState().workspaces).toEqual([]);
+    expect(getSharedErrors()).toEqual([]);
+  });
+
+  it("keeps the created workspace visible and active when the follow-up reload fails", async () => {
+    const reloadError = new Error("reload failed");
+
+    listWorkspacesMock
+      .mockResolvedValueOnce([
+        createWorkspaceItem(),
+        createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
+      ])
+      .mockRejectedValueOnce(reloadError);
+    createWorkspaceMock.mockResolvedValue("workspace-3");
+
+    render(<WorkspaceTabBar />);
+
+    await screen.findByRole("button", { name: "Home" });
+    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    expect(await screen.findByRole("button", { name: "Workspace 3" })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to reload workspaces",
+          source: "WorkspaceTabBar",
+          error: reloadError,
+          channel: "workspace-tab-bar:reload",
+          retry: {
+            label: "Retry",
+            run: expect.any(Function),
+          },
+        }),
+      ]);
+    });
+  });
+
+  it("surfaces reload failures through the shared channel and clears them after retry succeeds", async () => {
+    const reloadError = new Error("reload failed");
+
+    listWorkspacesMock
+      .mockResolvedValueOnce([
+        createWorkspaceItem(),
+        createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
+      ])
+      .mockRejectedValueOnce(reloadError)
+      .mockResolvedValueOnce([
+        createWorkspaceItem(),
+        createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
+        createWorkspaceItem({ id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 }),
+      ]);
+    createWorkspaceMock.mockResolvedValue("workspace-3");
+
+    render(<WorkspaceTabBar />);
+
+    await screen.findByRole("button", { name: "Home" });
+    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    expect(await screen.findByRole("button", { name: "Workspace 3" })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to reload workspaces",
+          source: "WorkspaceTabBar",
+          error: reloadError,
+          channel: "workspace-tab-bar:reload",
+          retry: {
+            label: "Retry",
+            run: expect.any(Function),
+          },
+        }),
+      ]);
+    });
+
+    const [errorEntry] = getSharedErrors();
+    await act(async () => {
+      await errorEntry.retry?.run();
+    });
+
+    expect(getSharedErrors()).toEqual([]);
+    expect(await screen.findByRole("button", { name: "Workspace 3" })).toBeInTheDocument();
   });
 
   it("supports inline rename with enter, escape, and blur", async () => {
@@ -233,6 +421,47 @@ describe("WorkspaceTabBar", () => {
     expect(deleteWorkspaceMock).toHaveBeenCalledWith("workspace-2");
     expect(await screen.findByRole("button", { name: "Archive" })).toBeInTheDocument();
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-1");
+  });
+
+  it("removes a deleted workspace and falls back to a visible workspace when reload fails", async () => {
+    const reloadError = new Error("reload failed");
+
+    listWorkspacesMock
+      .mockResolvedValueOnce([
+        createWorkspaceItem(),
+        createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
+        createWorkspaceItem({ id: "workspace-3", name: "Archive", icon: "🗄️", position: 2 }),
+      ])
+      .mockRejectedValueOnce(reloadError);
+    deleteWorkspaceMock.mockResolvedValue(true);
+
+    useAppStore.setState({ activeWorkspaceId: "workspace-2" });
+
+    render(<WorkspaceTabBar />);
+
+    await screen.findByRole("button", { name: "Projects" });
+    fireEvent.click(screen.getByRole("button", { name: "Delete Projects" }));
+
+    await waitFor(() => {
+      expect(deleteWorkspaceMock).toHaveBeenCalledWith("workspace-2");
+      expect(screen.queryByRole("button", { name: "Projects" })).not.toBeInTheDocument();
+      expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-1");
+      expect(getSharedErrors()).toEqual([
+        expect.objectContaining({
+          message: "Failed to reload workspaces",
+          source: "WorkspaceTabBar",
+          error: reloadError,
+          channel: "workspace-tab-bar:reload",
+          retry: {
+            label: "Retry",
+            run: expect.any(Function),
+          },
+        }),
+      ]);
+    });
+
+    expect(screen.getByRole("button", { name: "Home" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Archive" })).toBeInTheDocument();
   });
 
   it("hides delete controls when there is only one workspace", async () => {

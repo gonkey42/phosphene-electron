@@ -1,10 +1,17 @@
 import { db } from "../platform/desktop-api";
 import { generateId } from "./uuid";
 
-type DatabaseLike = {
-  execute: (sql: string, params?: unknown[]) => Promise<{ rowsAffected: number }>;
-  select: <T>(sql: string, params?: unknown[]) => Promise<T>;
-};
+export interface MutationResult {
+  rowsAffected: number;
+}
+
+export interface DatabaseLike {
+  execute: (sql: string, params?: unknown[]) => Promise<MutationResult>;
+  select: <TRows extends readonly unknown[] = unknown[]>(
+    sql: string,
+    params?: unknown[],
+  ) => Promise<TRows>;
+}
 
 let dbPromise: Promise<DatabaseLike> | null = null;
 

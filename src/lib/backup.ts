@@ -1,29 +1,57 @@
-import { fs, paths } from "../platform/desktop-api";
+import { db, fs, paths } from "../platform/desktop-api";
 
 const MAX_BACKUPS = 7;
+
+function getErrorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code: unknown }).code)
+    : undefined;
+}
+
+function isPermissionError(error: unknown): boolean {
+  const code = getErrorCode(error);
+  return code === "EACCES" || code === "EPERM";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export async function runDailyBackup(): Promise<void> {
   try {
     const appData = await paths.appDataDir();
     const backupsDir = await paths.join(appData, "backups");
-    const dbPath = await paths.join(appData, "phosphene.db");
 
-    if (!(await fs.exists(backupsDir))) {
-      await fs.mkdir(backupsDir);
+    try {
+      if (!(await fs.exists(backupsDir))) {
+        await fs.mkdir(backupsDir);
+      }
+    } catch (error) {
+      if (isPermissionError(error)) {
+        console.error("Backup directory is inaccessible:", {
+          path: backupsDir,
+          code: getErrorCode(error),
+          message: getErrorMessage(error),
+        });
+        return;
+      }
+
+      throw error;
     }
 
     const today = new Date().toISOString().split("T")[0];
     const todayBackup = await paths.join(backupsDir, `phosphene-${today}.db`);
+    const backupResult = await db.backup(todayBackup);
 
-    if (await fs.exists(todayBackup)) {
+    if (backupResult.status === "skipped") {
       return;
     }
 
-    if (!(await fs.exists(dbPath))) {
+    if (backupResult.status === "failed") {
+      console.error("Failed to create database backup:", backupResult);
       return;
     }
 
-    await fs.copyFile(dbPath, todayBackup);
     await cleanOldBackups(backupsDir);
   } catch (error) {
     console.error("Failed to create database backup:", error);

@@ -12,6 +12,7 @@ import { formatRelativeUpdatedTime } from "../../lib/date-format";
 import { useCancellableEffect } from "../../hooks/use-cancellable-effect";
 import { useErrorReporter } from "../../hooks/use-error-reporter";
 import { useInlineRename } from "../../hooks/use-inline-rename";
+import { clearSharedErrorChannel } from "../../hooks/shared-error-store";
 import { useAppStore } from "../../stores/app-store";
 
 import "./BoardList.css";
@@ -20,6 +21,12 @@ interface BoardListProps {
   workspaceId?: string;
   onBoardSelect?: (boardId: string | null) => void;
 }
+
+const BOARD_LOAD_ERROR_CHANNEL = "board-list:load";
+const BOARD_RELOAD_ERROR_CHANNEL = "board-list:reload";
+const BOARD_CREATE_ERROR_CHANNEL = "board-list:create";
+const BOARD_RENAME_ERROR_CHANNEL = "board-list:rename";
+const BOARD_DELETE_ERROR_CHANNEL = "board-list:delete";
 
 export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: BoardListProps) {
   const storeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
@@ -47,18 +54,12 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
     cancelRename,
     commitRename,
   } = useInlineRename(async (boardId, trimmedName) => {
-    const workspaceIdAtStart = activeWorkspaceId;
-
     try {
       await renameBoard(boardId, trimmedName);
-
-      if (hasWorkspaceChanged(workspaceIdAtStart)) {
-        return;
-      }
-
-      await refreshBoards(workspaceIdAtStart);
     } catch (error) {
-      reportError("Failed to rename board", error);
+      reportError("Failed to rename board", error, undefined, {
+        channel: BOARD_RENAME_ERROR_CHANNEL,
+      });
       throw error;
     }
   });
@@ -67,6 +68,8 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
     (items: BoardListItem[], workspaceId = activeWorkspaceId) => {
       setLocalBoards(items);
       setBoards(mapBoardItems(items));
+      clearSharedErrorChannel(BOARD_LOAD_ERROR_CHANNEL);
+      clearSharedErrorChannel(BOARD_RELOAD_ERROR_CHANNEL);
 
       const currentActiveBoardId = workspaceId
         ? getActiveBoardForWorkspace(workspaceId)
@@ -112,7 +115,16 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
         syncBoardState(items, workspaceId);
         return items;
       } catch (error) {
-        reportError("Failed to reload boards", error);
+        const workspaceIdAtStart = workspaceId ?? null;
+        reportError("Failed to reload boards", error, { workspaceId: workspaceIdAtStart }, {
+          channel: BOARD_RELOAD_ERROR_CHANNEL,
+          retry: {
+            label: "Retry",
+            run: async () => {
+              await refreshBoards(workspaceIdAtStart);
+            },
+          },
+        });
         return null;
       }
     },
@@ -131,7 +143,16 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
 
           syncBoardState(items, activeWorkspaceId);
         } catch (error) {
-          reportError("Failed to load boards", error);
+          const workspaceIdAtStart = activeWorkspaceId;
+          reportError("Failed to load boards", error, { workspaceId: workspaceIdAtStart }, {
+            channel: BOARD_LOAD_ERROR_CHANNEL,
+            retry: {
+              label: "Retry",
+              run: async () => {
+                await refreshBoards(workspaceIdAtStart);
+              },
+            },
+          });
 
           if (!token.cancelled) {
             setLocalBoards([]);
@@ -140,7 +161,14 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
         }
       })();
     },
-    [activeWorkspaceId, reportError, setActiveBoard, setActiveBoardForWorkspace, setBoards],
+    [
+      activeWorkspaceId,
+      refreshBoards,
+      reportError,
+      setActiveBoard,
+      setActiveBoardForWorkspace,
+      setBoards,
+    ],
   );
 
   useEffect(() => {
@@ -152,10 +180,13 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
   }, [activeWorkspaceId, boardListRefresh.nonce, boardListRefresh.workspaceId, refreshBoards]);
 
   async function handleCreateBoard() {
+    const workspaceIdAtStart = activeWorkspaceId;
+    const nextName = `Board ${boards.length + 1}`;
+
     try {
-      const workspaceIdAtStart = activeWorkspaceId;
-      const nextName = `Board ${boards.length + 1}`;
       const newBoardId = await createBoard(nextName, workspaceIdAtStart);
+
+      clearSharedErrorChannel(BOARD_CREATE_ERROR_CHANNEL);
 
       if (hasWorkspaceChanged(workspaceIdAtStart)) {
         return;
@@ -167,9 +198,12 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
         setActiveBoard(newBoardId);
       }
       onBoardSelectRef.current?.(newBoardId);
+
       await refreshBoards(workspaceIdAtStart);
     } catch (error) {
-      reportError("Failed to create board", error);
+      reportError("Failed to create board", error, { workspaceId: workspaceIdAtStart }, {
+        channel: BOARD_CREATE_ERROR_CHANNEL,
+      });
     }
   }
 
@@ -177,6 +211,8 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
     try {
       const workspaceIdAtStart = activeWorkspaceId;
       await deleteBoard(boardId);
+
+      clearSharedErrorChannel(BOARD_DELETE_ERROR_CHANNEL);
 
       if (hasWorkspaceChanged(workspaceIdAtStart)) {
         return;
@@ -201,13 +237,24 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
 
       await refreshBoards(workspaceIdAtStart);
     } catch (error) {
-      reportError("Failed to delete board", error);
+      reportError("Failed to delete board", error, { workspaceId: activeWorkspaceId ?? null }, {
+        channel: BOARD_DELETE_ERROR_CHANNEL,
+      });
     }
   }
 
   async function handleCommitRename(boardId: string) {
+    const workspaceIdAtStart = activeWorkspaceId;
     try {
       await commitRename(boardId);
+
+      clearSharedErrorChannel(BOARD_RENAME_ERROR_CHANNEL);
+
+      if (hasWorkspaceChanged(workspaceIdAtStart)) {
+        return;
+      }
+
+      await refreshBoards(workspaceIdAtStart);
     } catch {
       // The hook callback already logged the failure; keep the edit UI unchanged.
     }

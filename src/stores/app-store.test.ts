@@ -18,9 +18,11 @@ describe("useAppStore", () => {
     expect(state.boardListRefresh).toEqual({ workspaceId: null, nonce: 0 });
     expect(state.focus).toBe("global");
     expect(state.initialized).toBe(false);
+    expect(state.status).toBe("idle");
+    expect(state.initializationError).toBeNull();
   });
 
-  it("updates workspaces, boards, focus, refresh requests, and initialized state", async () => {
+  it("updates workspaces, boards, focus, refresh requests, and initialization state", async () => {
     const { useAppStore } = await import("./app-store");
     const workspace = { id: "workspace-1", name: "Home", icon: "🏠", position: 0 };
     const secondWorkspace = {
@@ -45,7 +47,15 @@ describe("useAppStore", () => {
     useAppStore.getState().setActiveBoardForWorkspace("workspace-2", "board-2");
     useAppStore.getState().requestBoardListRefresh("workspace-1");
     useAppStore.getState().setFocus("canvas");
-    useAppStore.getState().setInitialized(true);
+    useAppStore.getState().setInitializationState({ status: "loading" });
+    useAppStore.getState().setInitializationState({
+      status: "error",
+      error: {
+        title: "Unable to start Phosphene",
+        detail: "Desktop API not available",
+      },
+    });
+    useAppStore.getState().setInitializationState({ status: "ready" });
 
     useAppStore.getState().setActiveWorkspace("workspace-2");
 
@@ -63,5 +73,48 @@ describe("useAppStore", () => {
     expect(state.boardListRefresh).toEqual({ workspaceId: "workspace-1", nonce: 1 });
     expect(state.focus).toBe("global");
     expect(state.initialized).toBe(true);
+    expect(state.status).toBe("ready");
+    expect(state.initializationError).toBeNull();
+  });
+
+  it("keeps initialization fields in sync across transitions", async () => {
+    const { useAppStore } = await import("./app-store");
+
+    useAppStore.getState().setInitializationState({ status: "loading" });
+    expect(useAppStore.getState()).toMatchObject({
+      status: "loading",
+      initialized: false,
+      initializationError: null,
+    });
+
+    useAppStore.getState().setInitializationState({
+      status: "error",
+      error: {
+        title: "Unable to start Phosphene",
+        detail: "Desktop API not available",
+      },
+    });
+    expect(useAppStore.getState()).toMatchObject({
+      status: "error",
+      initialized: false,
+      initializationError: {
+        title: "Unable to start Phosphene",
+        detail: "Desktop API not available",
+      },
+    });
+
+    useAppStore.getState().setInitializationState({ status: "ready" });
+    expect(useAppStore.getState()).toMatchObject({
+      status: "ready",
+      initialized: true,
+      initializationError: null,
+    });
+
+    useAppStore.getState().setInitializationState({ status: "idle" });
+    expect(useAppStore.getState()).toMatchObject({
+      status: "idle",
+      initialized: false,
+      initializationError: null,
+    });
   });
 });

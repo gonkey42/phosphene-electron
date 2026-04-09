@@ -1,5 +1,6 @@
 import { getDb } from "./database";
-import { generateId } from "./uuid";
+import type { DatabaseLike } from "./database";
+import { workspaces } from "../platform/desktop-api";
 
 export interface WorkspaceRecord {
   id: string;
@@ -28,13 +29,14 @@ export function mapWorkspace(item: WorkspaceListItem) {
   };
 }
 
-type DatabaseLike = {
-  execute: (sql: string, params?: unknown[]) => Promise<unknown>;
-  select: <T>(sql: string, params?: unknown[]) => Promise<T>;
-};
-
 async function getDatabase(): Promise<DatabaseLike> {
-  return (await getDb()) as unknown as DatabaseLike;
+  return await getDb();
+}
+
+function assertSingleWorkspaceMutation(result: { rowsAffected: number }, action: string): void {
+  if (result.rowsAffected === 0) {
+    throw new Error(`Workspace ${action} affected 0 rows`);
+  }
 }
 
 export async function listWorkspaces(): Promise<WorkspaceListItem[]> {
@@ -56,38 +58,25 @@ export async function getWorkspace(id: string): Promise<WorkspaceRecord | null> 
 }
 
 export async function createWorkspace(name: string, icon?: string): Promise<string> {
-  const db = await getDatabase();
-  const id = generateId();
-  const nextPositionRows = await db.select<Array<{ position: number }>>(
-    "SELECT COALESCE(MAX(position), -1) + 1 as position FROM workspaces WHERE deleted_at IS NULL",
-    [],
-  );
-  const position = nextPositionRows[0]?.position ?? 0;
-
-  await db.execute("INSERT INTO workspaces (id, name, icon, position) VALUES ($1, $2, $3, $4)", [
-    id,
-    name,
-    icon ?? null,
-    position,
-  ]);
-
-  return id;
+  return workspaces.createWorkspace(name, icon);
 }
 
 export async function renameWorkspace(id: string, name: string): Promise<void> {
   const db = await getDatabase();
-  await db.execute("UPDATE workspaces SET name = $2 WHERE id = $1 AND deleted_at IS NULL", [
+  const result = await db.execute("UPDATE workspaces SET name = $2 WHERE id = $1 AND deleted_at IS NULL", [
     id,
     name,
   ]);
+  assertSingleWorkspaceMutation(result, "rename");
 }
 
 export async function updateWorkspaceIcon(id: string, icon: string): Promise<void> {
   const db = await getDatabase();
-  await db.execute("UPDATE workspaces SET icon = $2 WHERE id = $1 AND deleted_at IS NULL", [
+  const result = await db.execute("UPDATE workspaces SET icon = $2 WHERE id = $1 AND deleted_at IS NULL", [
     id,
     icon,
   ]);
+  assertSingleWorkspaceMutation(result, "icon update");
 }
 
 export async function deleteWorkspace(id: string): Promise<boolean> {
@@ -101,30 +90,25 @@ export async function deleteWorkspace(id: string): Promise<boolean> {
     return false;
   }
 
-  await db.execute(
+  const result = await db.execute(
     "UPDATE workspaces SET deleted_at = datetime('now','utc') WHERE id = $1 AND deleted_at IS NULL",
     [id],
   );
+  assertSingleWorkspaceMutation(result, "delete");
   return true;
 }
 
 export async function reorderWorkspaces(orderedIds: string[]): Promise<void> {
-  const db = await getDatabase();
-
-  for (let i = 0; i < orderedIds.length; i += 1) {
-    await db.execute("UPDATE workspaces SET position = $1 WHERE id = $2 AND deleted_at IS NULL", [
-      i,
-      orderedIds[i],
-    ]);
-  }
+  await workspaces.reorderWorkspaces(orderedIds);
 }
 
 export async function saveWorkspaceLayout(id: string, layoutConfig: object): Promise<void> {
   const db = await getDatabase();
-  await db.execute(
+  const result = await db.execute(
     "UPDATE workspaces SET layout_config = $2 WHERE id = $1 AND deleted_at IS NULL",
     [id, JSON.stringify(layoutConfig)],
   );
+  assertSingleWorkspaceMutation(result, "layout save");
 }
 
 export async function getWorkspaceLayout(id: string): Promise<object | null> {

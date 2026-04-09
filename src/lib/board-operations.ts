@@ -1,5 +1,6 @@
 import { getDb } from "./database";
-import { generateId } from "./uuid";
+import type { DatabaseLike } from "./database";
+import { boards } from "../platform/desktop-api";
 
 export interface BoardRecord {
   id: string;
@@ -34,13 +35,14 @@ export function mapBoardItems(items: BoardListItem[]) {
   }));
 }
 
-type DatabaseLike = {
-  execute: (sql: string, params?: unknown[]) => Promise<unknown>;
-  select: <T>(sql: string, params?: unknown[]) => Promise<T>;
-};
-
 async function getDatabase(): Promise<DatabaseLike> {
-  return (await getDb()) as unknown as DatabaseLike;
+  return await getDb();
+}
+
+function assertSingleBoardMutation(result: { rowsAffected: number }, action: string): void {
+  if (result.rowsAffected === 0) {
+    throw new Error(`Board ${action} affected 0 rows`);
+  }
 }
 
 export async function listBoards(workspaceId?: string): Promise<BoardListItem[]> {
@@ -70,53 +72,41 @@ export async function getBoard(boardId: string): Promise<BoardRecord | null> {
 }
 
 export async function createBoard(name: string, workspaceId: string | null): Promise<string> {
-  const db = await getDatabase();
-  const params = workspaceId === null ? [] : [workspaceId];
-  const nextPositionRows = await db.select<Array<{ position: number }>>(
-    workspaceId === null
-      ? "SELECT COALESCE(MAX(position), -1) + 1 as position FROM boards WHERE deleted_at IS NULL AND workspace_id IS NULL"
-      : "SELECT COALESCE(MAX(position), -1) + 1 as position FROM boards WHERE deleted_at IS NULL AND workspace_id = $1",
-    params,
-  );
-  const position = nextPositionRows[0]?.position ?? 0;
-  const id = generateId();
-
-  await db.execute(
-    "INSERT INTO boards (id, workspace_id, name, position) VALUES ($1, $2, $3, $4)",
-    [id, workspaceId, name, position],
-  );
-
-  return id;
+  return boards.createBoard(name, workspaceId);
 }
 
 export async function renameBoard(boardId: string, name: string): Promise<void> {
   const db = await getDatabase();
-  await db.execute("UPDATE boards SET name = $2 WHERE id = $1 AND deleted_at IS NULL", [
+  const result = await db.execute("UPDATE boards SET name = $2 WHERE id = $1 AND deleted_at IS NULL", [
     boardId,
     name,
   ]);
+  assertSingleBoardMutation(result, "rename");
 }
 
 export async function deleteBoard(boardId: string): Promise<void> {
   const db = await getDatabase();
-  await db.execute(
+  const result = await db.execute(
     "UPDATE boards SET deleted_at = datetime('now','utc') WHERE id = $1 AND deleted_at IS NULL",
     [boardId],
   );
+  assertSingleBoardMutation(result, "delete");
 }
 
 export async function saveBoardCanvasData(boardId: string, canvasData: string): Promise<void> {
   const db = await getDatabase();
-  await db.execute("UPDATE boards SET canvas_data = $2 WHERE id = $1 AND deleted_at IS NULL", [
-    boardId,
-    canvasData,
-  ]);
+  const result = await db.execute(
+    "UPDATE boards SET canvas_data = $2 WHERE id = $1 AND deleted_at IS NULL",
+    [boardId, canvasData],
+  );
+  assertSingleBoardMutation(result, "save");
 }
 
 export async function saveBoardThumbnail(boardId: string, thumbnail: string): Promise<void> {
   const db = await getDatabase();
-  await db.execute("UPDATE boards SET thumbnail = $2 WHERE id = $1 AND deleted_at IS NULL", [
+  const result = await db.execute("UPDATE boards SET thumbnail = $2 WHERE id = $1 AND deleted_at IS NULL", [
     boardId,
     thumbnail,
   ]);
+  assertSingleBoardMutation(result, "thumbnail save");
 }
