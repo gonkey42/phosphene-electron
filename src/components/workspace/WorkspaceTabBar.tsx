@@ -15,6 +15,7 @@ import { useInlineRename } from "../../hooks/use-inline-rename";
 import { clearSharedErrorChannel } from "../../hooks/shared-error-store";
 import { useAppStore } from "../../stores/app-store";
 
+import { WorkspaceThemeModeSelector } from "./WorkspaceThemeModeSelector";
 import "./WorkspaceTabBar.css";
 
 function isMacPlatform() {
@@ -37,10 +38,11 @@ const WORKSPACE_DELETE_ERROR_CHANNEL = "workspace-tab-bar:delete";
 
 export interface WorkspaceTabBarProps {
   themePreference?: ThemePreference;
-  onThemePreferenceChange?: (preference: ThemePreference) => Promise<void>;
+  onThemePreferenceChange?: (preference: ThemePreference) => void | Promise<void>;
 }
 
 export function WorkspaceTabBar(_props: WorkspaceTabBarProps = {}) {
+  const { themePreference = "system", onThemePreferenceChange } = _props;
   const workspaces = useAppStore((state) => state.workspaces);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const initialized = useAppStore((state) => state.initialized);
@@ -331,6 +333,11 @@ export function WorkspaceTabBar(_props: WorkspaceTabBarProps = {}) {
           );
         })}
       </ul>
+
+      <WorkspaceThemeModeSelector
+        themePreference={themePreference}
+        onThemePreferenceChange={onThemePreferenceChange}
+      />
 
       <button
         type="button"

@@ -94,8 +94,11 @@ describe("WorkspaceTabBar", () => {
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
   });
 
-  it("accepts theme controller props without affecting workspace behavior", async () => {
-    listWorkspacesMock.mockResolvedValue([createWorkspaceItem()]);
+  it("still switches workspaces when theme props are present", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      createWorkspaceItem(),
+      createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
+    ]);
     const onThemePreferenceChange = vi.fn();
 
     render(
@@ -105,8 +108,42 @@ describe("WorkspaceTabBar", () => {
       />,
     );
 
-    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Projects" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+
+    expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
     expect(onThemePreferenceChange).not.toHaveBeenCalled();
+  });
+
+  it("renders a theme mode selector with system, light, and dark options", async () => {
+    listWorkspacesMock.mockResolvedValue([createWorkspaceItem()]);
+
+    render(<WorkspaceTabBar themePreference="system" />);
+
+    const themeSelector = await screen.findByLabelText("Theme mode");
+
+    expect(themeSelector).toHaveValue("system");
+    expect(screen.getByRole("option", { name: "System" })).toHaveValue("system");
+    expect(screen.getByRole("option", { name: "Light" })).toHaveValue("light");
+    expect(screen.getByRole("option", { name: "Dark" })).toHaveValue("dark");
+  });
+
+  it("dispatches theme preference updates when the selector changes", async () => {
+    listWorkspacesMock.mockResolvedValue([createWorkspaceItem()]);
+    const onThemePreferenceChange = vi.fn();
+
+    render(
+      <WorkspaceTabBar
+        themePreference="system"
+        onThemePreferenceChange={onThemePreferenceChange}
+      />,
+    );
+
+    fireEvent.change(await screen.findByLabelText("Theme mode"), {
+      target: { value: "dark" },
+    });
+
+    expect(onThemePreferenceChange).toHaveBeenCalledWith("dark");
   });
 
   it("shows platform-aware shortcuts for the first nine workspaces", async () => {
