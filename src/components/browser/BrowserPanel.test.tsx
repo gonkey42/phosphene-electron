@@ -1,0 +1,103 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const {
+  attachMock,
+  setBoundsMock,
+  navigateMock,
+  goBackMock,
+  goForwardMock,
+  reloadMock,
+  destroyMock,
+  setFocusMock,
+} = vi.hoisted(() => ({
+  attachMock: vi.fn(),
+  setBoundsMock: vi.fn(),
+  navigateMock: vi.fn(),
+  goBackMock: vi.fn(),
+  goForwardMock: vi.fn(),
+  reloadMock: vi.fn(),
+  destroyMock: vi.fn(),
+  setFocusMock: vi.fn(),
+}));
+let stateListener: ((state: unknown) => void) | undefined;
+
+vi.mock("../../platform/desktop-api", () => ({
+  browser: {
+    attach: attachMock,
+    setBounds: setBoundsMock,
+    navigate: navigateMock,
+    goBack: goBackMock,
+    goForward: goForwardMock,
+    reload: reloadMock,
+    destroy: destroyMock,
+    onStateChanged: (listener: (state: unknown) => void) => {
+      stateListener = listener;
+      return () => {
+        stateListener = undefined;
+      };
+    },
+  },
+}));
+
+vi.mock("../../stores/app-store", () => ({
+  useAppStore: (
+    selector?: (state: { resolvedTheme: "light" | "dark"; setFocus: (focus: string) => void }) => unknown,
+  ) =>
+    selector
+      ? selector({
+          resolvedTheme: "light",
+          setFocus: setFocusMock,
+        })
+      : {
+          resolvedTheme: "light",
+          setFocus: setFocusMock,
+        },
+}));
+
+import { BrowserPanel } from "./BrowserPanel";
+
+describe("BrowserPanel", () => {
+  beforeEach(() => {
+    attachMock.mockReset();
+    setBoundsMock.mockReset();
+    navigateMock.mockReset();
+    goBackMock.mockReset();
+    goForwardMock.mockReset();
+    reloadMock.mockReset();
+    destroyMock.mockReset();
+    stateListener = undefined;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("navigates to bare hostnames as https urls", async () => {
+    render(<BrowserPanel />);
+
+    fireEvent.change(screen.getByLabelText("Browser address"), {
+      target: { value: "example.com" },
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "Browser navigation" }));
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("https://example.com");
+    });
+  });
+
+  it("searches for plain text queries", async () => {
+    render(<BrowserPanel />);
+
+    fireEvent.change(screen.getByLabelText("Browser address"), {
+      target: { value: "phosphene excalidraw workflow" },
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "Browser navigation" }));
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith(
+        "https://www.google.com/search?q=phosphene%20excalidraw%20workflow",
+      );
+    });
+  });
+});

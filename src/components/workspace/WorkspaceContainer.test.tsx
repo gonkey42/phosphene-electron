@@ -10,6 +10,10 @@ const { sidebarMock, canvasPanelMock, motionDivMock, panelLayoutMock } = vi.hois
   panelLayoutMock: vi.fn(),
 }));
 
+const { browserPanelMock } = vi.hoisted(() => ({
+  browserPanelMock: vi.fn(),
+}));
+
 const { useWorkspaceLayoutMock } = vi.hoisted(() => ({
   useWorkspaceLayoutMock: vi.fn(),
 }));
@@ -99,6 +103,13 @@ vi.mock("../canvas/CanvasPanel", () => ({
   },
 }));
 
+vi.mock("../browser/BrowserPanel", () => ({
+  BrowserPanel: () => {
+    browserPanelMock();
+    return <div data-testid="browser-panel" />;
+  },
+}));
+
 vi.mock("../layout/PanelLayout", () => ({
   PanelLayout: ({
     workspaceId,
@@ -152,6 +163,7 @@ describe("WorkspaceContainer", () => {
     canvasPanelMock.mockReset();
     motionDivMock.mockReset();
     panelLayoutMock.mockReset();
+    browserPanelMock.mockReset();
     useWorkspaceLayoutMock.mockReset();
     workspaceUpdateActiveBoardMocks["workspace-1"].mockReset();
     workspaceUpdateActiveBoardMocks["workspace-2"].mockReset();
@@ -258,7 +270,7 @@ describe("WorkspaceContainer", () => {
     });
   });
 
-  it("routes each mounted workspace canvas through a panel layout with secondary placeholder content", () => {
+  it("routes each mounted workspace canvas through a panel layout with browser content", () => {
     render(<WorkspaceContainer />);
 
     expect(panelLayoutMock).toHaveBeenCalledTimes(3);
@@ -286,8 +298,15 @@ describe("WorkspaceContainer", () => {
     expect(screen.getByTestId("panel-layout-workspace-3")).toBeInTheDocument();
     expect(screen.getByTestId("panel-layout-workspace-4")).toBeInTheDocument();
     expect(screen.queryByTestId("panel-layout-workspace-5")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Secondary panel")).toHaveLength(3);
-    expect(screen.getAllByText("Widgets and browser will go here")).toHaveLength(3);
+    expect(browserPanelMock).toHaveBeenCalledTimes(3);
+    expect(screen.getAllByTestId("browser-panel")).toHaveLength(3);
+  });
+
+  it("renders the browser panel in the secondary slot instead of the placeholder copy", () => {
+    render(<WorkspaceContainer />);
+
+    expect(screen.queryByText("Widgets and browser will go here")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("browser-panel")).toHaveLength(3);
   });
 
   it("lazy-mounts distant workspaces on first activation and keeps them mounted afterwards", () => {

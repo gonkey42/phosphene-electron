@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useWorkspaceMounting } from "../../hooks/use-workspace-mounting";
 import { useWorkspaceLayout } from "../../hooks/use-workspace-layout";
 import { useAppStore } from "../../stores/app-store";
+import { BrowserPanel } from "../browser/BrowserPanel";
 import { CanvasPanel } from "../canvas/CanvasPanel";
 import { PanelLayout } from "../layout/PanelLayout";
 import { Sidebar } from "../sidebar/Sidebar";
@@ -133,12 +134,7 @@ function WorkspacePage({ workspaceId, isActive }: { workspaceId: string; isActiv
           defaultPrimarySize={layout.primaryPanelSize}
           onLayoutChange={updatePanelSize}
           primaryContent={<CanvasPanel workspaceId={workspaceId} isInteractive={isActive} />}
-          secondaryContent={
-            <div style={secondaryPlaceholderStyle}>
-              <p style={secondaryPlaceholderHeadingStyle}>Secondary panel</p>
-              <p style={secondaryPlaceholderBodyStyle}>Widgets and browser will go here</p>
-            </div>
-          }
+          secondaryContent={<BrowserPanel />}
         />
       </main>
     </>
@@ -197,22 +193,6 @@ const workspaceMainStyle = {
   minWidth: 0,
   overflow: "hidden",
   position: "relative" as const,
-};
-
-const secondaryPlaceholderStyle = {
-  padding: "16px",
-  textAlign: "center" as const,
-};
-
-const secondaryPlaceholderHeadingStyle = {
-  color: "#999",
-  fontSize: "14px",
-};
-
-const secondaryPlaceholderBodyStyle = {
-  color: "#bbb",
-  fontSize: "12px",
-  marginTop: "4px",
 };
 
 function getPageAnimationState({

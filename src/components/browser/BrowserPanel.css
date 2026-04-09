@@ -1,0 +1,112 @@
+.browser-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.browser-panel--light {
+  background: linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%);
+  color: #1f2937;
+}
+
+.browser-panel--dark {
+  background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+  color: #e5e7eb;
+}
+
+.browser-panel__chrome {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.browser-panel__controls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, auto) minmax(0, 1fr) auto;
+  min-width: 0;
+}
+
+.browser-panel__controls button,
+.browser-panel__controls input {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 10px;
+  color: inherit;
+  font: inherit;
+  height: 34px;
+}
+
+.browser-panel--dark .browser-panel__controls button,
+.browser-panel--dark .browser-panel__controls input {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.browser-panel__controls button {
+  cursor: pointer;
+  padding: 0 12px;
+}
+
+.browser-panel__controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.browser-panel__address {
+  min-width: 0;
+  padding: 0 12px;
+  width: 100%;
+}
+
+.browser-panel__go {
+  font-weight: 600;
+  padding: 0 14px;
+}
+
+.browser-panel__status {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+
+.browser-panel__title {
+  font-weight: 600;
+  min-width: 0;
+}
+
+.browser-panel__url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-panel__error {
+  background: rgba(239, 68, 68, 0.16);
+  border-top: 1px solid rgba(248, 113, 113, 0.24);
+  color: inherit;
+  padding: 10px 12px;
+}
+
+.browser-panel__error p {
+  margin: 0;
+}
+
+.browser-panel__error p + p {
+  margin-top: 4px;
+  opacity: 0.9;
+}
+
+.browser-panel__host {
+  flex: 1;
+  min-height: 0;
+}
