@@ -7,7 +7,14 @@ const excalidrawApiMountMock = vi.fn();
 const claimFocusMock = vi.fn();
 const updateSceneMock = vi.fn();
 const refreshMock = vi.fn();
+const { useAppStoreMock } = vi.hoisted(() => ({
+  useAppStoreMock: vi.fn(),
+}));
 let latestExcalidrawProps: Record<string, unknown> | null = null;
+
+vi.mock("../../stores/app-store", () => ({
+  useAppStore: useAppStoreMock,
+}));
 
 vi.mock("@excalidraw/excalidraw", () => ({
   Excalidraw: (props: Record<string, unknown>) => {
@@ -48,6 +55,11 @@ describe("ExcalidrawCanvas", () => {
     claimFocusMock.mockReset();
     refreshMock.mockReset();
     updateSceneMock.mockReset();
+    useAppStoreMock.mockReset();
+    useAppStoreMock.mockImplementation(
+      (selector?: (state: { resolvedTheme: "light" | "dark" }) => unknown) =>
+        selector ? selector({ resolvedTheme: "dark" }) : { resolvedTheme: "dark" },
+    );
     vi.useFakeTimers();
   });
 
@@ -269,6 +281,51 @@ describe("ExcalidrawCanvas", () => {
     expect(secondProps?.onChange).toBe(firstProps?.onChange);
     expect(secondProps?.UIOptions).toBe(firstProps?.UIOptions);
     expect(secondProps?.excalidrawAPI).toBe(firstProps?.excalidrawAPI);
+  });
+
+  it("passes the resolved app theme through to Excalidraw", () => {
+    const onChange = vi.fn();
+
+    render(<ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />);
+
+    expect(latestExcalidrawProps).toMatchObject({
+      theme: "dark",
+    });
+  });
+
+  it("updates the theme after ready without causing a synthetic mount-time change", async () => {
+    const onChange = vi.fn();
+    let resolvedTheme: "light" | "dark" = "light";
+
+    useAppStoreMock.mockImplementation(
+      (selector?: (state: { resolvedTheme: "light" | "dark" }) => unknown) =>
+        selector ? selector({ resolvedTheme }) : { resolvedTheme },
+    );
+
+    const { rerender } = render(
+      <ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />,
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(50);
+    });
+
+    const readyChangeHandler = latestExcalidrawProps?.onChange as
+      | ((...args: unknown[]) => void)
+      | undefined;
+
+    readyChangeHandler?.([], {}, {});
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    resolvedTheme = "dark";
+
+    rerender(<ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />);
+
+    expect(excalidrawApiMountMock).toHaveBeenCalledTimes(1);
+    expect(latestExcalidrawProps).toMatchObject({
+      theme: "dark",
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   it("claims canvas focus on pointer interaction", () => {

@@ -68,7 +68,6 @@ describe("CanvasPanel", () => {
     useBoardPersistenceMock.mockReturnValue({
       initialData: null,
       isLoading: false,
-      saveStatus: "saved",
       handleChange: vi.fn(),
     });
 
@@ -89,7 +88,6 @@ describe("CanvasPanel", () => {
     useBoardPersistenceMock.mockReturnValue({
       initialData: { elements: [], appState: {}, files: {} },
       isLoading: false,
-      saveStatus: "saved",
       handleChange: vi.fn(),
     });
 
@@ -108,7 +106,6 @@ describe("CanvasPanel", () => {
     useBoardPersistenceMock.mockReturnValue({
       initialData: { elements: [], appState: {}, files: {} },
       isLoading: false,
-      saveStatus: "saved",
       handleChange: vi.fn(),
     });
 
@@ -127,7 +124,6 @@ describe("CanvasPanel", () => {
     useBoardPersistenceMock.mockReturnValue({
       initialData: null,
       isLoading: true,
-      saveStatus: "saved",
       handleChange: vi.fn(),
     });
 
@@ -137,35 +133,7 @@ describe("CanvasPanel", () => {
     expect(screen.queryByTestId("mock-excalidraw-canvas")).not.toBeInTheDocument();
   });
 
-  it("shows the saved label when the board is clean", () => {
-    mockStoreState({ activeBoardId: "board-1" });
-    useBoardPersistenceMock.mockReturnValue({
-      initialData: { elements: [], appState: {}, files: {} },
-      isLoading: false,
-      saveStatus: "saved",
-      handleChange: vi.fn(),
-    });
-
-    render(<CanvasPanel />);
-
-    expect(screen.getByText("Saved")).toBeInTheDocument();
-  });
-
-  it("shows the saving label while persistence is in flight", () => {
-    mockStoreState({ activeBoardId: "board-1" });
-    useBoardPersistenceMock.mockReturnValue({
-      initialData: { elements: [], appState: {}, files: {} },
-      isLoading: false,
-      saveStatus: "saving",
-      handleChange: vi.fn(),
-    });
-
-    render(<CanvasPanel />);
-
-    expect(screen.getByText("Saving...")).toBeInTheDocument();
-  });
-
-  it("renders the canvas and the new save indicator when the board is ready", () => {
+  it("renders the canvas without a save indicator overlay when the board is ready", () => {
     const handleChange = vi.fn();
     const initialData = { elements: [], appState: {}, files: {} };
 
@@ -173,14 +141,15 @@ describe("CanvasPanel", () => {
     useBoardPersistenceMock.mockReturnValue({
       initialData,
       isLoading: false,
-      saveStatus: "unsaved",
       handleChange,
     });
 
     render(<CanvasPanel />);
 
-    expect(screen.getByText("Unsaved")).toBeInTheDocument();
+    expect(screen.queryByText("Unsaved")).not.toBeInTheDocument();
     expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saving...")).not.toBeInTheDocument();
     expect(screen.getByTestId("mock-excalidraw-canvas")).toBeInTheDocument();
     expect(excalidrawCanvasMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -197,7 +166,6 @@ describe("CanvasPanel", () => {
       initialData: null,
       isLoading: false,
       loadError: new Error("load failed"),
-      saveStatus: "saved",
       handleChange: vi.fn(),
     });
 
@@ -218,7 +186,6 @@ describe("CanvasPanel", () => {
       initialData: { elements: [], appState: {}, files: {} },
       isLoading: false,
       loadError: null,
-      saveStatus: "saved",
       handleChange: vi.fn(),
     });
 
