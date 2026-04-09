@@ -8,6 +8,7 @@ const appSetPathMock = vi.fn();
 const ipcMainOnMock = vi.fn();
 const ipcMainOffMock = vi.fn();
 const showErrorBoxMock = vi.fn();
+const browserWindowConstructorMock = vi.fn();
 const browserWindowGetAllWindowsMock = vi.fn();
 const browserWindowLoadFileMock = vi.fn();
 const browserWindowLoadUrlMock = vi.fn();
@@ -16,6 +17,10 @@ const browserWindowDestroyMock = vi.fn();
 
 class BrowserWindowMock {
   static getAllWindows = browserWindowGetAllWindowsMock;
+
+  constructor(options?: unknown) {
+    browserWindowConstructorMock(options);
+  }
 
   id = 7;
   loadFile = browserWindowLoadFileMock;
@@ -76,6 +81,7 @@ describe("electron main close flushing", () => {
     ipcMainOnMock.mockClear();
     ipcMainOffMock.mockClear();
     showErrorBoxMock.mockReset();
+    browserWindowConstructorMock.mockReset();
     browserWindowGetAllWindowsMock.mockReset();
     browserWindowLoadFileMock.mockReset();
     browserWindowLoadUrlMock.mockReset();
@@ -145,6 +151,30 @@ describe("electron main close flushing", () => {
     await Promise.resolve();
 
     expect(closeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the initial browser window hidden until the first load finishes", async () => {
+    browserWindowLoadFileMock.mockImplementation(async () => {
+      expect(browserWindowShowMock).not.toHaveBeenCalled();
+    });
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(browserWindowConstructorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        show: false,
+        webPreferences: expect.objectContaining({
+          contextIsolation: true,
+          nodeIntegration: false,
+        }),
+      }),
+    );
+    expect(browserWindowShowMock).toHaveBeenCalledTimes(1);
+    expect(browserWindowShowMock.mock.invocationCallOrder[0]).toBeGreaterThan(
+      browserWindowLoadFileMock.mock.invocationCallOrder[0],
+    );
   });
 
   it("ignores malformed flush responses until a valid payload arrives", async () => {
@@ -348,6 +378,29 @@ describe("electron main close flushing", () => {
       error: "renderer flush failed on quit",
     });
     expect(appQuitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces fatal bootstrap failures and quits the app", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    browserWindowLoadFileMock.mockRejectedValueOnce(new Error("missing dist index"));
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(browserWindowDestroyMock).toHaveBeenCalledTimes(1);
+    expect(showErrorBoxMock).toHaveBeenCalledWith(
+      "Phosphene failed to start",
+      expect.stringContaining("create-window"),
+    );
+    expect(appQuitMock).toHaveBeenCalledTimes(1);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[bootstrap:error]",
+      expect.objectContaining({
+        phase: "create-window",
+        message: "missing dist index",
+      }),
+    );
   });
 
   it("surfaces activate-time window creation failures to the user", async () => {
