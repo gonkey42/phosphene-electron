@@ -71,7 +71,7 @@
 
 .board-list__item {
   background: var(--app-surface);
-  border: 1px solid color-mix(in srgb, var(--app-border) 88%, var(--app-background));
+  border: 1px solid var(--app-border);
   border-radius: 0.875rem;
   display: grid;
   gap: 0.5rem;
