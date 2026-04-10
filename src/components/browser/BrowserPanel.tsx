@@ -139,61 +139,61 @@ function LiveBrowserPanel() {
     };
   }, []);
 
-  const statusText = browserState.isLoading ? "Loading..." : browserState.title || "Browser";
-
   return (
     <section
-      className={`browser-panel browser-panel--${resolvedTheme}`}
+      className={`browser-panel browser-panel--${resolvedTheme} browser-panel--full-bleed`}
       data-testid="browser-panel"
       onPointerDown={() => setFocus("browser")}
     >
-      <div className="browser-panel__chrome">
-        <form
-          aria-label="Browser navigation"
-          className="browser-panel__controls"
-          onSubmit={(event) => {
-            event.preventDefault();
-            isEditingAddressRef.current = false;
-            setFocus("browser");
-            void browser.navigate(normalizeBrowserInput(addressValue));
-          }}
+      <form
+        aria-label="Browser navigation"
+        className="browser-panel__controls"
+        onSubmit={(event) => {
+          event.preventDefault();
+          isEditingAddressRef.current = false;
+          setFocus("browser");
+          void browser.navigate(normalizeBrowserInput(addressValue));
+        }}
+      >
+        <button
+          type="button"
+          aria-label="Back"
+          data-icon-button="true"
+          onClick={() => void browser.goBack()}
+          disabled={!browserState.canGoBack}
         >
-          <button type="button" onClick={() => void browser.goBack()} disabled={!browserState.canGoBack}>
-            Back
-          </button>
-          <button
-            type="button"
-            onClick={() => void browser.goForward()}
-            disabled={!browserState.canGoForward}
-          >
-            Forward
-          </button>
-          <button type="button" onClick={() => void browser.reload()}>
-            Reload
-          </button>
-          <input
-            aria-label="Browser address"
-            className="browser-panel__address"
-            value={addressValue}
-            onChange={(event) => {
-              isEditingAddressRef.current = true;
-              setAddressValue(event.target.value);
-            }}
-            onBlur={() => {
-              isEditingAddressRef.current = false;
-              setAddressValue(browserState.url);
-            }}
-            placeholder="Enter URL or search"
-          />
-          <button className="browser-panel__go" type="submit">
-            Go
-          </button>
-        </form>
-
-        <div className="browser-panel__status" aria-live="polite">
-          {statusText}
-        </div>
-      </div>
+          ←
+        </button>
+        <button
+          type="button"
+          aria-label="Forward"
+          data-icon-button="true"
+          onClick={() => void browser.goForward()}
+          disabled={!browserState.canGoForward}
+        >
+          →
+        </button>
+        <button type="button" aria-label="Reload" data-icon-button="true" onClick={() => void browser.reload()}>
+          ↻
+        </button>
+        <input
+          aria-label="Browser address"
+          className="browser-panel__address"
+          value={addressValue}
+          onChange={(event) => {
+            isEditingAddressRef.current = true;
+            setAddressValue(event.target.value);
+          }}
+          onBlur={() => {
+            isEditingAddressRef.current = false;
+            setAddressValue(browserState.url);
+          }}
+          placeholder="Enter URL or search"
+        />
+        <button className="browser-panel__go" type="submit">
+          Go
+        </button>
+      </form>
 
       {browserState.lastError ? (
         <div className="browser-panel__error" role="alert">

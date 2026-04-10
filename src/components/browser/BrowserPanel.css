@@ -7,6 +7,10 @@
   overflow: hidden;
 }
 
+.browser-panel--full-bleed {
+  width: 100%;
+}
+
 .browser-panel--light {
   background: linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%);
   color: #1f2937;
@@ -26,10 +30,13 @@
 }
 
 .browser-panel__controls {
+  align-items: center;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(3, auto) minmax(0, 1fr) auto;
   min-width: 0;
+  padding: 8px 10px;
 }
 
 .browser-panel__controls button,
@@ -53,6 +60,11 @@
   padding: 0 12px;
 }
 
+.browser-panel__controls [data-icon-button="true"] {
+  min-width: 34px;
+  padding: 0;
+}
+
 .browser-panel__controls button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -70,7 +82,7 @@
 }
 
 .browser-panel__status {
-  display: flex;
+  display: none;
   gap: 12px;
   justify-content: space-between;
   min-width: 0;
@@ -107,8 +119,10 @@
 }
 
 .browser-panel__host {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .browser-panel--shell .browser-panel__chrome {
@@ -117,6 +131,7 @@
 }
 
 .browser-panel--shell .browser-panel__status {
+  display: flex;
   opacity: 0.8;
 }
 

@@ -182,6 +182,27 @@ describe("BrowserPanel", () => {
     }
   });
 
+  it("renders a single-row browser toolbar without the redundant status line", () => {
+    render(<BrowserPanel />);
+
+    expect(screen.getByRole("form", { name: "Browser navigation" })).toBeInTheDocument();
+    expect(screen.queryByText("No page loaded")).not.toBeInTheDocument();
+  });
+
+  it("renders icon-style browser navigation controls", () => {
+    render(<BrowserPanel />);
+
+    expect(screen.getByRole("button", { name: "Back" })).toHaveAttribute("data-icon-button", "true");
+    expect(screen.getByRole("button", { name: "Forward" })).toHaveAttribute("data-icon-button", "true");
+    expect(screen.getByRole("button", { name: "Reload" })).toHaveAttribute("data-icon-button", "true");
+  });
+
+  it("stretches the browser host to the full pane width", () => {
+    render(<BrowserPanel />);
+
+    expect(screen.getByTestId("browser-panel")).toHaveClass("browser-panel--full-bleed");
+  });
+
   it("renders an inert shell without attaching the browser bridge", () => {
     render(<BrowserPanel mode="shell" />);
 
