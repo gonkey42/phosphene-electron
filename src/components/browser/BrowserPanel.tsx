@@ -84,12 +84,24 @@ function LiveBrowserPanel() {
     if (!host) {
       return;
     }
+    let isDisposed = false;
 
     const updateBounds = () => {
       void browser.setBounds(getBrowserBounds(host));
     };
 
-    void browser.attach(getBrowserBounds(host));
+    void Promise.resolve()
+      .then(() => browser.attach(getBrowserBounds(host)))
+      .catch((error) => {
+        if (isDisposed) {
+          return;
+        }
+
+        setBrowserState((currentState) => ({
+          ...currentState,
+          lastError: error instanceof Error ? error.message : "Browser view could not be created",
+        }));
+      });
     updateBounds();
 
     const ResizeObserverImpl = window.ResizeObserver;
@@ -101,6 +113,7 @@ function LiveBrowserPanel() {
       observer.observe(host);
 
       return () => {
+        isDisposed = true;
         observer.disconnect();
         void browser.destroy();
       };
@@ -109,25 +122,9 @@ function LiveBrowserPanel() {
     window.addEventListener("resize", updateBounds);
 
     return () => {
+      isDisposed = true;
       window.removeEventListener("resize", updateBounds);
       void browser.destroy();
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleWindowResize = () => {
-      const host = hostRef.current;
-      if (!host) {
-        return;
-      }
-
-      void browser.setBounds(getBrowserBounds(host));
-    };
-
-    window.addEventListener("resize", handleWindowResize);
-
-    return () => {
-      window.removeEventListener("resize", handleWindowResize);
     };
   }, []);
 
