@@ -15,7 +15,7 @@ const {
   mapWorkspaceMock: vi.fn((item) => ({
     id: item.id,
     name: item.name,
-    icon: item.icon ?? "📋",
+    icon: item.icon,
     position: item.position,
   })),
   listWorkspacesMock: vi.fn(),

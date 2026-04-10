@@ -26,7 +26,7 @@ const {
     mapWorkspaceMock: vi.fn((item) => ({
       id: item.id,
       name: item.name,
-      icon: item.icon ?? "📋",
+      icon: item.icon,
       position: item.position,
     })),
   }),
@@ -196,7 +196,7 @@ describe("useKeyboardShortcuts", () => {
     listWorkspacesMock.mockResolvedValue([
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
       { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
-      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+      { id: "workspace-3", name: "Workspace 3", icon: null, position: 2 },
     ]);
     renderHook(() => useKeyboardShortcuts());
 
@@ -212,7 +212,7 @@ describe("useKeyboardShortcuts", () => {
     });
 
     await waitFor(() => {
-      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3", "🪟");
+      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3");
       expect(listWorkspacesMock).toHaveBeenCalledTimes(1);
       expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
     });
@@ -220,7 +220,7 @@ describe("useKeyboardShortcuts", () => {
     expect(useAppStore.getState().workspaces).toEqual([
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
       { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
-      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+      { id: "workspace-3", name: "Workspace 3", icon: null, position: 2 },
     ]);
   });
 
@@ -238,7 +238,7 @@ describe("useKeyboardShortcuts", () => {
     });
 
     await waitFor(() => {
-      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3", "🪟");
+      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3");
       expect(listWorkspacesMock).toHaveBeenCalledTimes(1);
       expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
       expect(getSharedErrors()).toEqual([
@@ -258,7 +258,7 @@ describe("useKeyboardShortcuts", () => {
     expect(useAppStore.getState().workspaces).toEqual([
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
       { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
-      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+      { id: "workspace-3", name: "Workspace 3", icon: null, position: 2 },
     ]);
   });
 
@@ -335,7 +335,7 @@ describe("useKeyboardShortcuts", () => {
       .mockResolvedValueOnce([
         { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
         { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
-        { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+        { id: "workspace-3", name: "Workspace 3", icon: null, position: 2 },
       ]);
 
     render(<KeyboardErrorHarness />);
@@ -352,7 +352,7 @@ describe("useKeyboardShortcuts", () => {
     expect(useAppStore.getState().workspaces).toEqual([
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
       { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
-      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+      { id: "workspace-3", name: "Workspace 3", icon: null, position: 2 },
     ]);
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -363,11 +363,11 @@ describe("useKeyboardShortcuts", () => {
     expect(useAppStore.getState().workspaces).toEqual([
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
       { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
-      { id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 },
+      { id: "workspace-3", name: "Workspace 3", icon: null, position: 2 },
     ]);
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
     expect(listWorkspacesMock).toHaveBeenCalledTimes(2);
-    expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3", "🪟");
+    expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3");
     expect(reloadError).toBeInstanceOf(Error);
   });
 
