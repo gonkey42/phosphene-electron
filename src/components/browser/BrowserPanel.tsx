@@ -50,13 +50,16 @@ export function BrowserPanel() {
   const resolvedTheme = useAppStore((state) => state.resolvedTheme);
   const setFocus = useAppStore((state) => state.setFocus);
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const isEditingAddressRef = useRef(false);
   const [addressValue, setAddressValue] = useState("");
   const [browserState, setBrowserState] = useState(initialBrowserState);
 
   useEffect(() => {
     const unsubscribe = browser.onStateChanged((state) => {
       setBrowserState(state);
-      setAddressValue((current) => state.url || current);
+      if (!isEditingAddressRef.current) {
+        setAddressValue(state.url);
+      }
     });
 
     return unsubscribe;
@@ -109,6 +112,7 @@ export function BrowserPanel() {
           className="browser-panel__controls"
           onSubmit={(event) => {
             event.preventDefault();
+            isEditingAddressRef.current = false;
             setFocus("browser");
             void browser.navigate(normalizeBrowserInput(addressValue));
           }}
@@ -130,7 +134,14 @@ export function BrowserPanel() {
             aria-label="Browser address"
             className="browser-panel__address"
             value={addressValue}
-            onChange={(event) => setAddressValue(event.target.value)}
+            onChange={(event) => {
+              isEditingAddressRef.current = true;
+              setAddressValue(event.target.value);
+            }}
+            onBlur={() => {
+              isEditingAddressRef.current = false;
+              setAddressValue(browserState.url);
+            }}
             placeholder="Enter URL or search"
           />
           <button className="browser-panel__go" type="submit">

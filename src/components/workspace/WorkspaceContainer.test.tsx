@@ -270,13 +270,13 @@ describe("WorkspaceContainer", () => {
     });
   });
 
-  it("routes each mounted workspace canvas through a panel layout with browser content", () => {
+  it("routes only the active workspace through a panel layout with browser content", () => {
     render(<WorkspaceContainer />);
 
     expect(panelLayoutMock).toHaveBeenCalledTimes(3);
     expect(panelLayoutMock).toHaveBeenNthCalledWith(1, {
       workspaceId: "workspace-2",
-      hasSecondaryContent: true,
+      hasSecondaryContent: false,
       defaultPrimarySize: 42,
       onLayoutChange: expect.any(Function),
     });
@@ -288,7 +288,7 @@ describe("WorkspaceContainer", () => {
     });
     expect(panelLayoutMock).toHaveBeenNthCalledWith(3, {
       workspaceId: "workspace-4",
-      hasSecondaryContent: true,
+      hasSecondaryContent: false,
       defaultPrimarySize: 60,
       onLayoutChange: expect.any(Function),
     });
@@ -298,15 +298,21 @@ describe("WorkspaceContainer", () => {
     expect(screen.getByTestId("panel-layout-workspace-3")).toBeInTheDocument();
     expect(screen.getByTestId("panel-layout-workspace-4")).toBeInTheDocument();
     expect(screen.queryByTestId("panel-layout-workspace-5")).not.toBeInTheDocument();
-    expect(browserPanelMock).toHaveBeenCalledTimes(3);
-    expect(screen.getAllByTestId("browser-panel")).toHaveLength(3);
+    expect(browserPanelMock).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByTestId("browser-panel")).toHaveLength(1);
   });
 
-  it("renders the browser panel in the secondary slot instead of the placeholder copy", () => {
+  it("renders the browser panel only for the active workspace page", () => {
     render(<WorkspaceContainer />);
 
     expect(screen.queryByText("Widgets and browser will go here")).not.toBeInTheDocument();
-    expect(screen.getAllByTestId("browser-panel")).toHaveLength(3);
+    expect(screen.getAllByTestId("browser-panel")).toHaveLength(1);
+
+    act(() => {
+      useAppStore.setState({ activeWorkspaceId: "workspace-4" });
+    });
+
+    expect(screen.getAllByTestId("browser-panel")).toHaveLength(1);
   });
 
   it("lazy-mounts distant workspaces on first activation and keeps them mounted afterwards", () => {

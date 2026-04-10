@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -99,5 +99,47 @@ describe("BrowserPanel", () => {
         "https://www.google.com/search?q=phosphene%20excalidraw%20workflow",
       );
     });
+  });
+
+  it("syncs browser state into the address bar when the user is not editing", () => {
+    render(<BrowserPanel />);
+
+    act(() => {
+      stateListener?.({
+        url: "https://docs.example.com",
+        title: "Docs",
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: false,
+        lastError: null,
+      });
+    });
+
+    expect(screen.getByLabelText("Browser address")).toHaveValue("https://docs.example.com");
+  });
+
+  it("preserves a draft address while browser state updates during editing", () => {
+    render(<BrowserPanel />);
+
+    fireEvent.change(screen.getByLabelText("Browser address"), {
+      target: { value: "phos" },
+    });
+
+    act(() => {
+      stateListener?.({
+        url: "https://example.com/loaded",
+        title: "Loaded",
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: false,
+        lastError: null,
+      });
+    });
+
+    expect(screen.getByLabelText("Browser address")).toHaveValue("phos");
+
+    fireEvent.blur(screen.getByLabelText("Browser address"));
+
+    expect(screen.getByLabelText("Browser address")).toHaveValue("https://example.com/loaded");
   });
 });

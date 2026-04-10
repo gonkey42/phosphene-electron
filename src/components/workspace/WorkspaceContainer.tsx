@@ -134,7 +134,7 @@ function WorkspacePage({ workspaceId, isActive }: { workspaceId: string; isActiv
           defaultPrimarySize={layout.primaryPanelSize}
           onLayoutChange={updatePanelSize}
           primaryContent={<CanvasPanel workspaceId={workspaceId} isInteractive={isActive} />}
-          secondaryContent={<BrowserPanel />}
+          secondaryContent={isActive ? <BrowserPanel /> : undefined}
         />
       </main>
     </>
