@@ -82,6 +82,13 @@ interface DesktopBrowserAPI {
   onStateChanged(callback: (state: DesktopBrowserState) => void): () => void;
 }
 
+type DesktopThemePreference = "system" | "light" | "dark";
+
+interface DesktopThemeAPI {
+  setPreference(preference: DesktopThemePreference): Promise<void>;
+  onPreferenceSelected(callback: (preference: DesktopThemePreference) => void): () => void;
+}
+
 interface DesktopAPI {
   db: DesktopDatabase;
   boards: DesktopBoardsAPI;
@@ -90,6 +97,7 @@ interface DesktopAPI {
   paths: DesktopPaths;
   lifecycle: DesktopLifecycle;
   browser: DesktopBrowserAPI;
+  theme: DesktopThemeAPI;
 }
 
 interface Window {

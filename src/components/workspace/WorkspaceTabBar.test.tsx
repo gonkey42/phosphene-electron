@@ -112,6 +112,16 @@ describe("WorkspaceTabBar", () => {
     expect(tabList?.lastElementChild).toContainElement(screen.getByRole("button", { name: "Create workspace" }));
   });
 
+  it("does not render a theme mode selector in the tab bar", async () => {
+    listWorkspacesMock.mockResolvedValue([createWorkspaceItem()]);
+
+    render(<WorkspaceTabBar />);
+
+    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /system|light|dark/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/theme/i)).not.toBeInTheDocument();
+  });
+
   it("shows platform-aware shortcuts for the first nine workspaces", async () => {
     setPlatform("MacIntel");
     listWorkspacesMock.mockResolvedValue([

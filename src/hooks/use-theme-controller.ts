@@ -37,6 +37,21 @@ export function useThemeController() {
   const reportError = useErrorReporter("ThemeController");
   const userUpdateVersionRef = useRef(0);
 
+  const updateThemePreference = useCallback(
+    async (nextPreference: ThemePreference) => {
+      userUpdateVersionRef.current += 1;
+      setThemePreference(nextPreference);
+      setResolvedTheme(resolveTheme(nextPreference));
+
+      try {
+        await saveThemePreference(nextPreference);
+      } catch (error) {
+        reportError("Failed to save theme preference", error);
+      }
+    },
+    [reportError, setResolvedTheme, setThemePreference],
+  );
+
   useEffect(() => {
     let cancelled = false;
     const hydrationVersion = userUpdateVersionRef.current;
@@ -70,6 +85,30 @@ export function useThemeController() {
   }, [setResolvedTheme, themePreference]);
 
   useEffect(() => {
+    const themeBridge = window.desktop?.theme;
+
+    if (!themeBridge) {
+      return;
+    }
+
+    void Promise.resolve(themeBridge.setPreference(themePreference)).catch((error) => {
+      reportError("Failed to sync theme preference to the native menu", error);
+    });
+  }, [reportError, themePreference]);
+
+  useEffect(() => {
+    const themeBridge = window.desktop?.theme;
+
+    if (!themeBridge) {
+      return;
+    }
+
+    return themeBridge.onPreferenceSelected((preference) => {
+      void updateThemePreference(preference);
+    });
+  }, [updateThemePreference]);
+
+  useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return;
     }
@@ -89,21 +128,6 @@ export function useThemeController() {
       mediaQueryList.removeEventListener("change", handleChange);
     };
   }, [setResolvedTheme]);
-
-  const updateThemePreference = useCallback(
-    async (nextPreference: ThemePreference) => {
-      userUpdateVersionRef.current += 1;
-      setThemePreference(nextPreference);
-      setResolvedTheme(resolveTheme(nextPreference));
-
-      try {
-        await saveThemePreference(nextPreference);
-      } catch (error) {
-        reportError("Failed to save theme preference", error);
-      }
-    },
-    [reportError, setResolvedTheme, setThemePreference],
-  );
 
   return {
     themePreference,

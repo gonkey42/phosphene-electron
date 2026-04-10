@@ -236,3 +236,12 @@ export const browser = {
     return getDesktop().browser.onStateChanged(callback);
   },
 };
+
+export const theme = {
+  setPreference(preference: "system" | "light" | "dark") {
+    return getDesktop().theme.setPreference(preference);
+  },
+  onPreferenceSelected(callback: (preference: "system" | "light" | "dark") => void) {
+    return getDesktop().theme.onPreferenceSelected(callback);
+  },
+};

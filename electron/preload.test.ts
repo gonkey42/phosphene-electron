@@ -54,9 +54,13 @@ type ExposedDesktop = {
         canGoBack: boolean;
         canGoForward: boolean;
         isLoading: boolean;
-        lastError: string | null;
-      }) => void,
+      lastError: string | null;
+    }) => void,
     ): () => void;
+  };
+  theme: {
+    setPreference(preference: "system" | "light" | "dark"): Promise<void>;
+    onPreferenceSelected(callback: (preference: "system" | "light" | "dark") => void): () => void;
   };
 };
 
@@ -238,6 +242,37 @@ describe("preload filesystem IPC", () => {
         }),
       }),
     );
+  });
+
+  it("exposes a theme bridge for native menu synchronization", async () => {
+    await import("./preload");
+
+    expect(exposeInMainWorldMock).toHaveBeenCalledWith(
+      "desktop",
+      expect.objectContaining({
+        theme: expect.objectContaining({
+          setPreference: expect.any(Function),
+          onPreferenceSelected: expect.any(Function),
+        }),
+      }),
+    );
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+    const handlePreferenceSelected = vi.fn();
+
+    await desktop.theme.setPreference("dark");
+    expect(invokeMock).toHaveBeenCalledWith("theme:set-preference", "dark");
+
+    const unsubscribe = desktop.theme.onPreferenceSelected(handlePreferenceSelected);
+    expect(onMock).toHaveBeenCalledWith("theme:preference-selected", expect.any(Function));
+
+    const listener = onMock.mock.calls.find(([channel]) => channel === "theme:preference-selected")?.[1];
+    listener?.({}, "light");
+
+    expect(handlePreferenceSelected).toHaveBeenCalledWith("light");
+
+    unsubscribe();
+    expect(offMock).toHaveBeenCalledWith("theme:preference-selected", listener);
   });
 
   it("subscribes and unsubscribes browser state listeners through ipcRenderer", async () => {

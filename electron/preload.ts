@@ -51,6 +51,9 @@ let lifecycleRequestSequence = 0;
 let lifecycleReady =
   (window as Window & { [LIFECYCLE_READY_FLAG]?: boolean })[LIFECYCLE_READY_FLAG] === true;
 
+const THEME_PREFERENCE_SELECTED_CHANNEL = "theme:preference-selected";
+const THEME_SET_PREFERENCE_CHANNEL = "theme:set-preference";
+
 window.addEventListener(LIFECYCLE_READY_EVENT, () => {
   lifecycleReady = true;
 });
@@ -233,6 +236,22 @@ contextBridge.exposeInMainWorld("desktop", {
 
       return () => {
         ipcRenderer.off("browser:state-changed", listener);
+      };
+    },
+  },
+  theme: {
+    setPreference(preference: "system" | "light" | "dark") {
+      return ipcRenderer.invoke(THEME_SET_PREFERENCE_CHANNEL, preference);
+    },
+    onPreferenceSelected(callback: (preference: "system" | "light" | "dark") => void) {
+      const listener = (_event: unknown, preference: "system" | "light" | "dark") => {
+        callback(preference);
+      };
+
+      ipcRenderer.on(THEME_PREFERENCE_SELECTED_CHANNEL, listener);
+
+      return () => {
+        ipcRenderer.off(THEME_PREFERENCE_SELECTED_CHANNEL, listener);
       };
     },
   },

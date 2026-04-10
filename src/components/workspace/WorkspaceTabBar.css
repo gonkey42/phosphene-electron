@@ -3,6 +3,7 @@
   background: var(--app-surface-muted);
   border-bottom: 1px solid var(--app-border);
   display: flex;
+  justify-content: flex-start;
   gap: 0.5rem;
   min-height: 2.25rem;
   padding: 0 0.5rem;
@@ -13,6 +14,7 @@
 .workspace-tab-bar__tabs {
   display: flex;
   flex: 1;
+  justify-content: flex-start;
   gap: 0.125rem;
   list-style: none;
   margin: 0;
@@ -119,6 +121,7 @@
 
 .workspace-tab-bar__tab-item--create {
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .workspace-tab-bar__close-button {

@@ -1,4 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, type WebContents } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  type MenuItemConstructorOptions,
+  type WebContents,
+} from "electron";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { registerDatabaseIPC, closeDatabase } from "./ipc/database";
@@ -9,6 +17,14 @@ const isDev = !app.isPackaged;
 const QUIT_FLUSH_TIMEOUT_MS = 1500;
 const closeApprovedWindowIds = new Set<number>();
 const closeFlushInProgressWindowIds = new Set<number>();
+const THEME_PREFERENCE_SELECTED_CHANNEL = "theme:preference-selected";
+const THEME_SET_PREFERENCE_CHANNEL = "theme:set-preference";
+
+type ThemePreference = "system" | "light" | "dark";
+
+const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
+
+let currentThemePreference: ThemePreference = "system";
 
 type FlushResponsePayload = {
   requestId: string;
@@ -210,6 +226,70 @@ function getFlushLogEvent(scope: "window:close" | "quit", error: unknown) {
     : "[quit:flush-timeout]";
 }
 
+function isThemePreference(value: unknown): value is ThemePreference {
+  return typeof value === "string" && THEME_PREFERENCES.includes(value as ThemePreference);
+}
+
+function notifyRendererThemePreferenceSelected(preference: ThemePreference) {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      return;
+    }
+
+    window.webContents.send(THEME_PREFERENCE_SELECTED_CHANNEL, preference);
+  });
+}
+
+function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
+  const buildThemeItem = (label: string, preference: ThemePreference): MenuItemConstructorOptions => ({
+    label,
+    type: "radio",
+    checked: currentThemePreference === preference,
+    click: () => {
+      setThemePreference(preference, true);
+    },
+  });
+
+  return [
+    {
+      label: "View",
+      submenu: [
+        {
+          label: "Theme",
+          submenu: [
+            buildThemeItem("System", "system"),
+            buildThemeItem("Light", "light"),
+            buildThemeItem("Dark", "dark"),
+          ],
+        },
+      ],
+    },
+  ];
+}
+
+function installApplicationMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate(buildApplicationMenuTemplate()));
+}
+
+function setThemePreference(preference: ThemePreference, notifyRenderer: boolean) {
+  currentThemePreference = preference;
+  installApplicationMenu();
+
+  if (notifyRenderer) {
+    notifyRendererThemePreferenceSelected(preference);
+  }
+}
+
+function registerThemePreferenceIPC() {
+  ipcMain.handle(THEME_SET_PREFERENCE_CHANNEL, async (_event, preference: string) => {
+    if (!isThemePreference(preference)) {
+      throw new Error(`Invalid theme preference: ${preference}`);
+    }
+
+    setThemePreference(preference, false);
+  });
+}
+
 export function attachDurableWindowCloseHandler(window: BrowserWindow) {
   window.on("close", (event) => {
     if (quitFlushComplete || closeApprovedWindowIds.has(window.id)) {
@@ -280,6 +360,10 @@ async function bootstrap() {
   });
   await runBootstrapPhase("browser-ipc", () => {
     registerBrowserIPC();
+  });
+  await runBootstrapPhase("theme-ipc", () => {
+    registerThemePreferenceIPC();
+    installApplicationMenu();
   });
   await runBootstrapPhase("create-window", async () => {
     await createWindow();

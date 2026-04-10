@@ -17,6 +17,8 @@ const browserWindowLoadUrlMock = vi.fn();
 const browserWindowShowMock = vi.fn();
 const browserWindowDestroyMock = vi.fn();
 const browserWindowSetBrowserViewMock = vi.fn();
+const menuBuildFromTemplateMock = vi.fn();
+const menuSetApplicationMenuMock = vi.fn();
 
 class BrowserViewMock {
   constructor(_options?: unknown) {}
@@ -92,6 +94,10 @@ vi.mock("electron", () => ({
   dialog: {
     showErrorBox: showErrorBoxMock,
   },
+  Menu: {
+    buildFromTemplate: menuBuildFromTemplateMock,
+    setApplicationMenu: menuSetApplicationMenuMock,
+  },
   ipcMain: {
     handle: ipcMainHandleMock,
     on: ipcMainOnMock,
@@ -127,6 +133,8 @@ describe("electron main close flushing", () => {
     browserWindowShowMock.mockReset();
     browserWindowDestroyMock.mockReset();
     browserWindowSetBrowserViewMock.mockReset();
+    menuBuildFromTemplateMock.mockReset();
+    menuSetApplicationMenuMock.mockReset();
     appWhenReadyMock.mockResolvedValue(undefined);
     appGetPathMock.mockImplementation((name: string) => {
       if (name === "appData") {
@@ -229,6 +237,81 @@ describe("electron main close flushing", () => {
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:forward", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:reload", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:destroy", expect.any(Function));
+  });
+
+  it("registers a View > Theme menu with system, light, and dark items", async () => {
+    menuBuildFromTemplateMock.mockReturnValue({} as never);
+    const windowInstance = new BrowserWindowMock();
+    browserWindowGetAllWindowsMock.mockReturnValue([windowInstance as never]);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("theme:set-preference", expect.any(Function));
+    expect(menuBuildFromTemplateMock).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "View",
+          submenu: expect.arrayContaining([
+            expect.objectContaining({
+              label: "Theme",
+              submenu: expect.arrayContaining([
+                expect.objectContaining({ label: "System" }),
+                expect.objectContaining({ label: "Light" }),
+                expect.objectContaining({ label: "Dark" }),
+              ]),
+            }),
+          ]),
+        }),
+      ]),
+    );
+    expect(menuSetApplicationMenuMock).toHaveBeenCalledTimes(1);
+
+    const themePreferenceHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "theme:set-preference",
+    )?.[1];
+    await themePreferenceHandler?.({ sender: windowInstance.webContents } as never, "light");
+
+    expect(menuBuildFromTemplateMock).toHaveBeenCalledTimes(2);
+    const secondMenuTemplate = menuBuildFromTemplateMock.mock.calls[1]?.[0] as Array<{
+      label?: string;
+      submenu?: Array<{
+        label?: string;
+        submenu?: Array<{
+          label?: string;
+          checked?: boolean;
+        }>;
+      }>;
+    }>;
+    const secondThemeMenu = secondMenuTemplate.find((item) => item.label === "View")?.submenu?.find(
+      (item) => item.label === "Theme",
+    );
+    const lightItem = secondThemeMenu?.submenu?.find((item) => item.label === "Light");
+
+    expect(lightItem?.checked).toBe(true);
+
+    const menuTemplate = menuBuildFromTemplateMock.mock.calls[0]?.[0] as Array<{
+      label?: string;
+      submenu?: Array<{
+        label?: string;
+        submenu?: Array<{
+          label?: string;
+          click?: () => void;
+        }>;
+      }>;
+    }>;
+    const themeMenu = menuTemplate.find((item) => item.label === "View")?.submenu?.find(
+      (item) => item.label === "Theme",
+    );
+    const darkItem = themeMenu?.submenu?.find((item) => item.label === "Dark");
+
+    darkItem?.click?.();
+
+    expect(windowInstance.webContents.send).toHaveBeenCalledWith(
+      "theme:preference-selected",
+      "dark",
+    );
   });
 
   it("attaches a browser view and navigates through the registered handlers", async () => {

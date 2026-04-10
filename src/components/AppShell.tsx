@@ -24,7 +24,7 @@ export function AppShell() {
   const setWorkspaces = useAppStore((state) => state.setWorkspaces);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const reportError = useErrorReporter("AppShell");
-  const { themePreference, resolvedTheme, updateThemePreference } = useThemeController();
+  const { resolvedTheme } = useThemeController();
   const [initAttempt, setInitAttempt] = useState(0);
   const sharedErrors = useSharedErrors();
   const startupError = useMemo(
@@ -103,10 +103,7 @@ export function AppShell() {
     <KeyboardProvider>
       <div className={shellClassName}>
         <SharedErrorBanner />
-        <WorkspaceTabBar
-          themePreference={themePreference}
-          onThemePreferenceChange={updateThemePreference}
-        />
+        <WorkspaceTabBar />
         <WorkspaceContainer />
       </div>
     </KeyboardProvider>

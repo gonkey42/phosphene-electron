@@ -8,10 +8,14 @@ const {
   loadThemePreferenceMock,
   saveThemePreferenceMock,
   reportErrorMock,
+  themeSetPreferenceMock,
+  themeOnPreferenceSelectedMock,
 } = vi.hoisted(() => ({
   loadThemePreferenceMock: vi.fn(),
   saveThemePreferenceMock: vi.fn(),
   reportErrorMock: vi.fn(),
+  themeSetPreferenceMock: vi.fn(),
+  themeOnPreferenceSelectedMock: vi.fn(),
 }));
 
 vi.mock("../lib/theme-settings", async () => {
@@ -94,10 +98,25 @@ describe("useThemeController", () => {
     loadThemePreferenceMock.mockReset();
     saveThemePreferenceMock.mockReset();
     reportErrorMock.mockReset();
+    themeSetPreferenceMock.mockReset();
+    themeOnPreferenceSelectedMock.mockReset();
     useAppStore.setState({
       themePreference: DEFAULT_THEME_PREFERENCE,
       resolvedTheme: "light",
     });
+    (window as Window & {
+      desktop?: {
+        theme?: {
+          setPreference: typeof themeSetPreferenceMock;
+          onPreferenceSelected: typeof themeOnPreferenceSelectedMock;
+        };
+      };
+    }).desktop = {
+      theme: {
+        setPreference: themeSetPreferenceMock,
+        onPreferenceSelected: themeOnPreferenceSelectedMock.mockImplementation(() => () => undefined),
+      },
+    };
   });
 
   it("resolves a system preference against the current OS color scheme", async () => {
@@ -224,5 +243,37 @@ describe("useThemeController", () => {
     expect(result.current.resolvedTheme).toBe("light");
     expect(useAppStore.getState().themePreference).toBe("light");
     expect(useAppStore.getState().resolvedTheme).toBe("light");
+  });
+
+  it("syncs preference changes to the native theme bridge and listens for menu selections", async () => {
+    const matchMediaController = createMatchMediaController(true);
+    let selectedCallback: ((preference: "system" | "light" | "dark") => void) | undefined;
+    window.matchMedia = matchMediaController.matchMedia;
+    loadThemePreferenceMock.mockResolvedValue("system");
+    saveThemePreferenceMock.mockResolvedValue(undefined);
+    themeOnPreferenceSelectedMock.mockImplementation((callback) => {
+      selectedCallback = callback;
+      return () => {
+        selectedCallback = undefined;
+      };
+    });
+
+    const { result } = renderHook(() => useThemeController());
+
+    await waitFor(() => {
+      expect(result.current.themePreference).toBe("system");
+      expect(themeSetPreferenceMock).toHaveBeenCalledWith("system");
+      expect(themeOnPreferenceSelectedMock).toHaveBeenCalledWith(expect.any(Function));
+    });
+
+    await act(async () => {
+      selectedCallback?.("dark");
+      await Promise.resolve();
+    });
+
+    expect(result.current.themePreference).toBe("dark");
+    expect(result.current.resolvedTheme).toBe("dark");
+    expect(saveThemePreferenceMock).toHaveBeenCalledWith("dark");
+    expect(themeSetPreferenceMock).toHaveBeenLastCalledWith("dark");
   });
 });

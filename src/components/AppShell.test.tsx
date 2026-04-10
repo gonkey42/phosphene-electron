@@ -198,10 +198,7 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("workspace-tab-bar")).toBeInTheDocument();
     expect(screen.getByTestId("keyboard-provider").firstElementChild).toHaveClass("theme-dark");
-    expect(tabBarMock).toHaveBeenCalledWith({
-      themePreference: "dark",
-      onThemePreferenceChange,
-    });
+    expect(tabBarMock).toHaveBeenCalledWith({});
   });
 
   it("registers the global keyboard shortcuts hook", async () => {
