@@ -82,7 +82,7 @@ export function WorkspaceContainer() {
             transition={slideTransition}
             style={{ zIndex: isActive ? 2 : isExiting ? 1 : 0 }}
           >
-            <WorkspacePage workspaceId={workspace.id} isActive={isActive} />
+            <WorkspacePage workspaceId={workspace.id} isActive={isActive} isExiting={isExiting} />
           </motion.div>
         );
       })}
@@ -103,7 +103,15 @@ export function WorkspaceContainer() {
   );
 }
 
-function WorkspacePage({ workspaceId, isActive }: { workspaceId: string; isActive: boolean }) {
+function WorkspacePage({
+  workspaceId,
+  isActive,
+  isExiting,
+}: {
+  workspaceId: string;
+  isActive: boolean;
+  isExiting: boolean;
+}) {
   const { layout, isLoaded, updatePanelSize, updateActiveBoard, flushPendingLayoutSave } =
     useWorkspaceLayout(workspaceId);
   const wasActiveRef = useRef(isActive);
@@ -134,7 +142,7 @@ function WorkspacePage({ workspaceId, isActive }: { workspaceId: string; isActiv
           defaultPrimarySize={layout.primaryPanelSize}
           onLayoutChange={updatePanelSize}
           primaryContent={<CanvasPanel workspaceId={workspaceId} isInteractive={isActive} />}
-          secondaryContent={isActive ? <BrowserPanel /> : undefined}
+          secondaryContent={isActive ? <BrowserPanel /> : isExiting ? <BrowserPanel mode="shell" /> : undefined}
         />
       </main>
     </>

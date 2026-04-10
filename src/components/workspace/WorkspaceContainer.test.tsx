@@ -104,9 +104,9 @@ vi.mock("../canvas/CanvasPanel", () => ({
 }));
 
 vi.mock("../browser/BrowserPanel", () => ({
-  BrowserPanel: () => {
-    browserPanelMock();
-    return <div data-testid="browser-panel" />;
+  BrowserPanel: ({ mode }: { mode?: "live" | "shell" }) => {
+    browserPanelMock({ mode });
+    return <div data-testid={mode === "shell" ? "browser-panel-shell" : "browser-panel-live"} />;
   },
 }));
 
@@ -299,20 +299,47 @@ describe("WorkspaceContainer", () => {
     expect(screen.getByTestId("panel-layout-workspace-4")).toBeInTheDocument();
     expect(screen.queryByTestId("panel-layout-workspace-5")).not.toBeInTheDocument();
     expect(browserPanelMock).toHaveBeenCalledTimes(1);
-    expect(screen.getAllByTestId("browser-panel")).toHaveLength(1);
+    expect(screen.getAllByTestId("browser-panel-live")).toHaveLength(1);
   });
 
   it("renders the browser panel only for the active workspace page", () => {
     render(<WorkspaceContainer />);
 
     expect(screen.queryByText("Widgets and browser will go here")).not.toBeInTheDocument();
-    expect(screen.getAllByTestId("browser-panel")).toHaveLength(1);
+    expect(screen.getAllByTestId("browser-panel-live")).toHaveLength(1);
 
     act(() => {
       useAppStore.setState({ activeWorkspaceId: "workspace-4" });
     });
 
-    expect(screen.getAllByTestId("browser-panel")).toHaveLength(1);
+    expect(screen.getAllByTestId("browser-panel-live")).toHaveLength(1);
+  });
+
+  it("keeps the outgoing workspace split layout during its exit animation without live browser ownership", () => {
+    vi.useFakeTimers();
+
+    try {
+      render(<WorkspaceContainer />);
+
+      act(() => {
+        useAppStore.setState({ activeWorkspaceId: "workspace-5" });
+      });
+
+      expect(screen.getByTestId("panel-layout-secondary-workspace-3")).toContainElement(
+        screen.getByTestId("browser-panel-shell"),
+      );
+      expect(screen.getByTestId("panel-layout-secondary-workspace-5")).toContainElement(
+        screen.getByTestId("browser-panel-live"),
+      );
+      expect(browserPanelMock).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: "shell" }),
+      );
+      expect(browserPanelMock).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: undefined }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("lazy-mounts distant workspaces on first activation and keeps them mounted afterwards", () => {

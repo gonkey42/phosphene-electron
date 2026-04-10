@@ -110,3 +110,16 @@
   flex: 1;
   min-height: 0;
 }
+
+.browser-panel--shell .browser-panel__chrome {
+  justify-content: center;
+  min-height: 72px;
+}
+
+.browser-panel--shell .browser-panel__status {
+  opacity: 0.8;
+}
+
+.browser-panel__host--shell {
+  background: linear-gradient(180deg, transparent 0%, rgba(148, 163, 184, 0.08) 100%);
+}

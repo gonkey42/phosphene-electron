@@ -5,6 +5,8 @@ import { useAppStore } from "../../stores/app-store";
 
 import "./BrowserPanel.css";
 
+type BrowserPanelMode = "live" | "shell";
+
 const DEFAULT_SEARCH_BASE = "https://www.google.com/search?q=";
 
 const initialBrowserState: BrowserState = {
@@ -46,7 +48,19 @@ function getBrowserBounds(host: HTMLDivElement) {
   };
 }
 
-export function BrowserPanel() {
+type BrowserPanelProps = {
+  mode?: BrowserPanelMode;
+};
+
+export function BrowserPanel({ mode = "live" }: BrowserPanelProps) {
+  if (mode === "shell") {
+    return <BrowserPanelShell />;
+  }
+
+  return <LiveBrowserPanel />;
+}
+
+function LiveBrowserPanel() {
   const resolvedTheme = useAppStore((state) => state.resolvedTheme);
   const setFocus = useAppStore((state) => state.setFocus);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -163,6 +177,26 @@ export function BrowserPanel() {
       ) : null}
 
       <div ref={hostRef} className="browser-panel__host" />
+    </section>
+  );
+}
+
+function BrowserPanelShell() {
+  const resolvedTheme = useAppStore((state) => state.resolvedTheme);
+
+  return (
+    <section
+      className={`browser-panel browser-panel--${resolvedTheme} browser-panel--shell`}
+      data-testid="browser-panel-shell"
+      aria-hidden="true"
+    >
+      <div className="browser-panel__chrome">
+        <div className="browser-panel__status">
+          <span className="browser-panel__title">Browser</span>
+          <span className="browser-panel__url">Preserving layout while workspace exits</span>
+        </div>
+      </div>
+      <div className="browser-panel__host browser-panel__host--shell" />
     </section>
   );
 }

@@ -142,4 +142,13 @@ describe("BrowserPanel", () => {
 
     expect(screen.getByLabelText("Browser address")).toHaveValue("https://example.com/loaded");
   });
+
+  it("renders an inert shell without attaching the browser bridge", () => {
+    render(<BrowserPanel mode="shell" />);
+
+    expect(attachMock).not.toHaveBeenCalled();
+    expect(destroyMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("browser-panel-shell")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Browser address")).not.toBeInTheDocument();
+  });
 });
