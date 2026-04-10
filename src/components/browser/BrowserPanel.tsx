@@ -68,6 +68,13 @@ function LiveBrowserPanel() {
   const [addressValue, setAddressValue] = useState("");
   const [browserState, setBrowserState] = useState(initialBrowserState);
 
+  const reportBrowserError = (error: unknown) => {
+    setBrowserState((currentState) => ({
+      ...currentState,
+      lastError: error instanceof Error ? error.message : "Browser view could not be created",
+    }));
+  };
+
   useEffect(() => {
     const unsubscribe = browser.onStateChanged((state) => {
       setBrowserState(state);
@@ -87,7 +94,15 @@ function LiveBrowserPanel() {
     let isDisposed = false;
 
     const updateBounds = () => {
-      void browser.setBounds(getBrowserBounds(host));
+      void Promise.resolve()
+        .then(() => browser.setBounds(getBrowserBounds(host)))
+        .catch((error) => {
+          if (isDisposed) {
+            return;
+          }
+
+          reportBrowserError(error);
+        });
     };
 
     void Promise.resolve()
@@ -97,12 +112,8 @@ function LiveBrowserPanel() {
           return;
         }
 
-        setBrowserState((currentState) => ({
-          ...currentState,
-          lastError: error instanceof Error ? error.message : "Browser view could not be created",
-        }));
+        reportBrowserError(error);
       });
-    updateBounds();
 
     const ResizeObserverImpl = window.ResizeObserver;
     if (typeof ResizeObserverImpl === "function") {

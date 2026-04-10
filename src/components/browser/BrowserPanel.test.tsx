@@ -66,6 +66,8 @@ describe("BrowserPanel", () => {
     goForwardMock.mockReset();
     reloadMock.mockReset();
     destroyMock.mockReset();
+    attachMock.mockResolvedValue(undefined);
+    setBoundsMock.mockResolvedValue(undefined);
     stateListener = undefined;
   });
 
@@ -150,6 +152,34 @@ describe("BrowserPanel", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Browser failed to load.");
     expect(screen.getByRole("alert")).toHaveTextContent("Browser view could not be created");
+  });
+
+  it("does not call setBounds during the initial attach", async () => {
+    render(<BrowserPanel />);
+
+    await waitFor(() => {
+      expect(attachMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(setBoundsMock).not.toHaveBeenCalled();
+  });
+
+  it("renders a fallback alert when setBounds rejects after resize", async () => {
+    const originalResizeObserver = window.ResizeObserver;
+    try {
+      // Force the window resize fallback path for environments without ResizeObserver.
+      // @ts-expect-error test-only override
+      window.ResizeObserver = undefined;
+      setBoundsMock.mockRejectedValueOnce(new Error("Browser bounds could not be updated"));
+
+      render(<BrowserPanel />);
+      fireEvent(window, new Event("resize"));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Browser failed to load.");
+      expect(screen.getByRole("alert")).toHaveTextContent("Browser bounds could not be updated");
+    } finally {
+      window.ResizeObserver = originalResizeObserver;
+    }
   });
 
   it("renders an inert shell without attaching the browser bridge", () => {
