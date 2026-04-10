@@ -183,10 +183,13 @@ describe("BrowserPanel", () => {
   });
 
   it("renders a single-row browser toolbar without the redundant status line", () => {
-    render(<BrowserPanel />);
+    const { container } = render(<BrowserPanel />);
+    const panel = screen.getByTestId("browser-panel");
 
     expect(screen.getByRole("form", { name: "Browser navigation" })).toBeInTheDocument();
-    expect(screen.queryByText("No page loaded")).not.toBeInTheDocument();
+    expect(panel.querySelector(".browser-panel__controls")).toBeInTheDocument();
+    expect(container.querySelector(".browser-panel__chrome")).not.toBeInTheDocument();
+    expect(panel.querySelector(".browser-panel__status")).not.toBeInTheDocument();
   });
 
   it("renders icon-style browser navigation controls", () => {
@@ -197,7 +200,18 @@ describe("BrowserPanel", () => {
     expect(screen.getByRole("button", { name: "Reload" })).toHaveAttribute("data-icon-button", "true");
   });
 
-  it("stretches the browser host to the full pane width", () => {
+  it("preserves the full-bleed compact footprint in shell mode", () => {
+    const { container } = render(<BrowserPanel mode="shell" />);
+    const panel = screen.getByTestId("browser-panel-shell");
+
+    expect(panel).toHaveClass("browser-panel--shell", "browser-panel--full-bleed");
+    expect(panel.querySelector(".browser-panel__controls")).toBeInTheDocument();
+    expect(panel.querySelector(".browser-panel__host")).toHaveClass("browser-panel__host--shell");
+    expect(container.querySelector(".browser-panel__chrome")).not.toBeInTheDocument();
+    expect(panel.querySelector(".browser-panel__status")).not.toBeInTheDocument();
+  });
+
+  it("stretches the browser host to the full pane width in live mode", () => {
     render(<BrowserPanel />);
 
     expect(screen.getByTestId("browser-panel")).toHaveClass("browser-panel--full-bleed");

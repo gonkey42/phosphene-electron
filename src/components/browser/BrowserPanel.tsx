@@ -212,15 +212,24 @@ function BrowserPanelShell() {
 
   return (
     <section
-      className={`browser-panel browser-panel--${resolvedTheme} browser-panel--shell`}
+      className={`browser-panel browser-panel--${resolvedTheme} browser-panel--shell browser-panel--full-bleed`}
       data-testid="browser-panel-shell"
       aria-hidden="true"
     >
-      <div className="browser-panel__chrome">
-        <div className="browser-panel__status">
-          <span className="browser-panel__title">Browser</span>
-          <span className="browser-panel__url">Preserving layout while workspace exits</span>
+      <div className="browser-panel__controls browser-panel__controls--shell">
+        <div className="browser-panel__shell-control" data-icon-button="true">
+          ←
         </div>
+        <div className="browser-panel__shell-control" data-icon-button="true">
+          →
+        </div>
+        <div className="browser-panel__shell-control" data-icon-button="true">
+          ↻
+        </div>
+        <div className="browser-panel__shell-control browser-panel__address browser-panel__address--shell">
+          Preserving layout while workspace exits
+        </div>
+        <div className="browser-panel__shell-control browser-panel__go browser-panel__go--shell">Go</div>
       </div>
       <div className="browser-panel__host browser-panel__host--shell" />
     </section>
