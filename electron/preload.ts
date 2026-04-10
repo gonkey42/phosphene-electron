@@ -53,10 +53,43 @@ let lifecycleReady =
 
 const THEME_PREFERENCE_SELECTED_CHANNEL = "theme:preference-selected";
 const THEME_SET_PREFERENCE_CHANNEL = "theme:set-preference";
+type ThemePreference = "system" | "light" | "dark";
+
+const themePreferenceSubscribers = new Set<(preference: ThemePreference) => void>();
+let lastThemePreferenceSelected: ThemePreference | null = null;
+let themePreferenceListenerBound = false;
+let themePreferenceIpcListener:
+  | ((_event: unknown, preference: ThemePreference) => void)
+  | null = null;
 
 window.addEventListener(LIFECYCLE_READY_EVENT, () => {
   lifecycleReady = true;
 });
+
+function ensureThemePreferenceListener() {
+  if (themePreferenceListenerBound) {
+    return;
+  }
+
+  themePreferenceListenerBound = true;
+  themePreferenceIpcListener = (_event, preference: ThemePreference) => {
+    lastThemePreferenceSelected = preference;
+    themePreferenceSubscribers.forEach((subscriber) => {
+      subscriber(preference);
+    });
+  };
+  ipcRenderer.on(THEME_PREFERENCE_SELECTED_CHANNEL, themePreferenceIpcListener);
+}
+
+function releaseThemePreferenceListenerIfIdle() {
+  if (themePreferenceSubscribers.size > 0 || !themePreferenceListenerBound || !themePreferenceIpcListener) {
+    return;
+  }
+
+  ipcRenderer.off(THEME_PREFERENCE_SELECTED_CHANNEL, themePreferenceIpcListener);
+  themePreferenceIpcListener = null;
+  themePreferenceListenerBound = false;
+}
 
 function isFilesystemResult<T>(value: unknown): value is FilesystemResult<T> {
   return (
@@ -244,14 +277,15 @@ contextBridge.exposeInMainWorld("desktop", {
       return ipcRenderer.invoke(THEME_SET_PREFERENCE_CHANNEL, preference);
     },
     onPreferenceSelected(callback: (preference: "system" | "light" | "dark") => void) {
-      const listener = (_event: unknown, preference: "system" | "light" | "dark") => {
-        callback(preference);
-      };
-
-      ipcRenderer.on(THEME_PREFERENCE_SELECTED_CHANNEL, listener);
+      ensureThemePreferenceListener();
+      themePreferenceSubscribers.add(callback);
+      if (lastThemePreferenceSelected !== null) {
+        callback(lastThemePreferenceSelected);
+      }
 
       return () => {
-        ipcRenderer.off(THEME_PREFERENCE_SELECTED_CHANNEL, listener);
+        themePreferenceSubscribers.delete(callback);
+        releaseThemePreferenceListenerIfIdle();
       };
     },
   },

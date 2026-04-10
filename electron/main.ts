@@ -25,6 +25,7 @@ type ThemePreference = "system" | "light" | "dark";
 const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
 
 let currentThemePreference: ThemePreference = "system";
+let hasCurrentThemePreference = false;
 
 type FlushResponsePayload = {
   requestId: string;
@@ -145,6 +146,7 @@ async function createWindow(): Promise<BrowserWindow> {
     throw error;
   }
 
+  syncThemePreferenceToWindow(win);
   win.show();
   return win;
 }
@@ -230,13 +232,17 @@ function isThemePreference(value: unknown): value is ThemePreference {
   return typeof value === "string" && THEME_PREFERENCES.includes(value as ThemePreference);
 }
 
+function sendThemePreferenceToWindow(window: BrowserWindow, preference: ThemePreference) {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) {
+    return;
+  }
+
+  window.webContents.send(THEME_PREFERENCE_SELECTED_CHANNEL, preference);
+}
+
 function notifyRendererThemePreferenceSelected(preference: ThemePreference) {
   BrowserWindow.getAllWindows().forEach((window) => {
-    if (window.isDestroyed() || window.webContents.isDestroyed()) {
-      return;
-    }
-
-    window.webContents.send(THEME_PREFERENCE_SELECTED_CHANNEL, preference);
+    sendThemePreferenceToWindow(window, preference);
   });
 }
 
@@ -252,8 +258,24 @@ function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
 
   return [
     {
+      label: "File",
+      role: "fileMenu",
+    },
+    {
+      label: "Edit",
+      role: "editMenu",
+    },
+    {
       label: "View",
       submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
         {
           label: "Theme",
           submenu: [
@@ -264,6 +286,14 @@ function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
         },
       ],
     },
+    {
+      label: "Window",
+      role: "windowMenu",
+    },
+    {
+      label: "Help",
+      role: "help",
+    },
   ];
 }
 
@@ -273,6 +303,7 @@ function installApplicationMenu() {
 
 function setThemePreference(preference: ThemePreference, notifyRenderer: boolean) {
   currentThemePreference = preference;
+  hasCurrentThemePreference = true;
   installApplicationMenu();
 
   if (notifyRenderer) {
@@ -288,6 +319,14 @@ function registerThemePreferenceIPC() {
 
     setThemePreference(preference, false);
   });
+}
+
+function syncThemePreferenceToWindow(window: BrowserWindow) {
+  if (!hasCurrentThemePreference) {
+    return;
+  }
+
+  sendThemePreferenceToWindow(window, currentThemePreference);
 }
 
 export function attachDurableWindowCloseHandler(window: BrowserWindow) {

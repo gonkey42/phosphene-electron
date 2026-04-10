@@ -54,8 +54,10 @@ class BrowserViewMock {
 class BrowserWindowMock {
   static getAllWindows = browserWindowGetAllWindowsMock;
   static fromWebContents = browserWindowFromWebContentsMock;
+  static lastCreatedInstance: BrowserWindowMock | null = null;
   constructor(options?: unknown) {
     browserWindowConstructorMock(options);
+    BrowserWindowMock.lastCreatedInstance = this;
   }
 
   id = 7;
@@ -135,6 +137,7 @@ describe("electron main close flushing", () => {
     browserWindowSetBrowserViewMock.mockReset();
     menuBuildFromTemplateMock.mockReset();
     menuSetApplicationMenuMock.mockReset();
+    BrowserWindowMock.lastCreatedInstance = null;
     appWhenReadyMock.mockResolvedValue(undefined);
     appGetPathMock.mockImplementation((name: string) => {
       if (name === "appData") {
@@ -251,6 +254,8 @@ describe("electron main close flushing", () => {
     expect(ipcMainHandleMock).toHaveBeenCalledWith("theme:set-preference", expect.any(Function));
     expect(menuBuildFromTemplateMock).toHaveBeenCalledWith(
       expect.arrayContaining([
+        expect.objectContaining({ label: "File" }),
+        expect.objectContaining({ label: "Edit" }),
         expect.objectContaining({
           label: "View",
           submenu: expect.arrayContaining([
@@ -264,6 +269,8 @@ describe("electron main close flushing", () => {
             }),
           ]),
         }),
+        expect.objectContaining({ label: "Window" }),
+        expect.objectContaining({ label: "Help" }),
       ]),
     );
     expect(menuSetApplicationMenuMock).toHaveBeenCalledTimes(1);
@@ -309,6 +316,29 @@ describe("electron main close flushing", () => {
     darkItem?.click?.();
 
     expect(windowInstance.webContents.send).toHaveBeenCalledWith(
+      "theme:preference-selected",
+      "dark",
+    );
+  });
+
+  it("replays a menu-selected theme preference to a later-created window", async () => {
+    browserWindowGetAllWindowsMock.mockReturnValue([]);
+    browserWindowLoadFileMock.mockImplementation(async () => {
+      const themePreferenceHandler = ipcMainHandleMock.mock.calls.find(
+        ([channel]) => channel === "theme:set-preference",
+      )?.[1];
+
+      await themePreferenceHandler?.(
+        { sender: BrowserWindowMock.lastCreatedInstance?.webContents } as never,
+        "dark",
+      );
+    });
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(BrowserWindowMock.lastCreatedInstance?.webContents.send).toHaveBeenCalledWith(
       "theme:preference-selected",
       "dark",
     );

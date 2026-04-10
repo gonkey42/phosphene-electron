@@ -275,6 +275,28 @@ describe("preload filesystem IPC", () => {
     expect(offMock).toHaveBeenCalledWith("theme:preference-selected", listener);
   });
 
+  it("replays the most recent theme selection to late subscribers", async () => {
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+    const firstSubscriber = vi.fn();
+    const handlePreferenceSelected = vi.fn();
+
+    const unsubscribeFirst = desktop.theme.onPreferenceSelected(firstSubscriber);
+    const listener = onMock.mock.calls.find(([channel]) => channel === "theme:preference-selected")?.[1];
+    listener?.({}, "dark");
+
+    expect(firstSubscriber).toHaveBeenCalledWith("dark");
+
+    unsubscribeFirst();
+
+    const unsubscribe = desktop.theme.onPreferenceSelected(handlePreferenceSelected);
+
+    expect(handlePreferenceSelected).toHaveBeenCalledWith("dark");
+
+    unsubscribe();
+  });
+
   it("subscribes and unsubscribes browser state listeners through ipcRenderer", async () => {
     await import("./preload");
 
