@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  MenuItem,
   type MenuItemConstructorOptions,
   type WebContents,
 } from "electron";
@@ -247,6 +248,18 @@ function notifyRendererThemePreferenceSelected(preference: ThemePreference) {
 }
 
 function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
+  return [
+    ...(process.platform === "darwin"
+      ? [{ role: "appMenu" as const }]
+      : [{ role: "fileMenu" as const }]),
+    { role: "editMenu" as const },
+    { role: "viewMenu" as const },
+    { role: "windowMenu" as const },
+    { role: "help" as const },
+  ];
+}
+
+function buildThemeSubmenuTemplate(): MenuItemConstructorOptions[] {
   const buildThemeItem = (label: string, preference: ThemePreference): MenuItemConstructorOptions => ({
     label,
     type: "radio",
@@ -257,48 +270,33 @@ function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
   });
 
   return [
-    {
-      label: "File",
-      role: "fileMenu",
-    },
-    {
-      label: "Edit",
-      role: "editMenu",
-    },
-    {
-      label: "View",
-      submenu: [
-        { role: "reload" },
-        { role: "forceReload" },
-        { role: "toggleDevTools" },
-        { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
-        { type: "separator" },
-        {
-          label: "Theme",
-          submenu: [
-            buildThemeItem("System", "system"),
-            buildThemeItem("Light", "light"),
-            buildThemeItem("Dark", "dark"),
-          ],
-        },
-      ],
-    },
-    {
-      label: "Window",
-      role: "windowMenu",
-    },
-    {
-      label: "Help",
-      role: "help",
-    },
+    buildThemeItem("System", "system"),
+    buildThemeItem("Light", "light"),
+    buildThemeItem("Dark", "dark"),
   ];
 }
 
+function insertThemeMenu(menu: Menu) {
+  const viewMenuItem = menu.items.find((item) => item.role === "viewMenu");
+  const viewSubmenu = viewMenuItem?.submenu;
+
+  if (!viewSubmenu) {
+    return;
+  }
+
+  viewSubmenu.append(new MenuItem({ type: "separator" }));
+  viewSubmenu.append(
+    new MenuItem({
+      label: "Theme",
+      submenu: buildThemeSubmenuTemplate(),
+    }),
+  );
+}
+
 function installApplicationMenu() {
-  Menu.setApplicationMenu(Menu.buildFromTemplate(buildApplicationMenuTemplate()));
+  const menu = Menu.buildFromTemplate(buildApplicationMenuTemplate());
+  insertThemeMenu(menu);
+  Menu.setApplicationMenu(menu);
 }
 
 function setThemePreference(preference: ThemePreference, notifyRenderer: boolean) {

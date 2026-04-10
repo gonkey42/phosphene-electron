@@ -263,16 +263,15 @@ describe("preload filesystem IPC", () => {
     await desktop.theme.setPreference("dark");
     expect(invokeMock).toHaveBeenCalledWith("theme:set-preference", "dark");
 
-    const unsubscribe = desktop.theme.onPreferenceSelected(handlePreferenceSelected);
     expect(onMock).toHaveBeenCalledWith("theme:preference-selected", expect.any(Function));
-
     const listener = onMock.mock.calls.find(([channel]) => channel === "theme:preference-selected")?.[1];
     listener?.({}, "light");
+
+    const unsubscribe = desktop.theme.onPreferenceSelected(handlePreferenceSelected);
 
     expect(handlePreferenceSelected).toHaveBeenCalledWith("light");
 
     unsubscribe();
-    expect(offMock).toHaveBeenCalledWith("theme:preference-selected", listener);
   });
 
   it("replays the most recent theme selection to late subscribers", async () => {

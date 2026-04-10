@@ -20,6 +20,70 @@ const browserWindowSetBrowserViewMock = vi.fn();
 const menuBuildFromTemplateMock = vi.fn();
 const menuSetApplicationMenuMock = vi.fn();
 
+type MockMenuItem = {
+  role?: string;
+  label?: string;
+  type?: string;
+  checked?: boolean;
+  submenu?: MockMenu;
+  click?: (...args: unknown[]) => void;
+};
+
+type MockMenu = {
+  items: MockMenuItem[];
+  append(menuItem: MockMenuItem): void;
+  insert(pos: number, menuItem: MockMenuItem): void;
+};
+
+function createMockMenuItem(template: MockMenuItem): MockMenuItem {
+  const item: MockMenuItem = { ...template };
+
+  if (Array.isArray(template.submenu)) {
+    item.submenu = createMockMenu(template.submenu);
+  }
+
+  return item;
+}
+
+function createMockMenu(items: MockMenuItem[]): MockMenu {
+  const menuItems = items.map((item) => createMockMenuItem(item));
+
+  return {
+    items: menuItems,
+    append(menuItem: MockMenuItem) {
+      menuItems.push(menuItem);
+    },
+    insert(pos: number, menuItem: MockMenuItem) {
+      menuItems.splice(pos, 0, menuItem);
+    },
+  };
+}
+
+function createRoleMenuTemplate(template: Array<{ role?: string; label?: string }>): MockMenu {
+  const items = template.map((entry) => {
+    if (entry.role === "viewMenu") {
+      return {
+        role: "viewMenu",
+        submenu: createMockMenu([
+          { role: "reload" },
+          { role: "forceReload" },
+          { role: "toggleDevTools" },
+          { type: "separator" },
+          { role: "resetZoom" },
+          { role: "zoomIn" },
+          { role: "zoomOut" },
+          { type: "separator" },
+          { role: "togglefullscreen" },
+        ]),
+      };
+    }
+
+    return { ...entry };
+  });
+
+  return createMockMenu(items);
+}
+
 class BrowserViewMock {
   constructor(_options?: unknown) {}
 
@@ -78,6 +142,12 @@ class BrowserWindowMock {
   };
 }
 
+class MenuItemMock {
+  constructor(options: MockMenuItem) {
+    return createMockMenuItem(options);
+  }
+}
+
 async function waitForAsyncEffects(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -100,6 +170,7 @@ vi.mock("electron", () => ({
     buildFromTemplate: menuBuildFromTemplateMock,
     setApplicationMenu: menuSetApplicationMenuMock,
   },
+  MenuItem: MenuItemMock,
   ipcMain: {
     handle: ipcMainHandleMock,
     on: ipcMainOnMock,
@@ -138,6 +209,9 @@ describe("electron main close flushing", () => {
     menuBuildFromTemplateMock.mockReset();
     menuSetApplicationMenuMock.mockReset();
     BrowserWindowMock.lastCreatedInstance = null;
+    menuBuildFromTemplateMock.mockImplementation((template: Array<{ role?: string; label?: string }>) =>
+      createRoleMenuTemplate(template),
+    );
     appWhenReadyMock.mockResolvedValue(undefined);
     appGetPathMock.mockImplementation((name: string) => {
       if (name === "appData") {
@@ -243,7 +317,6 @@ describe("electron main close flushing", () => {
   });
 
   it("registers a View > Theme menu with system, light, and dark items", async () => {
-    menuBuildFromTemplateMock.mockReturnValue({} as never);
     const windowInstance = new BrowserWindowMock();
     browserWindowGetAllWindowsMock.mockReturnValue([windowInstance as never]);
 
@@ -254,65 +327,59 @@ describe("electron main close flushing", () => {
     expect(ipcMainHandleMock).toHaveBeenCalledWith("theme:set-preference", expect.any(Function));
     expect(menuBuildFromTemplateMock).toHaveBeenCalledWith(
       expect.arrayContaining([
-        expect.objectContaining({ label: "File" }),
-        expect.objectContaining({ label: "Edit" }),
-        expect.objectContaining({
-          label: "View",
-          submenu: expect.arrayContaining([
-            expect.objectContaining({
-              label: "Theme",
-              submenu: expect.arrayContaining([
-                expect.objectContaining({ label: "System" }),
-                expect.objectContaining({ label: "Light" }),
-                expect.objectContaining({ label: "Dark" }),
-              ]),
-            }),
-          ]),
-        }),
-        expect.objectContaining({ label: "Window" }),
-        expect.objectContaining({ label: "Help" }),
+        expect.objectContaining({ role: process.platform === "darwin" ? "appMenu" : "fileMenu" }),
+        expect.objectContaining({ role: "editMenu" }),
+        expect.objectContaining({ role: "viewMenu" }),
+        expect.objectContaining({ role: "windowMenu" }),
+        expect.objectContaining({ role: "help" }),
       ]),
     );
     expect(menuSetApplicationMenuMock).toHaveBeenCalledTimes(1);
+
+    const menu = menuSetApplicationMenuMock.mock.calls[0]?.[0] as MockMenu;
+    const viewMenuItem = menu.items.find((item) => item.role === "viewMenu");
+    const viewSubmenuItems = viewMenuItem?.submenu?.items ?? [];
+
+    expect(viewSubmenuItems.some((item) => item.role === "togglefullscreen")).toBe(true);
+    expect(viewSubmenuItems.at(-2)).toMatchObject({ type: "separator" });
+    expect(viewSubmenuItems.at(-1)).toMatchObject({
+      label: "Theme",
+      submenu: expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({ label: "System" }),
+          expect.objectContaining({ label: "Light" }),
+          expect.objectContaining({ label: "Dark" }),
+        ]),
+      }),
+    });
+
+    const themeMenu = viewSubmenuItems.at(-1) as MockMenuItem;
+    expect(themeMenu.submenu?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "System" }),
+        expect.objectContaining({ label: "Light" }),
+        expect.objectContaining({ label: "Dark" }),
+      ]),
+    );
 
     const themePreferenceHandler = ipcMainHandleMock.mock.calls.find(
       ([channel]) => channel === "theme:set-preference",
     )?.[1];
     await themePreferenceHandler?.({ sender: windowInstance.webContents } as never, "light");
 
-    expect(menuBuildFromTemplateMock).toHaveBeenCalledTimes(2);
-    const secondMenuTemplate = menuBuildFromTemplateMock.mock.calls[1]?.[0] as Array<{
-      label?: string;
-      submenu?: Array<{
-        label?: string;
-        submenu?: Array<{
-          label?: string;
-          checked?: boolean;
-        }>;
-      }>;
-    }>;
-    const secondThemeMenu = secondMenuTemplate.find((item) => item.label === "View")?.submenu?.find(
-      (item) => item.label === "Theme",
+    expect(menuSetApplicationMenuMock).toHaveBeenCalledTimes(2);
+    const updatedMenu = menuSetApplicationMenuMock.mock.calls[1]?.[0] as MockMenu;
+    const updatedViewMenuItem = updatedMenu.items.find((item) => item.role === "viewMenu");
+    const updatedThemeMenu = updatedViewMenuItem?.submenu?.items.at(-1) as MockMenuItem;
+    expect(updatedThemeMenu.submenu?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "System", checked: false }),
+        expect.objectContaining({ label: "Light", checked: true }),
+        expect.objectContaining({ label: "Dark", checked: false }),
+      ]),
     );
-    const lightItem = secondThemeMenu?.submenu?.find((item) => item.label === "Light");
 
-    expect(lightItem?.checked).toBe(true);
-
-    const menuTemplate = menuBuildFromTemplateMock.mock.calls[0]?.[0] as Array<{
-      label?: string;
-      submenu?: Array<{
-        label?: string;
-        submenu?: Array<{
-          label?: string;
-          click?: () => void;
-        }>;
-      }>;
-    }>;
-    const themeMenu = menuTemplate.find((item) => item.label === "View")?.submenu?.find(
-      (item) => item.label === "Theme",
-    );
-    const darkItem = themeMenu?.submenu?.find((item) => item.label === "Dark");
-
+    const darkItem = themeMenu.submenu?.items.find((item) => item.label === "Dark");
     darkItem?.click?.();
 
     expect(windowInstance.webContents.send).toHaveBeenCalledWith(

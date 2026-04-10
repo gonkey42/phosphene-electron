@@ -57,7 +57,6 @@ type ThemePreference = "system" | "light" | "dark";
 
 const themePreferenceSubscribers = new Set<(preference: ThemePreference) => void>();
 let lastThemePreferenceSelected: ThemePreference | null = null;
-let themePreferenceListenerBound = false;
 let themePreferenceIpcListener:
   | ((_event: unknown, preference: ThemePreference) => void)
   | null = null;
@@ -67,11 +66,10 @@ window.addEventListener(LIFECYCLE_READY_EVENT, () => {
 });
 
 function ensureThemePreferenceListener() {
-  if (themePreferenceListenerBound) {
+  if (themePreferenceIpcListener) {
     return;
   }
 
-  themePreferenceListenerBound = true;
   themePreferenceIpcListener = (_event, preference: ThemePreference) => {
     lastThemePreferenceSelected = preference;
     themePreferenceSubscribers.forEach((subscriber) => {
@@ -81,15 +79,7 @@ function ensureThemePreferenceListener() {
   ipcRenderer.on(THEME_PREFERENCE_SELECTED_CHANNEL, themePreferenceIpcListener);
 }
 
-function releaseThemePreferenceListenerIfIdle() {
-  if (themePreferenceSubscribers.size > 0 || !themePreferenceListenerBound || !themePreferenceIpcListener) {
-    return;
-  }
-
-  ipcRenderer.off(THEME_PREFERENCE_SELECTED_CHANNEL, themePreferenceIpcListener);
-  themePreferenceIpcListener = null;
-  themePreferenceListenerBound = false;
-}
+ensureThemePreferenceListener();
 
 function isFilesystemResult<T>(value: unknown): value is FilesystemResult<T> {
   return (
@@ -285,7 +275,6 @@ contextBridge.exposeInMainWorld("desktop", {
 
       return () => {
         themePreferenceSubscribers.delete(callback);
-        releaseThemePreferenceListenerIfIdle();
       };
     },
   },
