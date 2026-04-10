@@ -161,6 +161,17 @@ describe("BrowserPanel", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Browser view could not be created");
   });
 
+  it("renders a fallback alert when attach throws synchronously", async () => {
+    attachMock.mockImplementationOnce(() => {
+      throw new Error("Desktop API not available");
+    });
+
+    render(<BrowserPanel />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Browser failed to load.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Desktop API not available");
+  });
+
   it("does not call setBounds during the initial attach", async () => {
     render(<BrowserPanel />);
 

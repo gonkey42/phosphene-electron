@@ -97,7 +97,9 @@ function LiveBrowserPanel() {
     if (!host) {
       return;
     }
-    void browser.attach(getBrowserBounds(host)).catch(reportBrowserError);
+    void Promise.resolve()
+      .then(() => browser.attach(getBrowserBounds(host)))
+      .catch(reportBrowserError);
 
     const handleWindowResize = () => {
       void syncBounds(host);

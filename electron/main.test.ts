@@ -358,6 +358,36 @@ describe("electron main close flushing", () => {
     expect(attachedView.webContents.on).toHaveBeenCalledWith("context-menu", expect.any(Function));
   });
 
+  it("registers the address-input context menu IPC and shows the native popup", async () => {
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const addressMenuHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:show-address-input-menu",
+    )?.[1];
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    expect(addressMenuHandler).toEqual(expect.any(Function));
+
+    menuBuildFromTemplateMock.mockClear();
+    menuPopupMock.mockClear();
+
+    await addressMenuHandler?.({ sender: windowInstance.webContents } as never);
+
+    expect(menuBuildFromTemplateMock).toHaveBeenCalledWith([
+      { role: "undo" },
+      { role: "redo" },
+      { type: "separator" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { role: "selectAll" },
+    ]);
+    expect(menuPopupMock).toHaveBeenCalledWith({ window: windowInstance });
+  });
+
   it("registers a View > Theme menu with system, light, and dark items", async () => {
     const windowInstance = new BrowserWindowMock();
     browserWindowGetAllWindowsMock.mockReturnValue([windowInstance as never]);
