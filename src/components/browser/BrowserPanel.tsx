@@ -114,6 +114,25 @@ function LiveBrowserPanel() {
     };
   }, []);
 
+  useEffect(() => {
+    const handleWindowResize = () => {
+      const host = hostRef.current;
+      if (!host) {
+        return;
+      }
+
+      void browser.setBounds(getBrowserBounds(host));
+    };
+
+    window.addEventListener("resize", handleWindowResize);
+
+    return () => {
+      window.removeEventListener("resize", handleWindowResize);
+    };
+  }, []);
+
+  const statusText = browserState.isLoading ? "Loading..." : browserState.title || "Browser";
+
   return (
     <section
       className={`browser-panel browser-panel--${resolvedTheme}`}
@@ -164,8 +183,7 @@ function LiveBrowserPanel() {
         </form>
 
         <div className="browser-panel__status" aria-live="polite">
-          <span className="browser-panel__title">{browserState.title || "Browser"}</span>
-          <span className="browser-panel__url">{browserState.url || "No page loaded"}</span>
+          {statusText}
         </div>
       </div>
 

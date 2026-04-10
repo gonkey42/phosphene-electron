@@ -64,7 +64,12 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      if (focus === "canvas" || !initialized || isEditableEventTarget(event.target)) {
+      if (
+        focus === "canvas" ||
+        focus === "browser" ||
+        !initialized ||
+        isEditableEventTarget(event.target)
+      ) {
         return;
       }
 

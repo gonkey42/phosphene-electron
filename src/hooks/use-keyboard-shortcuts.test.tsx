@@ -170,6 +170,27 @@ describe("useKeyboardShortcuts", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it("ignores app shortcuts while browser focus is active", async () => {
+    useAppStore.setState({
+      focus: "browser",
+      initialized: true,
+      workspaces: [{ id: "workspace-1", name: "Home", icon: "🏠", position: 0 }],
+      activeWorkspaceId: "workspace-1",
+    });
+
+    renderHook(() => useKeyboardShortcuts());
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "t",
+        metaKey: true,
+        bubbles: true,
+      }),
+    );
+
+    expect(createWorkspaceMock).not.toHaveBeenCalled();
+  });
+
   it("creates a workspace, refreshes the list, and activates it", async () => {
     createWorkspaceMock.mockResolvedValue("workspace-3");
     listWorkspacesMock.mockResolvedValue([

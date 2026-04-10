@@ -143,6 +143,23 @@ describe("BrowserPanel", () => {
     expect(screen.getByLabelText("Browser address")).toHaveValue("https://example.com/loaded");
   });
 
+  it("renders a fallback alert when browser state reports a creation error", async () => {
+    render(<BrowserPanel />);
+
+    act(() => {
+      stateListener?.({
+        url: "",
+        title: "",
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: false,
+        lastError: "Browser view could not be created",
+      });
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Browser failed to load.");
+  });
+
   it("renders an inert shell without attaching the browser bridge", () => {
     render(<BrowserPanel mode="shell" />);
 
