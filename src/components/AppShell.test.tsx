@@ -3,6 +3,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ResolvedTheme, ThemePreference } from "../lib/theme-settings";
+
 const {
   getDbMock,
   ensureStorageDirectoriesMock,
@@ -160,9 +162,12 @@ describe("AppShell", () => {
     runDailyBackupMock.mockResolvedValue(undefined);
     const onThemePreferenceChange = vi.fn();
     useThemeControllerMock.mockImplementation(() => {
-      const [themeState, setThemeState] = useState({
-        themePreference: "system" as const,
-        resolvedTheme: "light" as const,
+      const [themeState, setThemeState] = useState<{
+        themePreference: ThemePreference;
+        resolvedTheme: ResolvedTheme;
+      }>({
+        themePreference: "system",
+        resolvedTheme: "light",
       });
 
       useEffect(() => {

@@ -32,34 +32,48 @@ vi.mock("./use-error-reporter", () => ({
 
 import { useThemeController } from "./use-theme-controller";
 
-type MatchMediaChangeListener = (event: MediaQueryListEvent) => void;
+type MatchMediaListener = EventListenerOrEventListenerObject;
+
+function isMatchMediaChangeListener(listener: MatchMediaListener): listener is EventListener {
+  return typeof listener === "function";
+}
 
 function createMatchMediaController(initialMatches: boolean) {
   let matches = initialMatches;
-  const listeners = new Set<MatchMediaChangeListener>();
+  const listeners = new Set<EventListener>();
 
-  const mediaQueryList = {
+  const mediaQueryList: MediaQueryList = {
     get matches() {
       return matches;
     },
     media: "(prefers-color-scheme: dark)",
     onchange: null,
-    addEventListener: vi.fn((_type: string, listener: MatchMediaChangeListener) => {
-      listeners.add(listener);
+    addEventListener: vi.fn((_type: string, listener: MatchMediaListener) => {
+      if (isMatchMediaChangeListener(listener)) {
+        listeners.add(listener);
+      }
     }),
-    removeEventListener: vi.fn((_type: string, listener: MatchMediaChangeListener) => {
-      listeners.delete(listener);
+    removeEventListener: vi.fn((_type: string, listener: MatchMediaListener) => {
+      if (isMatchMediaChangeListener(listener)) {
+        listeners.delete(listener);
+      }
     }),
-    addListener: vi.fn((listener: MatchMediaChangeListener) => {
-      listeners.add(listener);
+    addListener: vi.fn((listener: ((this: MediaQueryList, ev: MediaQueryListEvent) => any) | null) => {
+      if (listener) {
+        listeners.add(listener as EventListener);
+      }
     }),
-    removeListener: vi.fn((listener: MatchMediaChangeListener) => {
-      listeners.delete(listener);
-    }),
+    removeListener: vi.fn(
+      (listener: ((this: MediaQueryList, ev: MediaQueryListEvent) => any) | null) => {
+        if (listener) {
+          listeners.delete(listener as EventListener);
+        }
+      },
+    ),
     dispatchEvent: vi.fn(),
-  } satisfies MediaQueryList;
+  };
 
-  const matchMedia = vi.fn((query: string) => {
+  const matchMedia = vi.fn((query: string): MediaQueryList => {
     expect(query).toBe("(prefers-color-scheme: dark)");
     return mediaQueryList;
   });
@@ -70,7 +84,7 @@ function createMatchMediaController(initialMatches: boolean) {
     emitChange(nextMatches: boolean) {
       matches = nextMatches;
       const event = { matches: nextMatches, media: mediaQueryList.media } as MediaQueryListEvent;
-      listeners.forEach((listener) => listener(event));
+      listeners.forEach((listener) => listener.call(mediaQueryList, event));
     },
   };
 }
