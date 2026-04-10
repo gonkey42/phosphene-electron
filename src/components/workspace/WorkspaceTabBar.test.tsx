@@ -88,10 +88,22 @@ describe("WorkspaceTabBar", () => {
 
     render(<WorkspaceTabBar />);
 
-    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    const homeButton = await screen.findByRole("button", { name: "Home" });
+    const projectsButton = screen.getByRole("button", { name: "Projects" });
+
+    expect(homeButton).toHaveAttribute("aria-current", "page");
+    expect(homeButton.closest(".workspace-tab-bar__tab-item")).toHaveClass(
+      "workspace-tab-bar__tab-item--active",
+    );
+
+    fireEvent.click(projectsButton);
 
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
+    expect(projectsButton).toHaveAttribute("aria-current", "page");
+    expect(projectsButton.closest(".workspace-tab-bar__tab-item")).toHaveClass(
+      "workspace-tab-bar__tab-item--active",
+    );
+    expect(homeButton).not.toHaveAttribute("aria-current");
   });
 
   it("renders text-only workspace tabs with the create button immediately after the last tab", async () => {
