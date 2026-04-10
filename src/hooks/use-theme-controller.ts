@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   DEFAULT_THEME_PREFERENCE,
@@ -37,10 +37,12 @@ export function useThemeController() {
   const setResolvedTheme = useAppStore((state) => state.setResolvedTheme);
   const reportError = useErrorReporter("ThemeController");
   const userUpdateVersionRef = useRef(0);
+  const [isThemePreferenceReadyForSync, setIsThemePreferenceReadyForSync] = useState(false);
 
   const updateThemePreference = useCallback(
     async (nextPreference: ThemePreference) => {
       userUpdateVersionRef.current += 1;
+      setIsThemePreferenceReadyForSync(true);
       setThemePreference(nextPreference);
       setResolvedTheme(resolveTheme(nextPreference));
 
@@ -66,6 +68,7 @@ export function useThemeController() {
         }
 
         setThemePreference(persistedPreference);
+        setIsThemePreferenceReadyForSync(true);
       } catch (error) {
         if (cancelled || userUpdateVersionRef.current !== hydrationVersion) {
           return;
@@ -73,6 +76,7 @@ export function useThemeController() {
 
         reportError("Failed to load theme preference", error);
         setThemePreference(DEFAULT_THEME_PREFERENCE);
+        setIsThemePreferenceReadyForSync(true);
       }
     })();
 
@@ -86,6 +90,10 @@ export function useThemeController() {
   }, [setResolvedTheme, themePreference]);
 
   useEffect(() => {
+    if (!isThemePreferenceReadyForSync) {
+      return;
+    }
+
     try {
       void Promise.resolve(desktopTheme.setPreference(themePreference)).catch((error) => {
         reportError("Failed to sync theme preference to the native menu", error);
@@ -93,7 +101,7 @@ export function useThemeController() {
     } catch {
       return;
     }
-  }, [reportError, themePreference]);
+  }, [isThemePreferenceReadyForSync, reportError, themePreference]);
 
   useEffect(() => {
     try {

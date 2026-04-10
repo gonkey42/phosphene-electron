@@ -152,6 +152,23 @@ async function waitForAsyncEffects(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+async function withPlatform<T>(platform: NodeJS.Platform, run: () => Promise<T>): Promise<T> {
+  const originalPlatform = process.platform;
+  Object.defineProperty(process, "platform", {
+    configurable: true,
+    value: platform,
+  });
+
+  try {
+    return await run();
+  } finally {
+    Object.defineProperty(process, "platform", {
+      configurable: true,
+      value: originalPlatform,
+    });
+  }
+}
+
 vi.mock("electron", () => ({
   app: {
     isPackaged: true,
@@ -408,6 +425,25 @@ describe("electron main close flushing", () => {
     expect(BrowserWindowMock.lastCreatedInstance?.webContents.send).toHaveBeenCalledWith(
       "theme:preference-selected",
       "dark",
+    );
+  });
+
+  it("preserves both the app and file menus on macOS", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowGetAllWindowsMock.mockReturnValue([windowInstance as never]);
+
+    await withPlatform("darwin", async () => {
+      await import("./main");
+      await waitForAsyncEffects();
+      await waitForAsyncEffects();
+    });
+
+    expect(menuBuildFromTemplateMock).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "appMenu" }),
+        expect.objectContaining({ role: "fileMenu" }),
+        expect.objectContaining({ role: "viewMenu" }),
+      ]),
     );
   });
 

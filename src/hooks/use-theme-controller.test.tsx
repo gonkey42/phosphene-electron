@@ -113,6 +113,73 @@ describe("useThemeController", () => {
     });
   });
 
+  it("does not sync the placeholder default preference to the native menu before hydration settles", async () => {
+    const matchMediaController = createMatchMediaController(true);
+    let resolveThemePreferenceLoad: ((value: "dark") => void) | undefined;
+    window.matchMedia = matchMediaController.matchMedia;
+    loadThemePreferenceMock.mockReturnValue(
+      new Promise((resolve: (value: "dark") => void) => {
+        resolveThemePreferenceLoad = resolve;
+      }),
+    );
+
+    renderHook(() => useThemeController());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(themeSetPreferenceMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveThemePreferenceLoad?.("dark");
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(themeSetPreferenceMock).toHaveBeenCalledWith("dark");
+    });
+  });
+
+  it("syncs a newer user-selected preference before hydration resolves without replaying the placeholder default", async () => {
+    const matchMediaController = createMatchMediaController(true);
+    let resolveThemePreferenceLoad: ((value: "system") => void) | undefined;
+    window.matchMedia = matchMediaController.matchMedia;
+    loadThemePreferenceMock.mockReturnValue(
+      new Promise((resolve: (value: "system") => void) => {
+        resolveThemePreferenceLoad = resolve;
+      }),
+    );
+    saveThemePreferenceMock.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useThemeController());
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    themeSetPreferenceMock.mockClear();
+
+    await act(async () => {
+      await result.current.updateThemePreference("light");
+    });
+
+    expect(themeSetPreferenceMock).toHaveBeenCalledWith("light");
+    expect(themeSetPreferenceMock.mock.calls.map(([preference]) => preference)).not.toContain(
+      "system",
+    );
+
+    await act(async () => {
+      resolveThemePreferenceLoad?.("system");
+      await Promise.resolve();
+    });
+
+    expect(themeSetPreferenceMock).toHaveBeenLastCalledWith("light");
+    expect(themeSetPreferenceMock.mock.calls.map(([preference]) => preference)).not.toContain(
+      "system",
+    );
+  });
+
   it("resolves a system preference against the current OS color scheme", async () => {
     const matchMediaController = createMatchMediaController(true);
     window.matchMedia = matchMediaController.matchMedia;

@@ -250,7 +250,8 @@ function notifyRendererThemePreferenceSelected(preference: ThemePreference) {
 function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
   return [
     ...(process.platform === "darwin"
-      ? [{ role: "appMenu" as const }]
+      ? ([{ role: "appMenu" as const }, { role: "fileMenu" as const }] satisfies
+          MenuItemConstructorOptions[])
       : [{ role: "fileMenu" as const }]),
     { role: "editMenu" as const },
     { role: "viewMenu" as const },
