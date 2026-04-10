@@ -24,7 +24,7 @@ export function mapWorkspace(item: WorkspaceListItem) {
   return {
     id: item.id,
     name: item.name,
-    icon: item.icon ?? "📋",
+    icon: item.icon,
     position: item.position,
   };
 }

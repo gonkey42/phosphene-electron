@@ -94,56 +94,22 @@ describe("WorkspaceTabBar", () => {
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
   });
 
-  it("still switches workspaces when theme props are present", async () => {
+  it("renders text-only workspace tabs with the create button immediately after the last tab", async () => {
     listWorkspacesMock.mockResolvedValue([
       createWorkspaceItem(),
       createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
     ]);
-    const onThemePreferenceChange = vi.fn();
 
-    render(
-      <WorkspaceTabBar
-        themePreference="dark"
-        onThemePreferenceChange={onThemePreferenceChange}
-      />,
-    );
+    const { container } = render(<WorkspaceTabBar />);
 
-    expect(await screen.findByRole("button", { name: "Projects" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Projects" })).toBeInTheDocument();
+    expect(container.querySelectorAll(".workspace-tab-bar__icon")).toHaveLength(0);
 
-    expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
-    expect(onThemePreferenceChange).not.toHaveBeenCalled();
-  });
-
-  it("renders a theme mode selector with system, light, and dark options", async () => {
-    listWorkspacesMock.mockResolvedValue([createWorkspaceItem()]);
-
-    render(<WorkspaceTabBar themePreference="system" />);
-
-    const themeSelector = await screen.findByLabelText("Theme mode");
-
-    expect(themeSelector).toHaveValue("system");
-    expect(screen.getByRole("option", { name: "System" })).toHaveValue("system");
-    expect(screen.getByRole("option", { name: "Light" })).toHaveValue("light");
-    expect(screen.getByRole("option", { name: "Dark" })).toHaveValue("dark");
-  });
-
-  it("dispatches theme preference updates when the selector changes", async () => {
-    listWorkspacesMock.mockResolvedValue([createWorkspaceItem()]);
-    const onThemePreferenceChange = vi.fn();
-
-    render(
-      <WorkspaceTabBar
-        themePreference="system"
-        onThemePreferenceChange={onThemePreferenceChange}
-      />,
-    );
-
-    fireEvent.change(await screen.findByLabelText("Theme mode"), {
-      target: { value: "dark" },
-    });
-
-    expect(onThemePreferenceChange).toHaveBeenCalledWith("dark");
+    const tabList = container.querySelector(".workspace-tab-bar__tabs");
+    expect(tabList).not.toBeNull();
+    expect(tabList?.children).toHaveLength(3);
+    expect(tabList?.lastElementChild).toContainElement(screen.getByRole("button", { name: "Create workspace" }));
   });
 
   it("shows platform-aware shortcuts for the first nine workspaces", async () => {
@@ -183,7 +149,7 @@ describe("WorkspaceTabBar", () => {
       .mockResolvedValueOnce([
         createWorkspaceItem(),
         createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
-        createWorkspaceItem({ id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 }),
+        createWorkspaceItem({ id: "workspace-3", name: "Workspace 3", icon: null, position: 2 }),
       ]);
     createWorkspaceMock.mockResolvedValue("workspace-3");
 
@@ -193,9 +159,16 @@ describe("WorkspaceTabBar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => {
-      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3", "🪟");
+      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3");
     });
     expect(await screen.findByRole("button", { name: "Workspace 3" })).toBeInTheDocument();
+    expect(mapWorkspaceMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "workspace-3",
+        name: "Workspace 3",
+        icon: null,
+      }),
+    );
     expect(listWorkspacesMock).toHaveBeenCalledTimes(2);
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
   });
@@ -347,7 +320,7 @@ describe("WorkspaceTabBar", () => {
       .mockResolvedValueOnce([
         createWorkspaceItem(),
         createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
-        createWorkspaceItem({ id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 }),
+        createWorkspaceItem({ id: "workspace-3", name: "Workspace 3", icon: null, position: 2 }),
       ]);
     createWorkspaceMock.mockResolvedValue("workspace-3");
 

@@ -85,7 +85,7 @@ describe("workspace operations", () => {
     );
   });
 
-  it("maps workspace rows with a default icon fallback", async () => {
+  it("maps workspace rows without seeding a default icon", async () => {
     const { mapWorkspace } = await import("./workspace-operations");
 
     expect(
@@ -98,7 +98,7 @@ describe("workspace operations", () => {
     ).toEqual({
       id: "workspace-1",
       name: "Home",
-      icon: "📋",
+      icon: null,
       position: 0,
     });
   });

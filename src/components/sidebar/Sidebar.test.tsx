@@ -28,4 +28,13 @@ describe("Sidebar", () => {
       onBoardSelect,
     });
   });
+
+  it("uses a themed shell instead of inline styles", () => {
+    const { container } = render(<Sidebar />);
+
+    const sidebar = container.querySelector("aside");
+
+    expect(sidebar).toHaveClass("sidebar");
+    expect(sidebar).not.toHaveAttribute("style");
+  });
 });

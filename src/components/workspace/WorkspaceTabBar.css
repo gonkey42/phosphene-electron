@@ -21,36 +21,6 @@
   padding: 0;
 }
 
-.workspace-tab-bar__theme-control {
-  align-items: center;
-  background: color-mix(in srgb, var(--app-surface) 92%, var(--app-background));
-  border: 1px solid var(--app-border);
-  border-radius: 999px;
-  color: var(--app-text-muted);
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 0.4rem;
-  padding: 0.2rem 0.6rem;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--app-text) 8%, transparent);
-  -webkit-app-region: no-drag;
-}
-
-.workspace-tab-bar__theme-label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-
-.workspace-tab-bar__theme-select {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  color: var(--app-text);
-  font: inherit;
-  min-width: 6rem;
-  outline: none;
-}
-
 .workspace-tab-bar__tab-item {
   flex: 0 1 auto;
   min-width: 0;
@@ -103,10 +73,6 @@
   font-weight: 600;
 }
 
-.workspace-tab-bar__icon {
-  flex: 0 0 auto;
-}
-
 .workspace-tab-bar__name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -151,6 +117,10 @@
   -webkit-app-region: no-drag;
 }
 
+.workspace-tab-bar__tab-item--create {
+  flex: 0 0 auto;
+}
+
 .workspace-tab-bar__close-button {
   flex: 0 0 auto;
   height: 1.75rem;
@@ -173,8 +143,7 @@
 .workspace-tab-bar__tab-button:focus-visible,
 .workspace-tab-bar__rename-input:focus-visible,
 .workspace-tab-bar__close-button:focus-visible,
-.workspace-tab-bar__create-button:focus-visible,
-.workspace-tab-bar__theme-select:focus-visible {
+.workspace-tab-bar__create-button:focus-visible {
   outline: 2px solid var(--app-text);
   outline-offset: 2px;
 }
