@@ -34,6 +34,13 @@ vi.mock("./use-error-reporter", () => ({
   useErrorReporter: () => reportErrorMock,
 }));
 
+vi.mock("../platform/desktop-api", () => ({
+  theme: {
+    setPreference: themeSetPreferenceMock,
+    onPreferenceSelected: themeOnPreferenceSelectedMock,
+  },
+}));
+
 import { useThemeController } from "./use-theme-controller";
 
 type MatchMediaListener = EventListenerOrEventListenerObject;
@@ -104,19 +111,6 @@ describe("useThemeController", () => {
       themePreference: DEFAULT_THEME_PREFERENCE,
       resolvedTheme: "light",
     });
-    (window as Window & {
-      desktop?: {
-        theme?: {
-          setPreference: typeof themeSetPreferenceMock;
-          onPreferenceSelected: typeof themeOnPreferenceSelectedMock;
-        };
-      };
-    }).desktop = {
-      theme: {
-        setPreference: themeSetPreferenceMock,
-        onPreferenceSelected: themeOnPreferenceSelectedMock.mockImplementation(() => () => undefined),
-      },
-    };
   });
 
   it("resolves a system preference against the current OS color scheme", async () => {

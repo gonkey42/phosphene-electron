@@ -7,6 +7,7 @@ import {
   type ResolvedTheme,
   type ThemePreference,
 } from "../lib/theme-settings";
+import { theme as desktopTheme } from "../platform/desktop-api";
 import { useAppStore } from "../stores/app-store";
 
 import { useErrorReporter } from "./use-error-reporter";
@@ -85,27 +86,23 @@ export function useThemeController() {
   }, [setResolvedTheme, themePreference]);
 
   useEffect(() => {
-    const themeBridge = window.desktop?.theme;
-
-    if (!themeBridge) {
+    try {
+      void Promise.resolve(desktopTheme.setPreference(themePreference)).catch((error) => {
+        reportError("Failed to sync theme preference to the native menu", error);
+      });
+    } catch {
       return;
     }
-
-    void Promise.resolve(themeBridge.setPreference(themePreference)).catch((error) => {
-      reportError("Failed to sync theme preference to the native menu", error);
-    });
   }, [reportError, themePreference]);
 
   useEffect(() => {
-    const themeBridge = window.desktop?.theme;
-
-    if (!themeBridge) {
+    try {
+      return desktopTheme.onPreferenceSelected((preference) => {
+        void updateThemePreference(preference);
+      });
+    } catch {
       return;
     }
-
-    return themeBridge.onPreferenceSelected((preference) => {
-      void updateThemePreference(preference);
-    });
   }, [updateThemePreference]);
 
   useEffect(() => {
