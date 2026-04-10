@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { browser, type BrowserState } from "../../platform/desktop-api";
+import { browser, contextMenu, type BrowserState } from "../../platform/desktop-api";
 import { useAppStore } from "../../stores/app-store";
 
 import "./BrowserPanel.css";
@@ -75,6 +75,12 @@ function LiveBrowserPanel() {
     }));
   };
 
+  const syncBounds = (host: HTMLDivElement) => {
+    return Promise.resolve()
+      .then(() => browser.setBounds(getBrowserBounds(host)))
+      .catch(reportBrowserError);
+  };
+
   useEffect(() => {
     const unsubscribe = browser.onStateChanged((state) => {
       setBrowserState(state);
@@ -91,50 +97,25 @@ function LiveBrowserPanel() {
     if (!host) {
       return;
     }
-    let isDisposed = false;
+    void browser.attach(getBrowserBounds(host)).catch(reportBrowserError);
 
-    const updateBounds = () => {
-      void Promise.resolve()
-        .then(() => browser.setBounds(getBrowserBounds(host)))
-        .catch((error) => {
-          if (isDisposed) {
-            return;
-          }
-
-          reportBrowserError(error);
-        });
+    const handleWindowResize = () => {
+      void syncBounds(host);
     };
 
-    void Promise.resolve()
-      .then(() => browser.attach(getBrowserBounds(host)))
-      .catch((error) => {
-        if (isDisposed) {
-          return;
-        }
+    const observer =
+      typeof window.ResizeObserver === "function"
+        ? new window.ResizeObserver(() => {
+            void syncBounds(host);
+          })
+        : null;
 
-        reportBrowserError(error);
-      });
-
-    const ResizeObserverImpl = window.ResizeObserver;
-    if (typeof ResizeObserverImpl === "function") {
-      const observer = new ResizeObserverImpl(() => {
-        updateBounds();
-      });
-
-      observer.observe(host);
-
-      return () => {
-        isDisposed = true;
-        observer.disconnect();
-        void browser.destroy();
-      };
-    }
-
-    window.addEventListener("resize", updateBounds);
+    observer?.observe(host);
+    window.addEventListener("resize", handleWindowResize);
 
     return () => {
-      isDisposed = true;
-      window.removeEventListener("resize", updateBounds);
+      observer?.disconnect();
+      window.removeEventListener("resize", handleWindowResize);
       void browser.destroy();
     };
   }, []);
@@ -187,6 +168,10 @@ function LiveBrowserPanel() {
           onBlur={() => {
             isEditingAddressRef.current = false;
             setAddressValue(browserState.url);
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            void contextMenu.showAddressInputMenu();
           }}
           placeholder="Enter URL or search"
         />

@@ -82,6 +82,10 @@ interface DesktopBrowserAPI {
   onStateChanged(callback: (state: DesktopBrowserState) => void): () => void;
 }
 
+interface DesktopContextMenuAPI {
+  showAddressInputMenu(): Promise<void>;
+}
+
 type DesktopThemePreference = "system" | "light" | "dark";
 
 interface DesktopThemeAPI {
@@ -97,6 +101,7 @@ interface DesktopAPI {
   paths: DesktopPaths;
   lifecycle: DesktopLifecycle;
   browser: DesktopBrowserAPI;
+  contextMenu: DesktopContextMenuAPI;
   theme: DesktopThemeAPI;
 }
 

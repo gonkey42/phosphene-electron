@@ -1,4 +1,11 @@
-import { BrowserView, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
+import {
+  BrowserView,
+  BrowserWindow,
+  Menu,
+  ipcMain,
+  type ContextMenuParams,
+  type IpcMainInvokeEvent,
+} from "electron";
 
 export type BrowserBounds = {
   x: number;
@@ -117,6 +124,34 @@ function ensureBrowserView(window: BrowserWindow): BrowserView {
     });
   };
 
+  const handleContextMenu = (_event: unknown, params: ContextMenuParams) => {
+    const template = [
+      {
+        label: "Back",
+        enabled: browserView.webContents.canGoBack(),
+        click: () => {
+          browserView.webContents.goBack();
+        },
+      },
+      {
+        label: "Forward",
+        enabled: browserView.webContents.canGoForward(),
+        click: () => {
+          browserView.webContents.goForward();
+        },
+      },
+      { type: "separator" as const },
+      { role: "reload" as const },
+      { type: "separator" as const },
+      { role: "cut" as const, enabled: params.editFlags.canCut },
+      { role: "copy" as const, enabled: params.editFlags.canCopy },
+      { role: "paste" as const, enabled: params.editFlags.canPaste },
+      { role: "selectAll" as const },
+    ];
+
+    Menu.buildFromTemplate(template).popup({ window });
+  };
+
   const handleWindowClosed = () => {
     teardownBrowserView(window, {
       notifyRenderer: false,
@@ -127,12 +162,14 @@ function ensureBrowserView(window: BrowserWindow): BrowserView {
   browserView.webContents.on("did-start-loading", handleDidStartLoading);
   browserView.webContents.on("did-stop-loading", handleDidStopLoading);
   browserView.webContents.on("did-fail-load", handleDidFailLoad);
+  browserView.webContents.on("context-menu", handleContextMenu);
   window.on("closed", handleWindowClosed);
 
   browserCleanup.set(window.id, () => {
     browserView.webContents.off("did-start-loading", handleDidStartLoading);
     browserView.webContents.off("did-stop-loading", handleDidStopLoading);
     browserView.webContents.off("did-fail-load", handleDidFailLoad);
+    browserView.webContents.off("context-menu", handleContextMenu);
     window.off("closed", handleWindowClosed);
   });
 
@@ -145,6 +182,23 @@ function ensureBrowserView(window: BrowserWindow): BrowserView {
 }
 
 export function registerBrowserIPC() {
+  ipcMain.handle("browser:show-address-input-menu", async (event) => {
+    const window = getWindowForEvent(event);
+    if (!window) {
+      return;
+    }
+
+    Menu.buildFromTemplate([
+      { role: "undo" as const },
+      { role: "redo" as const },
+      { type: "separator" as const },
+      { role: "cut" as const },
+      { role: "copy" as const },
+      { role: "paste" as const },
+      { role: "selectAll" as const },
+    ]).popup({ window });
+  });
+
   ipcMain.handle("browser:attach", async (event, bounds: BrowserBounds) => {
     const window = getWindowForEvent(event);
     if (!window) {

@@ -19,6 +19,7 @@ const browserWindowDestroyMock = vi.fn();
 const browserWindowSetBrowserViewMock = vi.fn();
 const menuBuildFromTemplateMock = vi.fn();
 const menuSetApplicationMenuMock = vi.fn();
+const menuPopupMock = vi.fn();
 
 type MockMenuItem = {
   role?: string;
@@ -33,6 +34,7 @@ type MockMenu = {
   items: MockMenuItem[];
   append(menuItem: MockMenuItem): void;
   insert(pos: number, menuItem: MockMenuItem): void;
+  popup(options?: unknown): void;
 };
 
 function createMockMenuItem(template: MockMenuItem): MockMenuItem {
@@ -55,6 +57,9 @@ function createMockMenu(items: MockMenuItem[]): MockMenu {
     },
     insert(pos: number, menuItem: MockMenuItem) {
       menuItems.splice(pos, 0, menuItem);
+    },
+    popup(options?: unknown) {
+      menuPopupMock(options);
     },
   };
 }
@@ -225,6 +230,7 @@ describe("electron main close flushing", () => {
     browserWindowSetBrowserViewMock.mockReset();
     menuBuildFromTemplateMock.mockReset();
     menuSetApplicationMenuMock.mockReset();
+    menuPopupMock.mockReset();
     BrowserWindowMock.lastCreatedInstance = null;
     menuBuildFromTemplateMock.mockImplementation((template: Array<{ role?: string; label?: string }>) =>
       createRoleMenuTemplate(template),
@@ -331,6 +337,25 @@ describe("electron main close flushing", () => {
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:forward", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:reload", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:destroy", expect.any(Function));
+  });
+
+  it("registers a browser webpage context menu", async () => {
+    await import("./main");
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(([channel]) => channel === "browser:attach")?.[1];
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await attachHandler?.({ sender: windowInstance.webContents } as never, {
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 200,
+    });
+
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+    expect(attachedView.webContents.on).toHaveBeenCalledWith("context-menu", expect.any(Function));
   });
 
   it("registers a View > Theme menu with system, light, and dark items", async () => {

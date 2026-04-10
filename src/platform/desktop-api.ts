@@ -237,6 +237,12 @@ export const browser = {
   },
 };
 
+export const contextMenu = {
+  showAddressInputMenu() {
+    return getDesktop().contextMenu.showAddressInputMenu();
+  },
+};
+
 export const theme = {
   setPreference(preference: "system" | "light" | "dark") {
     return getDesktop().theme.setPreference(preference);

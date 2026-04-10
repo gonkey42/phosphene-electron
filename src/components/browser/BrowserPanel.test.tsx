@@ -9,6 +9,7 @@ const {
   goForwardMock,
   reloadMock,
   destroyMock,
+  showAddressInputMenuMock,
   setFocusMock,
 } = vi.hoisted(() => ({
   attachMock: vi.fn(),
@@ -18,6 +19,7 @@ const {
   goForwardMock: vi.fn(),
   reloadMock: vi.fn(),
   destroyMock: vi.fn(),
+  showAddressInputMenuMock: vi.fn(),
   setFocusMock: vi.fn(),
 }));
 let stateListener: ((state: unknown) => void) | undefined;
@@ -37,6 +39,9 @@ vi.mock("../../platform/desktop-api", () => ({
         stateListener = undefined;
       };
     },
+  },
+  contextMenu: {
+    showAddressInputMenu: showAddressInputMenuMock,
   },
 }));
 
@@ -66,8 +71,10 @@ describe("BrowserPanel", () => {
     goForwardMock.mockReset();
     reloadMock.mockReset();
     destroyMock.mockReset();
+    showAddressInputMenuMock.mockReset();
     attachMock.mockResolvedValue(undefined);
     setBoundsMock.mockResolvedValue(undefined);
+    showAddressInputMenuMock.mockResolvedValue(undefined);
     stateListener = undefined;
   });
 
@@ -164,6 +171,56 @@ describe("BrowserPanel", () => {
     expect(setBoundsMock).not.toHaveBeenCalled();
   });
 
+  it("updates browser bounds when the host size changes during window resize", async () => {
+    const originalResizeObserver = window.ResizeObserver;
+    class ResizeObserverMock {
+      constructor(_callback: ResizeObserverCallback) {}
+
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    }
+
+    try {
+      // Keep ResizeObserver available so the test exercises the live resize contract.
+      window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+
+      const { container } = render(<BrowserPanel />);
+
+      await waitFor(() => {
+        expect(attachMock).toHaveBeenCalledTimes(1);
+      });
+
+      const host = container.querySelector(".browser-panel__host");
+      expect(host).toBeInstanceOf(HTMLDivElement);
+
+      vi.spyOn(host as HTMLDivElement, "getBoundingClientRect").mockReturnValue({
+        x: 12,
+        y: 24,
+        left: 12,
+        top: 24,
+        right: 372,
+        bottom: 264,
+        width: 360,
+        height: 240,
+        toJSON: () => ({}),
+      });
+
+      fireEvent(window, new Event("resize"));
+
+      await waitFor(() => {
+        expect(setBoundsMock).toHaveBeenCalledWith({
+          x: 12,
+          y: 24,
+          width: 360,
+          height: 240,
+        });
+      });
+    } finally {
+      window.ResizeObserver = originalResizeObserver;
+    }
+  });
+
   it("renders a fallback alert when setBounds rejects after resize", async () => {
     const originalResizeObserver = window.ResizeObserver;
     try {
@@ -180,6 +237,16 @@ describe("BrowserPanel", () => {
     } finally {
       window.ResizeObserver = originalResizeObserver;
     }
+  });
+
+  it("shows the native address-input context menu on right click", async () => {
+    render(<BrowserPanel />);
+
+    fireEvent.contextMenu(screen.getByLabelText("Browser address"));
+
+    await waitFor(() => {
+      expect(showAddressInputMenuMock).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("renders a single-row browser toolbar without the redundant status line", () => {

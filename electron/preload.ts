@@ -262,6 +262,11 @@ contextBridge.exposeInMainWorld("desktop", {
       };
     },
   },
+  contextMenu: {
+    showAddressInputMenu() {
+      return ipcRenderer.invoke("browser:show-address-input-menu");
+    },
+  },
   theme: {
     setPreference(preference: "system" | "light" | "dark") {
       return ipcRenderer.invoke(THEME_SET_PREFERENCE_CHANNEL, preference);

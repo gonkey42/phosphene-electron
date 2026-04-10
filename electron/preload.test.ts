@@ -58,6 +58,9 @@ type ExposedDesktop = {
     }) => void,
     ): () => void;
   };
+  contextMenu: {
+    showAddressInputMenu(): Promise<void>;
+  };
   theme: {
     setPreference(preference: "system" | "light" | "dark"): Promise<void>;
     onPreferenceSelected(callback: (preference: "system" | "light" | "dark") => void): () => void;
@@ -191,6 +194,9 @@ describe("preload filesystem IPC", () => {
           destroy: expect.any(Function),
           onStateChanged: expect.any(Function),
         }),
+        contextMenu: expect.objectContaining({
+          showAddressInputMenu: expect.any(Function),
+        }),
       }),
     );
 
@@ -242,6 +248,24 @@ describe("preload filesystem IPC", () => {
         }),
       }),
     );
+  });
+
+  it("exposes context menu bridge methods in the desktop API", async () => {
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+
+    await desktop.contextMenu.showAddressInputMenu();
+
+    expect(exposeInMainWorldMock).toHaveBeenCalledWith(
+      "desktop",
+      expect.objectContaining({
+        contextMenu: expect.objectContaining({
+          showAddressInputMenu: expect.any(Function),
+        }),
+      }),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("browser:show-address-input-menu");
   });
 
   it("exposes a theme bridge for native menu synchronization", async () => {
