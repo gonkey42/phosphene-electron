@@ -20,6 +20,8 @@ const browserWindowSetBrowserViewMock = vi.fn();
 const menuBuildFromTemplateMock = vi.fn();
 const menuSetApplicationMenuMock = vi.fn();
 const menuPopupMock = vi.fn();
+const loadPersistedThemePreferenceMock = vi.fn();
+const persistThemePreferenceMock = vi.fn();
 
 type MockMenuItem = {
   role?: string;
@@ -209,6 +211,11 @@ vi.mock("./ipc/filesystem", () => ({
   registerFilesystemIPC: vi.fn(),
 }));
 
+vi.mock("./theme-preferences", () => ({
+  loadPersistedThemePreference: loadPersistedThemePreferenceMock,
+  persistThemePreference: persistThemePreferenceMock,
+}));
+
 describe("electron main close flushing", () => {
   beforeEach(() => {
     appOnMock.mockClear();
@@ -231,11 +238,14 @@ describe("electron main close flushing", () => {
     menuBuildFromTemplateMock.mockReset();
     menuSetApplicationMenuMock.mockReset();
     menuPopupMock.mockReset();
+    loadPersistedThemePreferenceMock.mockReset();
+    persistThemePreferenceMock.mockReset();
     BrowserWindowMock.lastCreatedInstance = null;
     menuBuildFromTemplateMock.mockImplementation((template: Array<{ role?: string; label?: string }>) =>
       createRoleMenuTemplate(template),
     );
     appWhenReadyMock.mockResolvedValue(undefined);
+    loadPersistedThemePreferenceMock.mockReturnValue("system");
     appGetPathMock.mockImplementation((name: string) => {
       if (name === "appData") {
         return "/tmp/phosphene-test-app-data";
@@ -479,6 +489,46 @@ describe("electron main close flushing", () => {
 
     expect(BrowserWindowMock.lastCreatedInstance?.webContents.send).toHaveBeenCalledWith(
       "theme:preference-selected",
+      "dark",
+    );
+  });
+
+  it("persists renderer-originated theme changes in the main process", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowGetAllWindowsMock.mockReturnValue([windowInstance as never]);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const themePreferenceHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "theme:set-preference",
+    )?.[1];
+
+    await themePreferenceHandler?.({ sender: windowInstance.webContents } as never, "light");
+
+    expect(persistThemePreferenceMock).toHaveBeenCalledWith(
+      "/tmp/phosphene-test-app-data/app.phosphene.desktop",
+      "light",
+    );
+  });
+
+  it("persists native menu selections even when no renderer is available", async () => {
+    browserWindowGetAllWindowsMock.mockReturnValue([]);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const menu = menuSetApplicationMenuMock.mock.calls.at(-1)?.[0] as MockMenu;
+    const viewMenuItem = menu.items.find((item) => item.role === "viewMenu");
+    const themeMenu = viewMenuItem?.submenu?.items.at(-1) as MockMenuItem;
+    const darkItem = themeMenu.submenu?.items.find((item) => item.label === "Dark");
+
+    darkItem?.click?.();
+
+    expect(persistThemePreferenceMock).toHaveBeenCalledWith(
+      "/tmp/phosphene-test-app-data/app.phosphene.desktop",
       "dark",
     );
   });

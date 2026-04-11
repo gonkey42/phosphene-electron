@@ -1,5 +1,5 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_THEME_PREFERENCE } from "../lib/theme-settings";
 import { useAppStore } from "../stores/app-store";
@@ -101,6 +101,10 @@ function createMatchMediaController(initialMatches: boolean) {
 }
 
 describe("useThemeController", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     loadThemePreferenceMock.mockReset();
     saveThemePreferenceMock.mockReset();
@@ -327,6 +331,9 @@ describe("useThemeController", () => {
       expect(themeOnPreferenceSelectedMock).toHaveBeenCalledWith(expect.any(Function));
     });
 
+    themeSetPreferenceMock.mockClear();
+    saveThemePreferenceMock.mockClear();
+
     await act(async () => {
       selectedCallback?.("dark");
       await Promise.resolve();
@@ -334,7 +341,7 @@ describe("useThemeController", () => {
 
     expect(result.current.themePreference).toBe("dark");
     expect(result.current.resolvedTheme).toBe("dark");
-    expect(saveThemePreferenceMock).toHaveBeenCalledWith("dark");
-    expect(themeSetPreferenceMock).toHaveBeenLastCalledWith("dark");
+    expect(saveThemePreferenceMock).not.toHaveBeenCalledWith("dark");
+    expect(themeSetPreferenceMock.mock.calls.map(([preference]) => preference)).not.toContain("dark");
   });
 });

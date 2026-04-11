@@ -37,14 +37,30 @@ export function useThemeController() {
   const setResolvedTheme = useAppStore((state) => state.setResolvedTheme);
   const reportError = useErrorReporter("ThemeController");
   const userUpdateVersionRef = useRef(0);
+  const skippedNativeSyncPreferenceRef = useRef<ThemePreference | null>(null);
   const [isThemePreferenceReadyForSync, setIsThemePreferenceReadyForSync] = useState(false);
 
-  const updateThemePreference = useCallback(
-    async (nextPreference: ThemePreference) => {
+  const applyThemePreference = useCallback(
+    (
+      nextPreference: ThemePreference,
+      options: {
+        skipNextNativeSync: boolean;
+      } = { skipNextNativeSync: false },
+    ) => {
       userUpdateVersionRef.current += 1;
+      skippedNativeSyncPreferenceRef.current = options.skipNextNativeSync
+        ? nextPreference
+        : null;
       setIsThemePreferenceReadyForSync(true);
       setThemePreference(nextPreference);
       setResolvedTheme(resolveTheme(nextPreference));
+    },
+    [setResolvedTheme, setThemePreference],
+  );
+
+  const updateThemePreference = useCallback(
+    async (nextPreference: ThemePreference) => {
+      applyThemePreference(nextPreference);
 
       try {
         await saveThemePreference(nextPreference);
@@ -52,7 +68,7 @@ export function useThemeController() {
         reportError("Failed to save theme preference", error);
       }
     },
-    [reportError, setResolvedTheme, setThemePreference],
+    [applyThemePreference, reportError],
   );
 
   useEffect(() => {
@@ -94,6 +110,10 @@ export function useThemeController() {
       return;
     }
 
+    if (skippedNativeSyncPreferenceRef.current === themePreference) {
+      return;
+    }
+
     try {
       void Promise.resolve(desktopTheme.setPreference(themePreference)).catch((error) => {
         reportError("Failed to sync theme preference to the native menu", error);
@@ -106,12 +126,12 @@ export function useThemeController() {
   useEffect(() => {
     try {
       return desktopTheme.onPreferenceSelected((preference) => {
-        void updateThemePreference(preference);
+        applyThemePreference(preference, { skipNextNativeSync: true });
       });
     } catch {
       return;
     }
-  }, [updateThemePreference]);
+  }, [applyThemePreference]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {

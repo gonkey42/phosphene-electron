@@ -13,6 +13,10 @@ import path from "node:path";
 import { registerDatabaseIPC, closeDatabase } from "./ipc/database";
 import { registerFilesystemIPC } from "./ipc/filesystem";
 import { registerBrowserIPC } from "./ipc/browser";
+import {
+  loadPersistedThemePreference,
+  persistThemePreference,
+} from "./theme-preferences";
 
 const isDev = !app.isPackaged;
 const QUIT_FLUSH_TIMEOUT_MS = 1500;
@@ -27,6 +31,7 @@ const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"
 
 let currentThemePreference: ThemePreference = "system";
 let hasCurrentThemePreference = false;
+let themePreferenceUserDataPath: string | null = null;
 
 type FlushResponsePayload = {
   requestId: string;
@@ -266,7 +271,14 @@ function buildThemeSubmenuTemplate(): MenuItemConstructorOptions[] {
     type: "radio",
     checked: currentThemePreference === preference,
     click: () => {
-      setThemePreference(preference, true);
+      try {
+        setThemePreference(preference, { persist: true, notifyRenderer: true });
+      } catch (error) {
+        console.error("[theme:menu-selection-failed]", {
+          preference,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     },
   });
 
@@ -300,14 +312,37 @@ function installApplicationMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-function setThemePreference(preference: ThemePreference, notifyRenderer: boolean) {
+function getThemePreferenceUserDataPath(): string {
+  if (!themePreferenceUserDataPath) {
+    throw new Error("Theme preference persistence is not initialized");
+  }
+
+  return themePreferenceUserDataPath;
+}
+
+function setThemePreference(
+  preference: ThemePreference,
+  options: {
+    persist: boolean;
+    notifyRenderer: boolean;
+  },
+) {
+  if (options.persist) {
+    persistThemePreference(getThemePreferenceUserDataPath(), preference);
+  }
+
   currentThemePreference = preference;
   hasCurrentThemePreference = true;
   installApplicationMenu();
 
-  if (notifyRenderer) {
+  if (options.notifyRenderer) {
     notifyRendererThemePreferenceSelected(preference);
   }
+}
+
+function hydratePersistedThemePreference() {
+  currentThemePreference = loadPersistedThemePreference(getThemePreferenceUserDataPath());
+  hasCurrentThemePreference = true;
 }
 
 function registerThemePreferenceIPC() {
@@ -316,7 +351,7 @@ function registerThemePreferenceIPC() {
       throw new Error(`Invalid theme preference: ${preference}`);
     }
 
-    setThemePreference(preference, false);
+    setThemePreference(preference, { persist: true, notifyRenderer: false });
   });
 }
 
@@ -389,6 +424,7 @@ async function bootstrap() {
   });
 
   const userDataPath = app.getPath("userData");
+  themePreferenceUserDataPath = userDataPath;
 
   await runBootstrapPhase("database-ipc", () => {
     registerDatabaseIPC(userDataPath);
@@ -400,6 +436,7 @@ async function bootstrap() {
     registerBrowserIPC();
   });
   await runBootstrapPhase("theme-ipc", () => {
+    hydratePersistedThemePreference();
     registerThemePreferenceIPC();
     installApplicationMenu();
   });
