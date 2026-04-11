@@ -69,6 +69,17 @@ function LiveBrowserPanel() {
   const [addressValue, setAddressValue] = useState("");
   const [browserState, setBrowserState] = useState(initialBrowserState);
 
+  const reportBrowserError = (error: unknown, fallbackMessage: string) => {
+    if (isDisposedRef.current) {
+      return;
+    }
+
+    setBrowserState((currentState) => ({
+      ...currentState,
+      lastError: error instanceof Error ? error.message : fallbackMessage,
+    }));
+  };
+
   useEffect(() => {
     const unsubscribe = browser.onStateChanged((state) => {
       setBrowserState(state);
@@ -102,14 +113,7 @@ function LiveBrowserPanel() {
           return task();
         })
         .catch((error) => {
-          if (isDisposedRef.current) {
-            return;
-          }
-
-          setBrowserState((currentState) => ({
-            ...currentState,
-            lastError: error instanceof Error ? error.message : "Browser view could not be created",
-          }));
+          reportBrowserError(error, "Browser view could not be created");
         });
     };
 
@@ -152,7 +156,9 @@ function LiveBrowserPanel() {
           event.preventDefault();
           isEditingAddressRef.current = false;
           setFocus("browser");
-          void browser.navigate(normalizeBrowserInput(addressValue));
+          void Promise.resolve(browser.navigate(normalizeBrowserInput(addressValue))).catch((error) => {
+            reportBrowserError(error, "Browser navigation failed");
+          });
         }}
       >
         <button

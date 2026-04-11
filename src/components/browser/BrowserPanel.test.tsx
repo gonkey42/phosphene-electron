@@ -172,6 +172,20 @@ describe("BrowserPanel", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Desktop API not available");
   });
 
+  it("renders a fallback alert when navigate rejects", async () => {
+    navigateMock.mockRejectedValueOnce(new Error("Navigation failed"));
+
+    render(<BrowserPanel />);
+
+    fireEvent.change(screen.getByLabelText("Browser address"), {
+      target: { value: "https://bad.example.test" },
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "Browser navigation" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Browser failed to load.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Navigation failed");
+  });
+
   it("does not call setBounds during the initial attach", async () => {
     render(<BrowserPanel />);
 
