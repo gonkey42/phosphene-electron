@@ -65,21 +65,9 @@ function LiveBrowserPanel() {
   const setFocus = useAppStore((state) => state.setFocus);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const isEditingAddressRef = useRef(false);
+  const isDisposedRef = useRef(false);
   const [addressValue, setAddressValue] = useState("");
   const [browserState, setBrowserState] = useState(initialBrowserState);
-
-  const reportBrowserError = (error: unknown) => {
-    setBrowserState((currentState) => ({
-      ...currentState,
-      lastError: error instanceof Error ? error.message : "Browser view could not be created",
-    }));
-  };
-
-  const syncBounds = (host: HTMLDivElement) => {
-    return Promise.resolve()
-      .then(() => browser.setBounds(getBrowserBounds(host)))
-      .catch(reportBrowserError);
-  };
 
   useEffect(() => {
     const unsubscribe = browser.onStateChanged((state) => {
@@ -93,22 +81,50 @@ function LiveBrowserPanel() {
   }, []);
 
   useEffect(() => {
+    isDisposedRef.current = false;
+
     const host = hostRef.current;
     if (!host) {
       return;
     }
-    void Promise.resolve()
-      .then(() => browser.attach(getBrowserBounds(host)))
-      .catch(reportBrowserError);
+
+    const runBrowserTask = (task: () => Promise<void>) => {
+      if (isDisposedRef.current) {
+        return Promise.resolve();
+      }
+
+      return Promise.resolve()
+        .then(() => {
+          if (isDisposedRef.current) {
+            return;
+          }
+
+          return task();
+        })
+        .catch((error) => {
+          if (isDisposedRef.current) {
+            return;
+          }
+
+          setBrowserState((currentState) => ({
+            ...currentState,
+            lastError: error instanceof Error ? error.message : "Browser view could not be created",
+          }));
+        });
+    };
+
+    const syncBounds = () => runBrowserTask(() => browser.setBounds(getBrowserBounds(host)));
+
+    void runBrowserTask(() => browser.attach(getBrowserBounds(host)));
 
     const handleWindowResize = () => {
-      void syncBounds(host);
+      void syncBounds();
     };
 
     const observer =
       typeof window.ResizeObserver === "function"
         ? new window.ResizeObserver(() => {
-            void syncBounds(host);
+            void syncBounds();
           })
         : null;
 
@@ -116,6 +132,7 @@ function LiveBrowserPanel() {
     window.addEventListener("resize", handleWindowResize);
 
     return () => {
+      isDisposedRef.current = true;
       observer?.disconnect();
       window.removeEventListener("resize", handleWindowResize);
       void browser.destroy();

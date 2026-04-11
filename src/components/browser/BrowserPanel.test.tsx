@@ -250,6 +250,63 @@ describe("BrowserPanel", () => {
     }
   });
 
+  it("ignores late resize observer callbacks after teardown", async () => {
+    const originalResizeObserver = window.ResizeObserver;
+    const disconnectMock = vi.fn();
+    let resizeObserverCallback: ResizeObserverCallback | undefined;
+
+    class ResizeObserverMock {
+      constructor(callback: ResizeObserverCallback) {
+        resizeObserverCallback = callback;
+      }
+
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = disconnectMock;
+    }
+
+    try {
+      window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+
+      const { container, unmount } = render(<BrowserPanel />);
+
+      await waitFor(() => {
+        expect(attachMock).toHaveBeenCalledTimes(1);
+      });
+
+      const host = container.querySelector(".browser-panel__host");
+      expect(host).toBeInstanceOf(HTMLDivElement);
+
+      vi.spyOn(host as HTMLDivElement, "getBoundingClientRect").mockReturnValue({
+        x: 18,
+        y: 36,
+        left: 18,
+        top: 36,
+        right: 338,
+        bottom: 256,
+        width: 320,
+        height: 220,
+        toJSON: () => ({}),
+      });
+
+      unmount();
+
+      expect(disconnectMock).toHaveBeenCalledTimes(1);
+      expect(destroyMock).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        resizeObserverCallback?.([] as ResizeObserverEntry[], {} as ResizeObserver);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(setBoundsMock).not.toHaveBeenCalled();
+    } finally {
+      window.ResizeObserver = originalResizeObserver;
+    }
+  });
+
   it("shows the native address-input context menu on right click", async () => {
     render(<BrowserPanel />);
 
