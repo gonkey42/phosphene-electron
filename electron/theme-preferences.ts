@@ -1,6 +1,8 @@
-import { DEFAULT_THEME_PREFERENCE, type ThemePreference } from "../src/lib/theme-types";
 import { getDatabase } from "./ipc/database";
 
+type ThemePreference = "system" | "light" | "dark";
+
+const DEFAULT_THEME_PREFERENCE: ThemePreference = "system";
 const THEME_PREFERENCE_KEY = "theme_preference";
 const VALID_THEME_PREFERENCES: ReadonlySet<ThemePreference> = new Set([
   "system",
