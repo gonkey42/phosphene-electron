@@ -105,8 +105,55 @@ describe("BrowserPanel", () => {
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith(
-        "https://www.google.com/search?q=phosphene%20excalidraw%20workflow",
+        "https://duckduckgo.com/?q=phosphene%20excalidraw%20workflow",
       );
+    });
+  });
+
+  it("opens DuckDuckGo home when the address input is submitted empty", async () => {
+    render(<BrowserPanel />);
+
+    fireEvent.change(screen.getByLabelText("Browser address"), {
+      target: { value: "   " },
+    });
+    fireEvent.submit(screen.getByRole("form", { name: "Browser navigation" }));
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("https://start.duckduckgo.com/");
+    });
+  });
+
+  it("clicking Go uses the typed address instead of resetting to the current page", async () => {
+    render(<BrowserPanel />);
+
+    act(() => {
+      stateListener?.({
+        url: "https://start.duckduckgo.com/",
+        title: "DuckDuckGo",
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: false,
+        lastError: null,
+      });
+    });
+
+    fireEvent.change(screen.getByLabelText("Browser address"), {
+      target: { value: "https://example.com/pasted" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("https://example.com/pasted");
+    });
+  });
+
+  it("clicking Home navigates to DuckDuckGo home", async () => {
+    render(<BrowserPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Home" }));
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith("https://start.duckduckgo.com/");
     });
   });
 

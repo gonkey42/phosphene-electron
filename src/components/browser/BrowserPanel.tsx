@@ -7,7 +7,8 @@ import "./BrowserPanel.css";
 
 type BrowserPanelMode = "live" | "shell";
 
-const DEFAULT_SEARCH_BASE = "https://www.google.com/search?q=";
+const DEFAULT_HOME_URL = "https://start.duckduckgo.com/";
+const DEFAULT_SEARCH_BASE = "https://duckduckgo.com/?q=";
 
 const initialBrowserState: BrowserState = {
   url: "",
@@ -21,7 +22,7 @@ const initialBrowserState: BrowserState = {
 function normalizeBrowserInput(rawValue: string): string {
   const value = rawValue.trim();
   if (!value) {
-    return "https://www.google.com";
+    return DEFAULT_HOME_URL;
   }
 
   try {
@@ -46,6 +47,10 @@ function getBrowserBounds(host: HTMLDivElement) {
     width: Math.round(rect.width),
     height: Math.round(rect.height),
   };
+}
+
+function shouldPreserveDraftOnBlur(nextTarget: EventTarget | null) {
+  return nextTarget instanceof HTMLElement && nextTarget.dataset.browserKeepDraft === "true";
 }
 
 type BrowserPanelProps = {
@@ -78,6 +83,15 @@ function LiveBrowserPanel() {
       ...currentState,
       lastError: error instanceof Error ? error.message : fallbackMessage,
     }));
+  };
+
+  const navigateTo = (targetUrl: string, fallbackMessage: string) => {
+    isEditingAddressRef.current = false;
+    setFocus("browser");
+
+    return Promise.resolve(browser.navigate(targetUrl)).catch((error) => {
+      reportBrowserError(error, fallbackMessage);
+    });
   };
 
   useEffect(() => {
@@ -154,11 +168,7 @@ function LiveBrowserPanel() {
         className="browser-panel__controls"
         onSubmit={(event) => {
           event.preventDefault();
-          isEditingAddressRef.current = false;
-          setFocus("browser");
-          void Promise.resolve(browser.navigate(normalizeBrowserInput(addressValue))).catch((error) => {
-            reportBrowserError(error, "Browser navigation failed");
-          });
+          void navigateTo(normalizeBrowserInput(addressValue), "Browser navigation failed");
         }}
       >
         <button
@@ -182,6 +192,9 @@ function LiveBrowserPanel() {
         <button type="button" aria-label="Reload" data-icon-button="true" onClick={() => void browser.reload()}>
           ↻
         </button>
+        <button className="browser-panel__action" data-browser-keep-draft="true" type="submit">
+          Go
+        </button>
         <input
           aria-label="Browser address"
           className="browser-panel__address"
@@ -190,8 +203,13 @@ function LiveBrowserPanel() {
             isEditingAddressRef.current = true;
             setAddressValue(event.target.value);
           }}
-          onBlur={() => {
+          onBlur={(event) => {
             isEditingAddressRef.current = false;
+
+            if (shouldPreserveDraftOnBlur(event.relatedTarget)) {
+              return;
+            }
+
             setAddressValue(browserState.url);
           }}
           onContextMenu={(event) => {
@@ -200,8 +218,16 @@ function LiveBrowserPanel() {
           }}
           placeholder="Enter URL or search"
         />
-        <button className="browser-panel__go" type="submit">
-          Go
+        <button
+          className="browser-panel__action"
+          data-browser-keep-draft="true"
+          type="button"
+          onClick={() => {
+            setAddressValue(DEFAULT_HOME_URL);
+            void navigateTo(DEFAULT_HOME_URL, "Browser navigation failed");
+          }}
+        >
+          Home
         </button>
       </form>
 
@@ -236,10 +262,11 @@ function BrowserPanelShell() {
         <div className="browser-panel__shell-control" data-icon-button="true">
           ↻
         </div>
+        <div className="browser-panel__shell-control browser-panel__action browser-panel__action--shell">Go</div>
         <div className="browser-panel__shell-control browser-panel__address browser-panel__address--shell">
           Preserving layout while workspace exits
         </div>
-        <div className="browser-panel__shell-control browser-panel__go browser-panel__go--shell">Go</div>
+        <div className="browser-panel__shell-control browser-panel__action browser-panel__action--shell">Home</div>
       </div>
       <div className="browser-panel__host browser-panel__host--shell" />
     </section>
