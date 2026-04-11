@@ -4,6 +4,7 @@ import { runDailyBackup } from "../lib/backup";
 import { getDb } from "../lib/database";
 import { ensureStorageDirectories } from "../lib/file-storage";
 import { listWorkspaces, mapWorkspace } from "../lib/workspace-operations";
+import { useThemeController } from "../hooks/use-theme-controller";
 import { useKeyboardShortcuts } from "../hooks/use-keyboard-shortcuts";
 import { clearSharedErrorChannel, useSharedErrors } from "../hooks/shared-error-store";
 import { useErrorReporter } from "../hooks/use-error-reporter";
@@ -23,12 +24,14 @@ export function AppShell() {
   const setWorkspaces = useAppStore((state) => state.setWorkspaces);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const reportError = useErrorReporter("AppShell");
+  const { resolvedTheme } = useThemeController();
   const [initAttempt, setInitAttempt] = useState(0);
   const sharedErrors = useSharedErrors();
   const startupError = useMemo(
     () => sharedErrors.find((entry) => entry.channel === APP_INIT_ERROR_CHANNEL) ?? null,
     [sharedErrors],
   );
+  const shellClassName = `app-shell theme-${resolvedTheme}`;
 
   useKeyboardShortcuts();
 
@@ -71,7 +74,7 @@ export function AppShell() {
 
   if (status === "error" && initializationError) {
     return (
-      <div className="app-shell app-shell--error">
+      <div className={`${shellClassName} app-shell--error`}>
         <div className="app-shell__failure-panel" role="alert">
           <h1>{initializationError.title}</h1>
           <p>{startupError?.error instanceof Error ? startupError.error.message : initializationError.detail}</p>
@@ -90,7 +93,7 @@ export function AppShell() {
 
   if (status === "loading") {
     return (
-      <div className="app-shell app-shell--loading">
+      <div className={`${shellClassName} app-shell--loading`}>
         <p>Loading Phosphene...</p>
       </div>
     );
@@ -98,7 +101,7 @@ export function AppShell() {
 
   return (
     <KeyboardProvider>
-      <div className="app-shell">
+      <div className={shellClassName}>
         <SharedErrorBanner />
         <WorkspaceTabBar />
         <WorkspaceContainer />

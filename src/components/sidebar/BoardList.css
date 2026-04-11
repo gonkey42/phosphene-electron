@@ -1,12 +1,3 @@
-.sidebar {
-  background: #eef2f7;
-  border-right: 1px solid #d9e1ec;
-  display: flex;
-  flex: 0 0 18rem;
-  min-height: 0;
-  width: 18rem;
-}
-
 .board-list {
   display: flex;
   flex: 1;
@@ -24,7 +15,7 @@
 }
 
 .board-list__title {
-  color: #0f172a;
+  color: var(--app-text);
   font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -34,10 +25,10 @@
 .board-list__create-button,
 .board-list__action-button {
   align-items: center;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 0.65rem;
-  color: #0f172a;
+  color: var(--app-text);
   cursor: pointer;
   display: inline-flex;
   font-size: 0.875rem;
@@ -56,15 +47,15 @@
 
 .board-list__create-button:hover,
 .board-list__action-button:hover {
-  background: #eff6ff;
-  border-color: #93c5fd;
+  background: color-mix(in srgb, var(--app-surface) 88%, var(--app-background));
+  border-color: color-mix(in srgb, var(--app-border) 72%, var(--app-text-muted));
 }
 
 .board-list__create-button:focus-visible,
 .board-list__action-button:focus-visible,
 .board-list__item-button:focus-visible,
 .board-list__rename-input:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid color-mix(in srgb, var(--app-text) 78%, var(--app-border));
   outline-offset: 2px;
 }
 
@@ -79,24 +70,25 @@
 }
 
 .board-list__item {
-  background: #ffffff;
-  border: 1px solid #dbe3ef;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 0.875rem;
+  color: var(--app-text);
   display: grid;
   gap: 0.5rem;
   padding: 0.75rem;
 }
 
 .board-list__item--active {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.12);
+  border-color: color-mix(in srgb, var(--app-text) 45%, var(--app-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-text) 14%, transparent);
 }
 
 .board-list__item-button {
   align-items: center;
   background: transparent;
   border: 0;
-  color: #0f172a;
+  color: var(--app-text);
   cursor: pointer;
   display: flex;
   font: inherit;
@@ -108,7 +100,7 @@
 }
 
 .board-list__item-button--active {
-  color: #1d4ed8;
+  color: var(--app-text);
   font-weight: 600;
 }
 
@@ -119,7 +111,7 @@
 }
 
 .board-list__item-meta {
-  color: #64748b;
+  color: var(--app-text-muted);
   font-size: 0.75rem;
 }
 
@@ -140,10 +132,10 @@
 }
 
 .board-list__rename-input {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 0.65rem;
-  color: #0f172a;
+  color: var(--app-text);
   flex: 1;
   font: inherit;
   min-width: 0;
@@ -152,9 +144,9 @@
 
 .board-list__empty {
   align-items: center;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--app-border);
   border-radius: 1rem;
-  color: #64748b;
+  color: var(--app-text-muted);
   display: grid;
   gap: 0.25rem;
   justify-items: center;
@@ -164,6 +156,6 @@
 }
 
 .board-list__empty-title {
-  color: #0f172a;
+  color: var(--app-text);
   font-weight: 600;
 }

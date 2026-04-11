@@ -8,6 +8,7 @@ import type {
 import "@excalidraw/excalidraw/index.css";
 
 import { useKeyboardContext } from "../../contexts/KeyboardContext";
+import { useAppStore } from "../../stores/app-store";
 
 import "./ExcalidrawCanvas.css";
 
@@ -35,6 +36,7 @@ export function ExcalidrawCanvas({
   isInteractive = true,
 }: ExcalidrawCanvasProps) {
   const { claimFocus } = useKeyboardContext();
+  const resolvedTheme = useAppStore((state) => state.resolvedTheme);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const isReadyRef = useRef(false);
@@ -113,6 +115,7 @@ export function ExcalidrawCanvas({
         initialData={initialData ?? undefined}
         onChange={handleChange}
         UIOptions={canvasUIOptions}
+        theme={resolvedTheme}
         viewModeEnabled={!isInteractive}
       />
     </div>

@@ -4,7 +4,6 @@ import { useAppStore } from "../../stores/app-store";
 import { useBoardPersistence } from "../../hooks/use-board-persistence";
 
 import { ExcalidrawCanvas } from "./ExcalidrawCanvas";
-import { SaveIndicator } from "./SaveIndicator";
 
 const panelStyle: CSSProperties = {
   position: "relative",
@@ -101,8 +100,7 @@ export function CanvasPanel({ workspaceId, isInteractive = true }: CanvasPanelPr
   const activeBoardId = useAppStore((state) =>
     workspaceId ? (state.activeBoardPerWorkspace[workspaceId] ?? null) : state.activeBoardId,
   );
-  const { initialData, loadError, isLoading, saveStatus, handleChange } =
-    useBoardPersistence(activeBoardId);
+  const { initialData, loadError, isLoading, handleChange } = useBoardPersistence(activeBoardId);
 
   if (!activeBoardId) {
     return (
@@ -140,7 +138,6 @@ export function CanvasPanel({ workspaceId, isInteractive = true }: CanvasPanelPr
   return (
     <section style={panelStyle}>
       <div style={canvasAreaStyle}>
-        <SaveIndicator status={saveStatus} />
         <CanvasRenderBoundary boardId={activeBoardId}>
           <ExcalidrawCanvas
             boardId={activeBoardId}

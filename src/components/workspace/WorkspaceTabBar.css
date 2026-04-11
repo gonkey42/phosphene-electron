@@ -1,9 +1,10 @@
 .workspace-tab-bar {
   align-items: center;
-  background: #f5f5f7;
-  border-bottom: 1px solid #d9d9e0;
+  background: var(--app-surface-muted);
+  border-bottom: 1px solid var(--app-border);
   display: flex;
-  gap: 0.5rem;
+  justify-content: flex-start;
+  gap: 0.25rem;
   min-height: 2.25rem;
   padding: 0 0.5rem;
   user-select: none;
@@ -11,8 +12,10 @@
 }
 
 .workspace-tab-bar__tabs {
+  align-items: center;
   display: flex;
   flex: 1;
+  justify-content: flex-start;
   gap: 0.125rem;
   list-style: none;
   margin: 0;
@@ -27,8 +30,8 @@
 }
 
 .workspace-tab-bar__tab-item--active .workspace-tab-bar__tab-row {
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow);
 }
 
 .workspace-tab-bar__tab-row {
@@ -50,7 +53,7 @@
   background: transparent;
   border: 0;
   border-radius: 0.625rem;
-  color: #516074;
+  color: var(--app-text-muted);
   cursor: pointer;
   display: flex;
   gap: 0.5rem;
@@ -64,17 +67,13 @@
 }
 
 .workspace-tab-bar__tab-button:hover {
-  background: rgba(255, 255, 255, 0.68);
-  color: #0f172a;
+  background: color-mix(in srgb, var(--app-surface) 72%, var(--app-background));
+  color: var(--app-text);
 }
 
 .workspace-tab-bar__tab-button--active {
-  color: #0f172a;
+  color: var(--app-text);
   font-weight: 600;
-}
-
-.workspace-tab-bar__icon {
-  flex: 0 0 auto;
 }
 
 .workspace-tab-bar__name {
@@ -84,17 +83,17 @@
 }
 
 .workspace-tab-bar__shortcut {
-  color: #64748b;
+  color: var(--app-text-muted);
   flex: 0 0 auto;
   font-size: 0.75rem;
   font-weight: 500;
 }
 
 .workspace-tab-bar__rename-input {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 0.625rem;
-  color: #0f172a;
+  color: var(--app-text);
   min-width: 0;
   padding: 0.45rem 0.75rem;
   width: 15rem;
@@ -103,10 +102,10 @@
 .workspace-tab-bar__close-button,
 .workspace-tab-bar__create-button {
   align-items: center;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 0.625rem;
-  color: #475569;
+  color: var(--app-text-muted);
   cursor: pointer;
   display: inline-flex;
   justify-content: center;
@@ -119,6 +118,10 @@
 
 .workspace-tab-bar__create-button {
   -webkit-app-region: no-drag;
+}
+
+.workspace-tab-bar__tab-item--create {
+  flex: 0 0 auto;
 }
 
 .workspace-tab-bar__close-button {
@@ -135,15 +138,15 @@
 
 .workspace-tab-bar__close-button:hover,
 .workspace-tab-bar__create-button:hover {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  color: #1d4ed8;
+  background: color-mix(in srgb, var(--app-surface) 82%, var(--app-background));
+  border-color: color-mix(in srgb, var(--app-border) 70%, var(--app-text-muted));
+  color: var(--app-text);
 }
 
 .workspace-tab-bar__tab-button:focus-visible,
 .workspace-tab-bar__rename-input:focus-visible,
 .workspace-tab-bar__close-button:focus-visible,
 .workspace-tab-bar__create-button:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--app-text);
   outline-offset: 2px;
 }

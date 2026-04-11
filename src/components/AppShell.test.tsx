@@ -1,7 +1,9 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { ResolvedTheme, ThemePreference } from "../lib/theme-settings";
 
 const {
   getDbMock,
@@ -11,6 +13,7 @@ const {
   listWorkspacesMock,
   mapWorkspaceMock,
   useKeyboardShortcutsMock,
+  useThemeControllerMock,
   tabBarMock,
   workspaceContainerMock,
 } = vi.hoisted(() => ({
@@ -26,6 +29,7 @@ const {
     position: item.position,
   })),
   useKeyboardShortcutsMock: vi.fn(),
+  useThemeControllerMock: vi.fn(),
   tabBarMock: vi.fn(),
   workspaceContainerMock: vi.fn(),
 }));
@@ -51,6 +55,10 @@ vi.mock("../hooks/use-keyboard-shortcuts", () => ({
   useKeyboardShortcuts: useKeyboardShortcutsMock,
 }));
 
+vi.mock("../hooks/use-theme-controller", () => ({
+  useThemeController: useThemeControllerMock,
+}));
+
 vi.mock("../contexts/KeyboardContext", () => ({
   KeyboardProvider: ({ children }: { children: ReactNode }) => {
     keyboardProviderMock();
@@ -59,8 +67,8 @@ vi.mock("../contexts/KeyboardContext", () => ({
 }));
 
 vi.mock("./workspace/WorkspaceTabBar", () => ({
-  WorkspaceTabBar: () => {
-    tabBarMock();
+  WorkspaceTabBar: (props: unknown) => {
+    tabBarMock(props);
     return <div data-testid="workspace-tab-bar" />;
   },
 }));
@@ -81,9 +89,15 @@ describe("AppShell", () => {
     listWorkspacesMock.mockReset();
     mapWorkspaceMock.mockClear();
     useKeyboardShortcutsMock.mockReset();
+    useThemeControllerMock.mockReset();
     tabBarMock.mockReset();
     workspaceContainerMock.mockReset();
     vi.resetModules();
+    useThemeControllerMock.mockReturnValue({
+      themePreference: "system",
+      resolvedTheme: "light",
+      updateThemePreference: vi.fn(),
+    });
 
     const { clearSharedErrors } = await import("../hooks/shared-error-store");
     clearSharedErrors();
@@ -134,6 +148,57 @@ describe("AppShell", () => {
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-1");
     expect(tabBarMock).toHaveBeenCalledTimes(1);
     expect(workspaceContainerMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies the resolved theme class after persisted theme data loads", async () => {
+    let resolveWorkspaceLoad: ((value: Array<{ id: string; name: string; icon: string; position: number }>) => void)
+      | undefined;
+    listWorkspacesMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveWorkspaceLoad = resolve;
+      }),
+    );
+    getDbMock.mockResolvedValue({});
+    runDailyBackupMock.mockResolvedValue(undefined);
+    const onThemePreferenceChange = vi.fn();
+    useThemeControllerMock.mockImplementation(() => {
+      const [themeState, setThemeState] = useState<{
+        themePreference: ThemePreference;
+        resolvedTheme: ResolvedTheme;
+      }>({
+        themePreference: "system",
+        resolvedTheme: "light",
+      });
+
+      useEffect(() => {
+        void Promise.resolve().then(() => {
+          setThemeState({
+            themePreference: "dark",
+            resolvedTheme: "dark",
+          });
+        });
+      }, []);
+
+      return {
+        ...themeState,
+        updateThemePreference: onThemePreferenceChange,
+      };
+    });
+
+    const { AppShell } = await import("./AppShell");
+    render(<AppShell />);
+
+    expect(screen.getByText("Loading Phosphene...").closest(".app-shell")).toHaveClass("theme-light");
+
+    await waitFor(() => {
+      expect(screen.getByText("Loading Phosphene...").closest(".app-shell")).toHaveClass("theme-dark");
+    });
+
+    resolveWorkspaceLoad?.([]);
+
+    expect(await screen.findByTestId("workspace-tab-bar")).toBeInTheDocument();
+    expect(screen.getByTestId("keyboard-provider").firstElementChild).toHaveClass("theme-dark");
+    expect(tabBarMock).toHaveBeenCalledWith({});
   });
 
   it("registers the global keyboard shortcuts hook", async () => {

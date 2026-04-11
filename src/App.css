@@ -8,6 +8,15 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+  color: var(--app-text);
+  background-color: var(--app-background);
+  --app-background: #f5f7fb;
+  --app-surface: #ffffff;
+  --app-surface-muted: #edf2f7;
+  --app-text: #0f172a;
+  --app-text-muted: #475569;
+  --app-border: #d9e1ec;
+  --app-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
 }
 
 *,
@@ -27,14 +36,38 @@ body,
 }
 
 body {
-  color: #0f172a;
-  background: #f5f7fb;
+  color: var(--app-text);
+  background: var(--app-background);
 }
 
 .app-shell {
   display: flex;
   height: 100%;
   flex-direction: column;
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--app-surface) 82%, transparent), transparent 60%),
+    linear-gradient(180deg, var(--app-surface-muted), var(--app-background));
+  color: var(--app-text);
+}
+
+.theme-light {
+  --app-background: #f5f7fb;
+  --app-surface: #ffffff;
+  --app-surface-muted: #edf2f7;
+  --app-text: #0f172a;
+  --app-text-muted: #475569;
+  --app-border: #d9e1ec;
+  --app-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+}
+
+.theme-dark {
+  --app-background: #08111f;
+  --app-surface: #0f1b2d;
+  --app-surface-muted: #12233a;
+  --app-text: #e2e8f0;
+  --app-text-muted: #94a3b8;
+  --app-border: #243448;
+  --app-shadow: 0 24px 60px rgba(2, 6, 23, 0.5);
 }
 
 .app-shell--loading,
@@ -45,8 +78,52 @@ body {
   justify-content: center;
 }
 
+.app-shell--loading,
+.app-shell--error {
+  background:
+    radial-gradient(circle at top, color-mix(in srgb, var(--app-surface) 88%, transparent), transparent 55%),
+    linear-gradient(180deg, var(--app-surface-muted), var(--app-background));
+}
+
+.app-shell--loading p {
+  color: var(--app-text-muted);
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+
+.app-shell__failure-panel {
+  width: min(28rem, calc(100% - 2rem));
+  border: 1px solid var(--app-border);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--app-surface) 92%, transparent);
+  box-shadow: var(--app-shadow);
+  padding: 1.5rem;
+}
+
+.app-shell__failure-panel h1 {
+  margin-bottom: 0.75rem;
+}
+
+.app-shell__failure-panel p {
+  color: var(--app-text-muted);
+}
+
+.app-shell__failure-panel p + p {
+  margin-top: 0.5rem;
+}
+
+.app-shell__failure-panel button {
+  margin-top: 1rem;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-surface-muted);
+  color: var(--app-text);
+  cursor: pointer;
+  padding: 0.625rem 1rem;
+}
+
 .app-shell__header {
-  border-bottom: 1px solid #d9e1ec;
+  border-bottom: 1px solid var(--app-border);
   font-size: 0.875rem;
   padding: 0.75rem 1rem;
 }

@@ -9,7 +9,6 @@ import { useAppStore } from "../stores/app-store";
 const KEYBOARD_CREATE_WORKSPACE_CHANNEL = "keyboard-shortcut:create-workspace";
 const KEYBOARD_RELOAD_WORKSPACE_CHANNEL = "keyboard-shortcut:reload-workspaces";
 const KEYBOARD_CREATE_BOARD_CHANNEL = "keyboard-shortcut:create-board";
-const KEYBOARD_WORKSPACE_ICON = "🪟";
 
 export function useKeyboardShortcuts() {
   const workspaces = useAppStore((state) => state.workspaces);
@@ -64,7 +63,12 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      if (focus === "canvas" || !initialized || isEditableEventTarget(event.target)) {
+      if (
+        focus === "canvas" ||
+        focus === "browser" ||
+        !initialized ||
+        isEditableEventTarget(event.target)
+      ) {
         return;
       }
 
@@ -108,7 +112,7 @@ export function useKeyboardShortcuts() {
 
         try {
           const nextWorkspaceName = `Workspace ${workspaces.length + 1}`;
-          const workspaceId = await createWorkspace(nextWorkspaceName, KEYBOARD_WORKSPACE_ICON);
+          const workspaceId = await createWorkspace(nextWorkspaceName);
           const nextPosition =
             workspaces.reduce(
               (maxPosition, workspace) => Math.max(maxPosition, workspace.position),
@@ -121,7 +125,7 @@ export function useKeyboardShortcuts() {
                 mapWorkspace({
                   id: workspaceId,
                   name: nextWorkspaceName,
-                  icon: KEYBOARD_WORKSPACE_ICON,
+                  icon: null,
                   position: nextPosition,
                 }),
               ];

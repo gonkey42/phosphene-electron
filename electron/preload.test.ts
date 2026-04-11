@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const exposeInMainWorldMock = vi.fn();
 const invokeMock = vi.fn();
 const onMock = vi.fn();
+const offMock = vi.fn();
 const sendMock = vi.fn();
 
 async function waitForAsyncEffects(): Promise<void> {
@@ -38,6 +39,32 @@ type ExposedDesktop = {
   lifecycle: {
     flushPendingWork(): Promise<void>;
   };
+  browser: {
+    attach(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+    setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+    navigate(url: string): Promise<void>;
+    goBack(): Promise<void>;
+    goForward(): Promise<void>;
+    reload(): Promise<void>;
+    destroy(): Promise<void>;
+    onStateChanged(
+      callback: (state: {
+        url: string;
+        title: string;
+        canGoBack: boolean;
+        canGoForward: boolean;
+        isLoading: boolean;
+      lastError: string | null;
+    }) => void,
+    ): () => void;
+  };
+  contextMenu: {
+    showAddressInputMenu(): Promise<void>;
+  };
+  theme: {
+    setPreference(preference: "system" | "light" | "dark"): Promise<void>;
+    onPreferenceSelected(callback: (preference: "system" | "light" | "dark") => void): () => void;
+  };
 };
 
 vi.mock("electron", () => ({
@@ -47,6 +74,7 @@ vi.mock("electron", () => ({
   ipcRenderer: {
     invoke: invokeMock,
     on: onMock,
+    off: offMock,
     send: sendMock,
   },
 }));
@@ -57,6 +85,7 @@ describe("preload filesystem IPC", () => {
     exposeInMainWorldMock.mockReset();
     invokeMock.mockReset();
     onMock.mockReset();
+    offMock.mockReset();
     sendMock.mockReset();
     delete (window as Window & { __PHOSPHENE_LIFECYCLE_READY__?: boolean }).__PHOSPHENE_LIFECYCLE_READY__;
   });
@@ -155,6 +184,19 @@ describe("preload filesystem IPC", () => {
         lifecycle: expect.objectContaining({
           flushPendingWork: expect.any(Function),
         }),
+        browser: expect.objectContaining({
+          attach: expect.any(Function),
+          setBounds: expect.any(Function),
+          navigate: expect.any(Function),
+          goBack: expect.any(Function),
+          goForward: expect.any(Function),
+          reload: expect.any(Function),
+          destroy: expect.any(Function),
+          onStateChanged: expect.any(Function),
+        }),
+        contextMenu: expect.objectContaining({
+          showAddressInputMenu: expect.any(Function),
+        }),
       }),
     );
 
@@ -186,6 +228,124 @@ describe("preload filesystem IPC", () => {
       ["paths:appDataDir"],
       ["paths:join", "/app/data", "images", "board-1"],
     ]);
+  });
+
+  it("exposes browser bridge methods in the desktop API", async () => {
+    await import("./preload");
+
+    expect(exposeInMainWorldMock).toHaveBeenCalledWith(
+      "desktop",
+      expect.objectContaining({
+        browser: expect.objectContaining({
+          attach: expect.any(Function),
+          setBounds: expect.any(Function),
+          navigate: expect.any(Function),
+          goBack: expect.any(Function),
+          goForward: expect.any(Function),
+          reload: expect.any(Function),
+          destroy: expect.any(Function),
+          onStateChanged: expect.any(Function),
+        }),
+      }),
+    );
+  });
+
+  it("exposes context menu bridge methods in the desktop API", async () => {
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+
+    await desktop.contextMenu.showAddressInputMenu();
+
+    expect(exposeInMainWorldMock).toHaveBeenCalledWith(
+      "desktop",
+      expect.objectContaining({
+        contextMenu: expect.objectContaining({
+          showAddressInputMenu: expect.any(Function),
+        }),
+      }),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("browser:show-address-input-menu");
+  });
+
+  it("exposes a theme bridge for native menu synchronization", async () => {
+    await import("./preload");
+
+    expect(exposeInMainWorldMock).toHaveBeenCalledWith(
+      "desktop",
+      expect.objectContaining({
+        theme: expect.objectContaining({
+          setPreference: expect.any(Function),
+          onPreferenceSelected: expect.any(Function),
+        }),
+      }),
+    );
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+    const handlePreferenceSelected = vi.fn();
+
+    await desktop.theme.setPreference("dark");
+    expect(invokeMock).toHaveBeenCalledWith("theme:set-preference", "dark");
+
+    expect(onMock).toHaveBeenCalledWith("theme:preference-selected", expect.any(Function));
+    const listener = onMock.mock.calls.find(([channel]) => channel === "theme:preference-selected")?.[1];
+    listener?.({}, "light");
+
+    const unsubscribe = desktop.theme.onPreferenceSelected(handlePreferenceSelected);
+
+    expect(handlePreferenceSelected).toHaveBeenCalledWith("light");
+
+    unsubscribe();
+  });
+
+  it("replays the most recent theme selection to late subscribers", async () => {
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+    const firstSubscriber = vi.fn();
+    const handlePreferenceSelected = vi.fn();
+
+    const unsubscribeFirst = desktop.theme.onPreferenceSelected(firstSubscriber);
+    const listener = onMock.mock.calls.find(([channel]) => channel === "theme:preference-selected")?.[1];
+    listener?.({}, "dark");
+
+    expect(firstSubscriber).toHaveBeenCalledWith("dark");
+
+    unsubscribeFirst();
+
+    const unsubscribe = desktop.theme.onPreferenceSelected(handlePreferenceSelected);
+
+    expect(handlePreferenceSelected).toHaveBeenCalledWith("dark");
+
+    unsubscribe();
+  });
+
+  it("subscribes and unsubscribes browser state listeners through ipcRenderer", async () => {
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+    const handleStateChanged = vi.fn();
+
+    const unsubscribe = desktop.browser.onStateChanged(handleStateChanged);
+
+    expect(onMock).toHaveBeenCalledWith("browser:state-changed", expect.any(Function));
+
+    const listener = onMock.mock.calls.find(([channel]) => channel === "browser:state-changed")?.[1];
+    const state = {
+      url: "https://example.com",
+      title: "Example",
+      canGoBack: false,
+      canGoForward: true,
+      isLoading: false,
+      lastError: null,
+    };
+
+    listener?.({}, state);
+    expect(handleStateChanged).toHaveBeenCalledWith(state);
+
+    unsubscribe();
+
+    expect(offMock).toHaveBeenCalledWith("browser:state-changed", listener);
   });
 
   it("propagates rejected IPC contract errors to renderer callers", async () => {

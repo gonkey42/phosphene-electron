@@ -31,13 +31,55 @@ type MutationResult = {
   rowsAffected: number;
 };
 
+type BrowserBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type BrowserState = {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  isLoading: boolean;
+  lastError: string | null;
+};
+
 let lifecycleRequestSequence = 0;
 let lifecycleReady =
   (window as Window & { [LIFECYCLE_READY_FLAG]?: boolean })[LIFECYCLE_READY_FLAG] === true;
 
+const THEME_PREFERENCE_SELECTED_CHANNEL = "theme:preference-selected";
+const THEME_SET_PREFERENCE_CHANNEL = "theme:set-preference";
+type ThemePreference = "system" | "light" | "dark";
+
+const themePreferenceSubscribers = new Set<(preference: ThemePreference) => void>();
+let lastThemePreferenceSelected: ThemePreference | null = null;
+let themePreferenceIpcListener:
+  | ((_event: unknown, preference: ThemePreference) => void)
+  | null = null;
+
 window.addEventListener(LIFECYCLE_READY_EVENT, () => {
   lifecycleReady = true;
 });
+
+function ensureThemePreferenceListener() {
+  if (themePreferenceIpcListener) {
+    return;
+  }
+
+  themePreferenceIpcListener = (_event, preference: ThemePreference) => {
+    lastThemePreferenceSelected = preference;
+    themePreferenceSubscribers.forEach((subscriber) => {
+      subscriber(preference);
+    });
+  };
+  ipcRenderer.on(THEME_PREFERENCE_SELECTED_CHANNEL, themePreferenceIpcListener);
+}
+
+ensureThemePreferenceListener();
 
 function isFilesystemResult<T>(value: unknown): value is FilesystemResult<T> {
   return (
@@ -184,6 +226,61 @@ contextBridge.exposeInMainWorld("desktop", {
     flushPendingWork() {
       lifecycleRequestSequence += 1;
       return requestRendererFlush(`renderer-${lifecycleRequestSequence}`);
+    },
+  },
+  browser: {
+    attach(bounds: BrowserBounds) {
+      return ipcRenderer.invoke("browser:attach", bounds);
+    },
+    setBounds(bounds: BrowserBounds) {
+      return ipcRenderer.invoke("browser:set-bounds", bounds);
+    },
+    navigate(url: string) {
+      return ipcRenderer.invoke("browser:navigate", url);
+    },
+    goBack() {
+      return ipcRenderer.invoke("browser:back");
+    },
+    goForward() {
+      return ipcRenderer.invoke("browser:forward");
+    },
+    reload() {
+      return ipcRenderer.invoke("browser:reload");
+    },
+    destroy() {
+      return ipcRenderer.invoke("browser:destroy");
+    },
+    onStateChanged(callback: (state: BrowserState) => void) {
+      const listener = (_event: unknown, state: BrowserState) => {
+        callback(state);
+      };
+
+      ipcRenderer.on("browser:state-changed", listener);
+
+      return () => {
+        ipcRenderer.off("browser:state-changed", listener);
+      };
+    },
+  },
+  contextMenu: {
+    showAddressInputMenu() {
+      return ipcRenderer.invoke("browser:show-address-input-menu");
+    },
+  },
+  theme: {
+    setPreference(preference: "system" | "light" | "dark") {
+      return ipcRenderer.invoke(THEME_SET_PREFERENCE_CHANNEL, preference);
+    },
+    onPreferenceSelected(callback: (preference: "system" | "light" | "dark") => void) {
+      ensureThemePreferenceListener();
+      themePreferenceSubscribers.add(callback);
+      if (lastThemePreferenceSelected !== null) {
+        callback(lastThemePreferenceSelected);
+      }
+
+      return () => {
+        themePreferenceSubscribers.delete(callback);
+      };
     },
   },
 });

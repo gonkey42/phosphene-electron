@@ -14,12 +14,11 @@
 }
 
 .panel-secondary {
-  align-items: center;
-  background: #fafafa;
-  color: #999;
+  align-items: stretch;
+  background: transparent;
+  color: inherit;
   display: flex;
-  font-size: 13px;
-  justify-content: center;
+  justify-content: stretch;
   min-width: 0;
   overflow: hidden;
 }

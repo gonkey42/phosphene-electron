@@ -1,13 +1,37 @@
-import { app, BrowserWindow, dialog, ipcMain, type WebContents } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  MenuItem,
+  type MenuItemConstructorOptions,
+  type WebContents,
+} from "electron";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { registerDatabaseIPC, closeDatabase } from "./ipc/database";
 import { registerFilesystemIPC } from "./ipc/filesystem";
+import { registerBrowserIPC } from "./ipc/browser";
+import {
+  loadPersistedThemePreference,
+  persistThemePreference,
+} from "./theme-preferences";
 
 const isDev = !app.isPackaged;
 const QUIT_FLUSH_TIMEOUT_MS = 1500;
 const closeApprovedWindowIds = new Set<number>();
 const closeFlushInProgressWindowIds = new Set<number>();
+const THEME_PREFERENCE_SELECTED_CHANNEL = "theme:preference-selected";
+const THEME_SET_PREFERENCE_CHANNEL = "theme:set-preference";
+
+type ThemePreference = "system" | "light" | "dark";
+
+const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
+
+let currentThemePreference: ThemePreference = "system";
+let hasCurrentThemePreference = false;
+let themePreferenceUserDataPath: string | null = null;
 
 type FlushResponsePayload = {
   requestId: string;
@@ -128,6 +152,7 @@ async function createWindow(): Promise<BrowserWindow> {
     throw error;
   }
 
+  syncThemePreferenceToWindow(win);
   win.show();
   return win;
 }
@@ -209,6 +234,135 @@ function getFlushLogEvent(scope: "window:close" | "quit", error: unknown) {
     : "[quit:flush-timeout]";
 }
 
+function isThemePreference(value: unknown): value is ThemePreference {
+  return typeof value === "string" && THEME_PREFERENCES.includes(value as ThemePreference);
+}
+
+function sendThemePreferenceToWindow(window: BrowserWindow, preference: ThemePreference) {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) {
+    return;
+  }
+
+  window.webContents.send(THEME_PREFERENCE_SELECTED_CHANNEL, preference);
+}
+
+function notifyRendererThemePreferenceSelected(preference: ThemePreference) {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    sendThemePreferenceToWindow(window, preference);
+  });
+}
+
+function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
+  return [
+    ...(process.platform === "darwin"
+      ? ([{ role: "appMenu" as const }, { role: "fileMenu" as const }] satisfies
+          MenuItemConstructorOptions[])
+      : [{ role: "fileMenu" as const }]),
+    { role: "editMenu" as const },
+    { role: "viewMenu" as const },
+    { role: "windowMenu" as const },
+    { role: "help" as const },
+  ];
+}
+
+function buildThemeSubmenuTemplate(): MenuItemConstructorOptions[] {
+  const buildThemeItem = (label: string, preference: ThemePreference): MenuItemConstructorOptions => ({
+    label,
+    type: "radio",
+    checked: currentThemePreference === preference,
+    click: () => {
+      try {
+        setThemePreference(preference, { persist: true, notifyRenderer: true });
+      } catch (error) {
+        console.error("[theme:menu-selection-failed]", {
+          preference,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+  });
+
+  return [
+    buildThemeItem("System", "system"),
+    buildThemeItem("Light", "light"),
+    buildThemeItem("Dark", "dark"),
+  ];
+}
+
+function insertThemeMenu(menu: Menu) {
+  const viewMenuItem = menu.items.find((item) => item.role === "viewMenu");
+  const viewSubmenu = viewMenuItem?.submenu;
+
+  if (!viewSubmenu) {
+    return;
+  }
+
+  viewSubmenu.append(new MenuItem({ type: "separator" }));
+  viewSubmenu.append(
+    new MenuItem({
+      label: "Theme",
+      submenu: buildThemeSubmenuTemplate(),
+    }),
+  );
+}
+
+function installApplicationMenu() {
+  const menu = Menu.buildFromTemplate(buildApplicationMenuTemplate());
+  insertThemeMenu(menu);
+  Menu.setApplicationMenu(menu);
+}
+
+function getThemePreferenceUserDataPath(): string {
+  if (!themePreferenceUserDataPath) {
+    throw new Error("Theme preference persistence is not initialized");
+  }
+
+  return themePreferenceUserDataPath;
+}
+
+function setThemePreference(
+  preference: ThemePreference,
+  options: {
+    persist: boolean;
+    notifyRenderer: boolean;
+  },
+) {
+  if (options.persist) {
+    persistThemePreference(getThemePreferenceUserDataPath(), preference);
+  }
+
+  currentThemePreference = preference;
+  hasCurrentThemePreference = true;
+  installApplicationMenu();
+
+  if (options.notifyRenderer) {
+    notifyRendererThemePreferenceSelected(preference);
+  }
+}
+
+function hydratePersistedThemePreference() {
+  currentThemePreference = loadPersistedThemePreference(getThemePreferenceUserDataPath());
+  hasCurrentThemePreference = true;
+}
+
+function registerThemePreferenceIPC() {
+  ipcMain.handle(THEME_SET_PREFERENCE_CHANNEL, async (_event, preference: string) => {
+    if (!isThemePreference(preference)) {
+      throw new Error(`Invalid theme preference: ${preference}`);
+    }
+
+    setThemePreference(preference, { persist: true, notifyRenderer: false });
+  });
+}
+
+function syncThemePreferenceToWindow(window: BrowserWindow) {
+  if (!hasCurrentThemePreference) {
+    return;
+  }
+
+  sendThemePreferenceToWindow(window, currentThemePreference);
+}
+
 export function attachDurableWindowCloseHandler(window: BrowserWindow) {
   window.on("close", (event) => {
     if (quitFlushComplete || closeApprovedWindowIds.has(window.id)) {
@@ -270,12 +424,21 @@ async function bootstrap() {
   });
 
   const userDataPath = app.getPath("userData");
+  themePreferenceUserDataPath = userDataPath;
 
   await runBootstrapPhase("database-ipc", () => {
     registerDatabaseIPC(userDataPath);
   });
   await runBootstrapPhase("filesystem-ipc", () => {
     registerFilesystemIPC(userDataPath);
+  });
+  await runBootstrapPhase("browser-ipc", () => {
+    registerBrowserIPC();
+  });
+  await runBootstrapPhase("theme-ipc", () => {
+    hydratePersistedThemePreference();
+    registerThemePreferenceIPC();
+    installApplicationMenu();
   });
   await runBootstrapPhase("create-window", async () => {
     await createWindow();

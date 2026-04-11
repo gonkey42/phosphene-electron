@@ -13,7 +13,6 @@ import { useErrorReporter } from "../../hooks/use-error-reporter";
 import { useInlineRename } from "../../hooks/use-inline-rename";
 import { clearSharedErrorChannel } from "../../hooks/shared-error-store";
 import { useAppStore } from "../../stores/app-store";
-
 import "./WorkspaceTabBar.css";
 
 function isMacPlatform() {
@@ -184,12 +183,15 @@ export function WorkspaceTabBar() {
   async function handleCreateWorkspace() {
     try {
       const nextName = `Workspace ${workspaces.length + 1}`;
-      const workspaceId = await createWorkspace(nextName, "🪟");
+      const workspaceId = await createWorkspace(nextName);
       const nextPosition =
         workspaces.reduce((maxPosition, workspace) => Math.max(maxPosition, workspace.position), -1) + 1;
       const nextWorkspaces = workspaces.some((workspace) => workspace.id === workspaceId)
         ? workspaces
-        : [...workspaces, mapWorkspace({ id: workspaceId, name: nextName, icon: "🪟", position: nextPosition })];
+        : [
+            ...workspaces,
+            mapWorkspace({ id: workspaceId, name: nextName, icon: null, position: nextPosition }),
+          ];
 
       setVisibleWorkspaces(nextWorkspaces);
       clearSharedErrorChannel(WORKSPACE_CREATE_ERROR_CHANNEL);
@@ -296,9 +298,6 @@ export function WorkspaceTabBar() {
                       startRename(workspace.id, workspace.name);
                     }}
                   >
-                    <span className="workspace-tab-bar__icon" aria-hidden="true">
-                      {workspace.icon}
-                    </span>
                     <span className="workspace-tab-bar__name">{workspace.name}</span>
                     {shortcut ? (
                       <span className="workspace-tab-bar__shortcut" aria-hidden="true">
@@ -324,18 +323,19 @@ export function WorkspaceTabBar() {
             </li>
           );
         })}
+        <li className="workspace-tab-bar__tab-item workspace-tab-bar__tab-item--create">
+          <button
+            type="button"
+            className="workspace-tab-bar__create-button"
+            aria-label="Create workspace"
+            onClick={() => {
+              void handleCreateWorkspace();
+            }}
+          >
+            +
+          </button>
+        </li>
       </ul>
-
-      <button
-        type="button"
-        className="workspace-tab-bar__create-button"
-        aria-label="Create workspace"
-        onClick={() => {
-          void handleCreateWorkspace();
-        }}
-      >
-        +
-      </button>
     </header>
   );
 }

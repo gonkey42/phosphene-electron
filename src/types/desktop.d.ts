@@ -55,6 +55,44 @@ interface DesktopLifecycle {
   flushPendingWork(): Promise<void>;
 }
 
+type DesktopBrowserBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type DesktopBrowserState = {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  isLoading: boolean;
+  lastError: string | null;
+};
+
+interface DesktopBrowserAPI {
+  attach(bounds: DesktopBrowserBounds): Promise<void>;
+  setBounds(bounds: DesktopBrowserBounds): Promise<void>;
+  navigate(url: string): Promise<void>;
+  goBack(): Promise<void>;
+  goForward(): Promise<void>;
+  reload(): Promise<void>;
+  destroy(): Promise<void>;
+  onStateChanged(callback: (state: DesktopBrowserState) => void): () => void;
+}
+
+interface DesktopContextMenuAPI {
+  showAddressInputMenu(): Promise<void>;
+}
+
+type DesktopThemePreference = "system" | "light" | "dark";
+
+interface DesktopThemeAPI {
+  setPreference(preference: DesktopThemePreference): Promise<void>;
+  onPreferenceSelected(callback: (preference: DesktopThemePreference) => void): () => void;
+}
+
 interface DesktopAPI {
   db: DesktopDatabase;
   boards: DesktopBoardsAPI;
@@ -62,6 +100,9 @@ interface DesktopAPI {
   fs: DesktopFilesystem;
   paths: DesktopPaths;
   lifecycle: DesktopLifecycle;
+  browser: DesktopBrowserAPI;
+  contextMenu: DesktopContextMenuAPI;
+  theme: DesktopThemeAPI;
 }
 
 interface Window {

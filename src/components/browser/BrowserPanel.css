@@ -1,0 +1,126 @@
+.browser-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.browser-panel--full-bleed {
+  width: 100%;
+}
+
+.browser-panel--light {
+  background: linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%);
+  color: #1f2937;
+}
+
+.browser-panel--dark {
+  background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+  color: #e5e7eb;
+}
+
+.browser-panel__controls {
+  align-items: center;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, auto) minmax(0, 1fr) auto;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.browser-panel__controls button,
+.browser-panel__controls input,
+.browser-panel__shell-control {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 10px;
+  color: inherit;
+  font: inherit;
+  height: 34px;
+}
+
+.browser-panel--dark .browser-panel__controls button,
+.browser-panel--dark .browser-panel__controls input,
+.browser-panel--dark .browser-panel__shell-control {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.browser-panel__controls button {
+  cursor: pointer;
+  padding: 0 12px;
+}
+
+.browser-panel__controls [data-icon-button="true"] {
+  min-width: 34px;
+  padding: 0;
+}
+
+.browser-panel__controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.browser-panel__address {
+  min-width: 0;
+  padding: 0 12px;
+  width: 100%;
+}
+
+.browser-panel__shell-control {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+
+.browser-panel__action {
+  font-weight: 600;
+  padding: 0 14px;
+}
+
+.browser-panel__address--shell {
+  justify-content: flex-start;
+  padding: 0 12px;
+}
+
+.browser-panel__action--shell {
+  justify-content: center;
+}
+
+.browser-panel__error {
+  background: rgba(239, 68, 68, 0.16);
+  border-top: 1px solid rgba(248, 113, 113, 0.24);
+  color: inherit;
+  padding: 10px 12px;
+}
+
+.browser-panel__error p {
+  margin: 0;
+}
+
+.browser-panel__error p + p {
+  margin-top: 4px;
+  opacity: 0.9;
+}
+
+.browser-panel__host {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.browser-panel--shell {
+  pointer-events: none;
+}
+
+.browser-panel__controls--shell {
+  min-height: 50px;
+}
+
+.browser-panel__host--shell {
+  background: linear-gradient(180deg, transparent 0%, rgba(148, 163, 184, 0.08) 100%);
+}

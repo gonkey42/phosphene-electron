@@ -15,7 +15,7 @@ const {
   mapWorkspaceMock: vi.fn((item) => ({
     id: item.id,
     name: item.name,
-    icon: item.icon ?? "📋",
+    icon: item.icon,
     position: item.position,
   })),
   listWorkspacesMock: vi.fn(),
@@ -88,10 +88,50 @@ describe("WorkspaceTabBar", () => {
 
     render(<WorkspaceTabBar />);
 
-    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    const homeButton = await screen.findByRole("button", { name: "Home" });
+    const projectsButton = screen.getByRole("button", { name: "Projects" });
+
+    expect(homeButton).toHaveAttribute("aria-current", "page");
+    expect(homeButton.closest(".workspace-tab-bar__tab-item")).toHaveClass(
+      "workspace-tab-bar__tab-item--active",
+    );
+
+    fireEvent.click(projectsButton);
 
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
+    expect(projectsButton).toHaveAttribute("aria-current", "page");
+    expect(projectsButton.closest(".workspace-tab-bar__tab-item")).toHaveClass(
+      "workspace-tab-bar__tab-item--active",
+    );
+    expect(homeButton).not.toHaveAttribute("aria-current");
+  });
+
+  it("renders text-only workspace tabs with the create button immediately after the last tab", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      createWorkspaceItem(),
+      createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
+    ]);
+
+    const { container } = render(<WorkspaceTabBar />);
+
+    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Projects" })).toBeInTheDocument();
+    expect(container.querySelectorAll(".workspace-tab-bar__icon")).toHaveLength(0);
+
+    const tabList = container.querySelector(".workspace-tab-bar__tabs");
+    expect(tabList).not.toBeNull();
+    expect(tabList?.children).toHaveLength(3);
+    expect(tabList?.lastElementChild).toContainElement(screen.getByRole("button", { name: "Create workspace" }));
+  });
+
+  it("does not render a theme mode selector in the tab bar", async () => {
+    listWorkspacesMock.mockResolvedValue([createWorkspaceItem()]);
+
+    render(<WorkspaceTabBar />);
+
+    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /system|light|dark/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/theme/i)).not.toBeInTheDocument();
   });
 
   it("shows platform-aware shortcuts for the first nine workspaces", async () => {
@@ -131,7 +171,7 @@ describe("WorkspaceTabBar", () => {
       .mockResolvedValueOnce([
         createWorkspaceItem(),
         createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
-        createWorkspaceItem({ id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 }),
+        createWorkspaceItem({ id: "workspace-3", name: "Workspace 3", icon: null, position: 2 }),
       ]);
     createWorkspaceMock.mockResolvedValue("workspace-3");
 
@@ -141,9 +181,16 @@ describe("WorkspaceTabBar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => {
-      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3", "🪟");
+      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3");
     });
     expect(await screen.findByRole("button", { name: "Workspace 3" })).toBeInTheDocument();
+    expect(mapWorkspaceMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "workspace-3",
+        name: "Workspace 3",
+        icon: null,
+      }),
+    );
     expect(listWorkspacesMock).toHaveBeenCalledTimes(2);
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
   });
@@ -295,7 +342,7 @@ describe("WorkspaceTabBar", () => {
       .mockResolvedValueOnce([
         createWorkspaceItem(),
         createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
-        createWorkspaceItem({ id: "workspace-3", name: "Workspace 3", icon: "🪟", position: 2 }),
+        createWorkspaceItem({ id: "workspace-3", name: "Workspace 3", icon: null, position: 2 }),
       ]);
     createWorkspaceMock.mockResolvedValue("workspace-3");
 
