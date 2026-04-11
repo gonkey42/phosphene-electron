@@ -25,3 +25,9 @@ dist-ssr
 .worktrees/
 dist-electron/
 release/
+
+# Local planning and review docs
+docs/
+ERROR_HANDLING_REVIEW.md
+Electron Resilience Hardening Implementation Plan.md
+MIGRATION-NOTES.md
