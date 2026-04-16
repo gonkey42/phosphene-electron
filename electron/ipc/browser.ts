@@ -27,6 +27,21 @@ const browserViews = new Map<number, BrowserView>();
 const browserStates = new Map<number, BrowserState>();
 const browserCleanup = new Map<number, () => void>();
 
+const ALLOWED_BROWSER_URL_SCHEMES = new Set(["http:", "https:", "about:"]);
+
+function assertAllowedBrowserUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid browser URL: ${url}`);
+  }
+
+  if (!ALLOWED_BROWSER_URL_SCHEMES.has(parsed.protocol)) {
+    throw new Error(`Unsafe URL scheme for browser navigation: ${parsed.protocol}`);
+  }
+}
+
 function createDefaultState(): BrowserState {
   return {
     url: "",
@@ -224,6 +239,8 @@ export function registerBrowserIPC() {
     if (!window) {
       throw new Error("Browser navigate requested without an owning BrowserWindow");
     }
+
+    assertAllowedBrowserUrl(url);
 
     const browserView = ensureBrowserView(window);
     await browserView.webContents.loadURL(url);
