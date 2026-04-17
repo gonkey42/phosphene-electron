@@ -27,7 +27,7 @@
   "scripts": {
     "dev": "concurrently -k \"npm run dev:renderer\" \"npm run dev:electron\"",
     "dev:renderer": "vite",
-    "dev:electron": "npm run build:main && wait-on http://localhost:5173 file:dist-electron/main.js file:dist-electron/preload.js && electron dist-electron/main.js",
+    "dev:electron": "npm run rebuild:electron && npm run build:main && wait-on http://localhost:5173 file:dist-electron/main.js file:dist-electron/preload.js && electron dist-electron/main.js",
     "build": "tsc && vite build",
     "build:main": "tsc -p electron/tsconfig.json && cp electron/package.json dist-electron/package.json",
     "rebuild:electron": "rimraf node_modules/better-sqlite3/build && electron-rebuild -f -w better-sqlite3",

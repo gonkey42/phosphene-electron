@@ -93,18 +93,15 @@ Two helper scripts manage this:
 
 `@electron/rebuild` (invoked by `electron-builder` under the hood) skips the
 build when `build/Release/better_sqlite3.node` already exists, even if that
-binary was compiled against the wrong ABI. Removing the build directory first
-forces a clean rebuild. This was the root cause of the broken v0.2.2 DMG,
-which shipped a Node-ABI binding instead of an Electron-ABI one.
+binary was compiled against the wrong ABI. Passing `-f` (force) to
+`electron-rebuild` is not sufficient on its own — when the existing `.node`
+file was compiled for a different ABI, the stale `build/` directory must be
+removed so the native toolchain recompiles from source. Removing the build
+directory first forces a clean rebuild. This was the root cause of the broken
+v0.2.2 DMG, which shipped a Node-ABI binding instead of an Electron-ABI one.
 
-### Packaging locally
-
-```bash
-npm run build:electron
-```
-
-This chains `rebuild:electron` → `build` → `build:main` → `electron-builder`
-and emits the DMG to `release/`.
+`npm run build:electron` chains `rebuild:electron` → `build` → `build:main` →
+`electron-builder` and emits the DMG to `release/`.
 
 ## Release Artifacts
 
