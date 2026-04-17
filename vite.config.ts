@@ -14,6 +14,7 @@ export default defineConfig({
       "**/dist-electron/**",
       "**/.worktrees/**",
       "**/.codex-review-worktrees/**",
+      "**/e2e/**",
     ],
   },
   server: {

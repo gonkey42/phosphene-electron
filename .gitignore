@@ -25,6 +25,9 @@ dist-ssr
 .worktrees/
 dist-electron/
 release/
+test-results/
+playwright-report/
+/.pw-tmp/
 
 # Local planning and review docs
 docs/
