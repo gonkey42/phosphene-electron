@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
-import { runMigrations } from "./migrations";
+import { applyConnectionPragmas, runMigrations } from "./migrations";
 
 let databaseBootstrapped = false;
 
@@ -12,6 +12,8 @@ function generateId(): string {
 }
 
 export function initializeSchema(database: Database.Database): void {
+  applyConnectionPragmas(database);
+
   if (databaseBootstrapped) {
     return;
   }

@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import Database from "better-sqlite3";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("runMigrations", () => {
   it("runs all migrations from version 0 on a fresh database", async () => {
@@ -50,5 +53,38 @@ describe("runMigrations", () => {
 
     expect(rows1.n).toBe(rows2.n);
     expect(getCurrentVersion(db)).toBe(1);
+  });
+});
+
+describe("applyConnectionPragmas + runMigrations on a file-backed DB", () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: Database.Database;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "phosphene-migrations-test-"));
+    dbPath = join(tempDir, "test.db");
+    db = new Database(dbPath);
+  });
+
+  afterEach(() => {
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("completes bootstrap against a real file-backed DB and enables WAL (regression guard for pragma-inside-transaction crash)", async () => {
+    const { applyConnectionPragmas, runMigrations } = await import("./migrations");
+
+    expect(() => {
+      applyConnectionPragmas(db);
+      runMigrations(db);
+    }).not.toThrow();
+
+    const journalMode = db.pragma("journal_mode", { simple: true }) as string;
+    expect(journalMode.toLowerCase()).toBe("wal");
   });
 });

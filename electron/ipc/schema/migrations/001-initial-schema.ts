@@ -87,8 +87,6 @@ const migration: Migration = {
   description:
     "Initial schema: workspaces, boards, files, captures, settings + hot-path indexes",
   up(db) {
-    db.pragma("journal_mode = WAL");
-    db.pragma("foreign_keys = ON");
     db.exec(WORKSPACES_TABLE_SQL);
     db.exec(BOARDS_TABLE_SQL);
     db.exec(FILES_TABLE_SQL);

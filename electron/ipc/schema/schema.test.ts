@@ -1,57 +1,82 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const execMock = vi.fn();
-const pragmaMock = vi.fn();
-const prepareMock = vi.fn();
-const getMock = vi.fn();
-const runMock = vi.fn();
-const transactionMock = vi.fn();
-
-function makeDb() {
-  return {
-    pragma: pragmaMock,
-    exec: execMock,
-    prepare: prepareMock,
-    transaction: transactionMock,
-  };
-}
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import Database from "better-sqlite3";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 describe("initializeSchema", () => {
+  let tempDir: string;
+  let dbPath: string;
+  let db: Database.Database;
+
   beforeEach(() => {
-    vi.resetModules();
-    execMock.mockReset();
-    pragmaMock.mockReset();
-    prepareMock.mockReset().mockReturnValue({ get: getMock, run: runMock });
-    // getCurrentVersion returns 0, hasWorkspaces returns undefined (fresh DB),
-    // workspace count returns 0 (triggers Home seed).
-    getMock
-      .mockReset()
-      .mockReturnValueOnce({ version: null })
-      .mockReturnValueOnce(undefined)
-      .mockReturnValue({ count: 0 });
-    runMock.mockReset();
-    transactionMock.mockReset().mockImplementation((fn: () => void) => fn);
+    tempDir = mkdtempSync(join(tmpdir(), "phosphene-schema-test-"));
+    dbPath = join(tempDir, "test.db");
+    db = new Database(dbPath);
   });
 
-  it("delegates to runMigrations and seeds the Home workspace", async () => {
-    const { initializeSchema, resetSchemaBootstrapForTests } = await import("./index");
-    resetSchemaBootstrapForTests();
-    initializeSchema(makeDb() as never);
-
-    // schema_version table creation implies runMigrations ran
-    const allSql = execMock.mock.calls.map((c) => c[0] as string).join("\n");
-    expect(allSql).toContain("schema_version");
-
-    // Home workspace seeded
-    expect(runMock).toHaveBeenCalledWith(expect.any(String), "Home", "\u{1F3E0}", 0);
+  afterEach(() => {
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
+    rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("does not re-bootstrap on second call", async () => {
+  it("boots a fresh DB end-to-end: tables, WAL mode, and seeded Home workspace", async () => {
     const { initializeSchema, resetSchemaBootstrapForTests } = await import("./index");
     resetSchemaBootstrapForTests();
-    initializeSchema(makeDb() as never);
-    const execCallCount = execMock.mock.calls.length;
-    initializeSchema(makeDb() as never);
-    expect(execMock.mock.calls.length).toBe(execCallCount);
+
+    initializeSchema(db);
+
+    const journalMode = db.pragma("journal_mode", { simple: true }) as string;
+    expect(journalMode.toLowerCase()).toBe("wal");
+
+    const foreignKeys = db.pragma("foreign_keys", { simple: true }) as number;
+    expect(foreignKeys).toBe(1);
+
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+      .all() as { name: string }[];
+    const tableNames = tables.map((t) => t.name);
+    expect(tableNames).toEqual(
+      expect.arrayContaining([
+        "workspaces",
+        "boards",
+        "files",
+        "captures",
+        "settings",
+        "schema_version",
+      ]),
+    );
+
+    const workspaces = db
+      .prepare("SELECT name, icon, position FROM workspaces WHERE deleted_at IS NULL")
+      .all() as { name: string; icon: string; position: number }[];
+    expect(workspaces).toHaveLength(1);
+    expect(workspaces[0]).toEqual({ name: "Home", icon: "\u{1F3E0}", position: 0 });
+  });
+
+  it("does not re-seed Home on a second initializeSchema call (idempotency guard)", async () => {
+    const { initializeSchema, resetSchemaBootstrapForTests } = await import("./index");
+    resetSchemaBootstrapForTests();
+
+    initializeSchema(db);
+    const countAfterFirst = (
+      db
+        .prepare("SELECT count(*) as count FROM workspaces WHERE deleted_at IS NULL")
+        .get() as { count: number }
+    ).count;
+
+    initializeSchema(db);
+    const countAfterSecond = (
+      db
+        .prepare("SELECT count(*) as count FROM workspaces WHERE deleted_at IS NULL")
+        .get() as { count: number }
+    ).count;
+
+    expect(countAfterFirst).toBe(1);
+    expect(countAfterSecond).toBe(1);
   });
 });

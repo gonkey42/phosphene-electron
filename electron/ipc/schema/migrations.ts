@@ -4,8 +4,16 @@ import initialSchema from "./migrations/001-initial-schema";
 
 export const MIGRATIONS: readonly Migration[] = [initialSchema];
 
-export function getCurrentVersion(db: Database.Database): number {
+export function applyConnectionPragmas(db: Database.Database): void {
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+}
+
+function ensureVersionTable(db: Database.Database): void {
   db.exec("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
+}
+
+export function getCurrentVersion(db: Database.Database): number {
   const row = db
     .prepare("SELECT MAX(version) as version FROM schema_version")
     .get() as { version: number | null } | undefined;
@@ -13,6 +21,7 @@ export function getCurrentVersion(db: Database.Database): number {
 }
 
 export function runMigrations(db: Database.Database): void {
+  ensureVersionTable(db);
   let current = getCurrentVersion(db);
 
   // Backfill: existing v0.2.1 DBs have the schema but no schema_version row
