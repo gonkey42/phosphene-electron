@@ -45,8 +45,10 @@ const child = spawn(absAppPath, [`--user-data-dir=${tmpUserData}`], {
 
 const startTime = Date.now();
 let buffer = "";
+let scanStart = 0;
 let settled = false;
 let timeoutHandle = null;
+const maxPatternLen = FAIL_PATTERNS.reduce((n, p) => Math.max(n, p.length), 0);
 
 function finish(exitCode, reason) {
   if (settled) return;
@@ -74,15 +76,21 @@ function finish(exitCode, reason) {
 }
 
 function scan(chunk) {
+  const chunkLen = chunk.length;
   buffer += chunk;
   // keep buffer bounded so memory can't blow up
   if (buffer.length > 256 * 1024) {
+    const dropped = buffer.length - 128 * 1024;
     buffer = buffer.slice(-128 * 1024);
+    scanStart = Math.max(0, scanStart - dropped);
   }
+  // Scan over buffer starting a bit before the newly-appended region so a
+  // pattern split across two chunks is still caught. Overlap by maxPatternLen.
+  const from = Math.max(scanStart, buffer.length - chunkLen - maxPatternLen);
   for (const pattern of FAIL_PATTERNS) {
-    const idx = chunk.indexOf(pattern);
+    const idx = buffer.indexOf(pattern, from);
     if (idx !== -1) {
-      const line = chunk.slice(Math.max(0, idx - 80), idx + pattern.length + 200).trim();
+      const line = buffer.slice(Math.max(0, idx - 80), idx + pattern.length + 200).trim();
       console.error(`[verify:package] FAIL: matched pattern ${JSON.stringify(pattern)}`);
       console.error(`[verify:package] context: ${line}`);
       console.error(`[verify:package] --- output tail ---\n${buffer.slice(-4000)}\n--- end ---`);
@@ -90,6 +98,7 @@ function scan(chunk) {
       return;
     }
   }
+  scanStart = buffer.length;
 }
 
 child.stdout.setEncoding("utf8");
@@ -109,10 +118,10 @@ child.on("exit", (code, signal) => {
     // killed by our timeout path; finish() will have been called
     return;
   }
-  if (elapsed < EARLY_EXIT_MS && code !== 0 && code !== null) {
-    console.error(`[verify:package] App exited early (${elapsed}ms) with code ${code}`);
+  if (elapsed < EARLY_EXIT_MS && (code !== 0 || signal)) {
+    console.error(`[verify:package] App exited early (${elapsed}ms) with code ${code}${signal ? ` signal ${signal}` : ""}`);
     console.error(`[verify:package] --- output tail ---\n${buffer.slice(-4000)}\n--- end ---`);
-    finish(1, `app exited with code ${code} after ${elapsed}ms`);
+    finish(1, `app exited after ${elapsed}ms (code=${code}${signal ? `, signal=${signal}` : ""})`);
     return;
   }
   // clean early exit (e.g., app closed itself without error) — treat as pass
@@ -120,6 +129,13 @@ child.on("exit", (code, signal) => {
 });
 
 timeoutHandle = setTimeout(() => {
+  // Drain the buffer one more time before declaring pass — a failure line
+  // that landed in the race between timer fire and SIGTERM would otherwise
+  // be lost once settled=true. Rewind scanStart so scan() re-examines the
+  // buffer tail from scratch.
+  scanStart = 0;
+  scan("");
+  if (settled) return;
   finish(0, `boot looked clean (${BOOT_WINDOW_MS}ms elapsed, no bad signals)`);
 }, BOOT_WINDOW_MS);
 
