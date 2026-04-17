@@ -49,4 +49,20 @@ describe("initializeSchema", () => {
     initializeSchema(makeDb() as never);
     expect(execMock.mock.calls.length).toBe(execCallCount);
   });
+
+  it("creates indexes on hot-path columns", async () => {
+    const { initializeSchema, resetSchemaBootstrapForTests } = await import("./index");
+    resetSchemaBootstrapForTests();
+    initializeSchema(makeDb() as never);
+
+    const allSql = execMock.mock.calls.map((call) => call[0] as string).join("\n");
+
+    expect(allSql).toContain("CREATE INDEX IF NOT EXISTS boards_workspace_id_idx");
+    expect(allSql).toContain("CREATE INDEX IF NOT EXISTS boards_position_idx");
+    expect(allSql).toContain("CREATE INDEX IF NOT EXISTS boards_deleted_at_idx");
+    expect(allSql).toContain("CREATE INDEX IF NOT EXISTS files_board_id_idx");
+    expect(allSql).toContain("CREATE INDEX IF NOT EXISTS captures_board_id_idx");
+    expect(allSql).toContain("CREATE INDEX IF NOT EXISTS workspaces_position_idx");
+    expect(allSql).toContain("CREATE INDEX IF NOT EXISTS workspaces_deleted_at_idx");
+  });
 });
