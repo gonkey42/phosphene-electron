@@ -18,7 +18,15 @@ import {
   persistThemePreference,
 } from "./theme-preferences";
 
-const isDev = !app.isPackaged;
+const isDev = !app.isPackaged && process.env.NODE_ENV !== "test";
+
+const userDataArg = process.argv.find((arg) => arg.startsWith("--user-data-dir="));
+const userDataOverride = userDataArg
+  ? userDataArg.slice("--user-data-dir=".length)
+  : null;
+if (userDataOverride) {
+  app.setPath("userData", userDataOverride);
+}
 const QUIT_FLUSH_TIMEOUT_MS = 1500;
 const closeApprovedWindowIds = new Set<number>();
 const closeFlushInProgressWindowIds = new Set<number>();
@@ -419,8 +427,13 @@ async function bootstrap() {
   const legacyUserDataPath = path.join(app.getPath("appData"), "app.phosphene.desktop");
 
   await runBootstrapPhase("user-data", () => {
-    mkdirSync(legacyUserDataPath, { recursive: true });
-    app.setPath("userData", legacyUserDataPath);
+    if (userDataOverride) {
+      mkdirSync(userDataOverride, { recursive: true });
+      app.setPath("userData", userDataOverride);
+    } else {
+      mkdirSync(legacyUserDataPath, { recursive: true });
+      app.setPath("userData", legacyUserDataPath);
+    }
   });
 
   const userDataPath = app.getPath("userData");
