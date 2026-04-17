@@ -109,6 +109,20 @@ export function initializeSchema(database: Database.Database): void {
     database.exec(UPDATED_AT_TRIGGER_SQL(table));
   }
 
+  const INDEX_STATEMENTS = [
+    "CREATE INDEX IF NOT EXISTS boards_workspace_id_idx ON boards(workspace_id)",
+    "CREATE INDEX IF NOT EXISTS boards_position_idx ON boards(workspace_id, position)",
+    "CREATE INDEX IF NOT EXISTS boards_deleted_at_idx ON boards(deleted_at)",
+    "CREATE INDEX IF NOT EXISTS files_board_id_idx ON files(board_id)",
+    "CREATE INDEX IF NOT EXISTS captures_board_id_idx ON captures(board_id)",
+    "CREATE INDEX IF NOT EXISTS workspaces_position_idx ON workspaces(position)",
+    "CREATE INDEX IF NOT EXISTS workspaces_deleted_at_idx ON workspaces(deleted_at)",
+  ];
+
+  for (const statement of INDEX_STATEMENTS) {
+    database.exec(statement);
+  }
+
   const workspaceCount = database.prepare(
     "SELECT count(*) as count FROM workspaces WHERE deleted_at IS NULL",
   ).get() as { count?: number } | undefined;
