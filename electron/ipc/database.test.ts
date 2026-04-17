@@ -209,6 +209,27 @@ describe("registerDatabaseIPC", () => {
   it("bootstraps schema before focused create handlers run on a fresh database", async () => {
     const prepareMap = new Map<string, { get?: () => unknown; run?: (...args: unknown[]) => unknown }>();
     prepareMock.mockImplementation((sql: string) => {
+      if (sql === "SELECT MAX(version) as version FROM schema_version") {
+        return {
+          get: () => ({ version: null }),
+        };
+      }
+
+      if (
+        sql ===
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workspaces'"
+      ) {
+        return {
+          get: () => undefined,
+        };
+      }
+
+      if (sql === "INSERT INTO schema_version (version) VALUES (?)") {
+        return {
+          run: runMock,
+        };
+      }
+
       if (sql === "SELECT count(*) as count FROM workspaces WHERE deleted_at IS NULL") {
         return {
           get: () => ({ count: 0 }),
