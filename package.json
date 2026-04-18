@@ -34,6 +34,7 @@
     "rebuild:node": "rimraf node_modules/better-sqlite3/build && npm rebuild better-sqlite3",
     "build:electron": "npm run rebuild:electron && npm run build && npm run build:main && electron-builder && npm run verify:package",
     "verify:package": "node scripts/verify-package.mjs",
+    "verify:runtime-cycle": "node scripts/verify-runtime-cycle.mjs",
     "release": "node scripts/release.mjs",
     "postinstall": "electron-builder install-app-deps",
     "lint": "eslint src/",

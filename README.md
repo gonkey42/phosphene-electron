@@ -56,6 +56,15 @@ Run a type check:
 npx tsc --noEmit
 ```
 
+Run the full runtime handoff check:
+
+```bash
+npm run verify:runtime-cycle
+```
+
+This exercises the real `Node -> Electron -> Node` transition by running
+`npm test`, `npm run test:e2e`, and `npm test` in sequence.
+
 Build the renderer:
 
 ```bash
@@ -87,6 +96,8 @@ The command contract is:
 - `npm test` rebuilds `better-sqlite3` for Node and then runs Vitest.
 - `npm run test:e2e` rebuilds `better-sqlite3` for Electron before launching
   the Electron smoke suite.
+- `npm run verify:runtime-cycle` runs the full `Node -> Electron -> Node`
+  handoff and fails on the first stage that breaks.
 - `npm run rebuild:node` and `npm run rebuild:electron` remain available as
   low-level helpers when you need to target a runtime directly.
 
