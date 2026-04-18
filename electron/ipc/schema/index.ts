@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { applyConnectionPragmas, runMigrations } from "./migrations";
 
-let databaseBootstrapped = false;
-
 const INSERT_WORKSPACE_SQL =
   "INSERT INTO workspaces (id, name, icon, position) VALUES (?, ?, ?, ?)";
 
@@ -13,11 +11,6 @@ function generateId(): string {
 
 export function initializeSchema(database: Database.Database): void {
   applyConnectionPragmas(database);
-
-  if (databaseBootstrapped) {
-    return;
-  }
-
   runMigrations(database);
 
   const workspaceCount = database
@@ -27,10 +20,9 @@ export function initializeSchema(database: Database.Database): void {
   if ((workspaceCount?.count ?? 0) === 0) {
     database.prepare(INSERT_WORKSPACE_SQL).run(generateId(), "Home", "\u{1F3E0}", 0);
   }
-
-  databaseBootstrapped = true;
 }
 
 export function resetSchemaBootstrapForTests(): void {
-  databaseBootstrapped = false;
+  // Schema initialization is connection-local now, so tests no longer need
+  // to reset any process-global bootstrap state.
 }

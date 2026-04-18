@@ -12,7 +12,7 @@ A **release** is a tagged version of the app that ships binaries (DMG + ZIP)
 to the GitHub Releases page. Release when:
 
 - a feature or fix is ready for users,
-- main is green (lint + typecheck + `npm test` — the only expected failure is the known pre-existing WAL backup integration test; any other failure is a blocker),
+- main is green (lint + typecheck + `npm test` with no failing tests),
 - the working tree is clean.
 
 Do **not** release from a feature branch, a dirty tree, or a commit that
@@ -28,8 +28,7 @@ Everything below must be true before you run anything.
    ```
    git checkout main && git pull --ff-only && git status
    ```
-2. **Node / npm** — use the Node version pinned by your normal dev setup
-   (currently no `.nvmrc`; the CI baseline is Node 20+).
+2. **Node / npm** — use the version pinned in `.nvmrc`.
 3. **`gh` CLI authenticated.**
    ```
    gh auth status
@@ -42,11 +41,8 @@ Everything below must be true before you run anything.
    NOT notarized**. There is no `afterSign` or `notarize` config in
    `package.json > build`. This is called out in the release notes template
    below. If you add notarization, update this section.
-6. **Tests.** `npm test` is expected to report exactly one pre-existing
-   failure: `database backup integration > captures the latest committed
-   rows from a WAL-backed database` (the known WAL backup integration
-   flake, tracked as A5). Any _other_ failing test is a release blocker.
-   Don't hard-code a specific pass/total count here — the suite grows.
+6. **Tests.** `npm test` should pass with zero failing tests. Don't
+   hard-code a specific pass/total count here — the suite grows.
 
 ---
 
@@ -100,17 +96,22 @@ The live run:
 
 1. Re-runs preflight (clean tree, on main, `gh` auth, tag doesn't already
    exist locally or on origin).
-2. Runs gates: `rebuild:electron`, `test`, `lint`, `build`, `build:main`,
+2. Bumps `package.json` + `package-lock.json` via
+   `npm version --no-git-tag-version`.
+3. Runs gates: `rebuild:electron`, `test`, `lint`, `build`, `build:main`,
    `build:electron` (the last one chains `electron-builder` + `verify:package`,
    which boots the packaged binary for ~15 s and fails on bootstrap
-   errors).
-3. Bumps `package.json` + `package-lock.json` via `npm version --no-git-tag-version`.
-4. Commits: `chore: bump version to X.Y.Z`.
-5. Pushes `main`.
-6. Creates and pushes the tag `vX.Y.Z`.
-7. Creates the GitHub release with `gh release create`, uploading every
-   `.dmg` and `.zip` in `release/`.
-8. Downloads the uploaded DMG into a temp dir, mounts it with `hdiutil
+   errors). Building after the version bump ensures the archive filenames
+   and app metadata match the release tag. Run lint as
+   `npm run lint -- --max-warnings=0` so warnings are blocking.
+4. Collects only the `.dmg` and `.zip` artifacts whose filenames include
+   the target version, ignoring stale archives from older builds.
+5. Commits: `chore: bump version to X.Y.Z`.
+6. Pushes `main`.
+7. Creates and pushes the tag `vX.Y.Z`.
+8. Creates the GitHub release with `gh release create`, uploading only the
+   matching current-version archives.
+9. Downloads the uploaded DMG into a temp dir, mounts it with `hdiutil
    attach -nobrowse -readonly`, runs `verify:package` against the mounted
    `.app`, and detaches.
 
@@ -130,18 +131,18 @@ git checkout main
 git pull --ff-only
 git status                         # must be clean
 
-# 1. gates
-npm run rebuild:electron
-npm test                           # expect only the known pre-existing WAL backup integration failure (A5); any other failing test is a blocker
-npm run lint
-npm run build
-npm run build:main
-npm run build:electron             # runs electron-builder + verify:package
-
-# 2. bump
+# 1. bump first so build artifacts match the release version
 npm version patch --no-git-tag-version
 # inspect: package.json and package-lock.json should show the new version
 git diff
+
+# 2. gates
+npm run rebuild:electron
+npm test                           # zero failing tests
+npm run lint -- --max-warnings=0
+npm run build
+npm run build:main
+npm run build:electron             # runs electron-builder + verify:package
 
 # 3. commit + push
 git add package.json package-lock.json
@@ -202,8 +203,8 @@ is copied from v0.2.2.
 - **<area>** — <what changed and why it matters>
 
 ### Validation
-- `npm test` — only the known pre-existing WAL backup integration failure (A5); any other failing test is a blocker
-- `npm run lint` — no new warnings
+- `npm test` — all tests passing
+- `npm run lint -- --max-warnings=0` — zero warnings
 - `npm run build` + `npm run build:main` + `npm run build:electron` — all succeed
 - `npm run test:e2e` — smoke tests passing
 

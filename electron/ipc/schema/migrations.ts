@@ -1,8 +1,9 @@
 import type Database from "better-sqlite3";
 import type { Migration } from "./types";
 import initialSchema from "./migrations/001-initial-schema";
+import hotPathIndexes from "./migrations/002-hot-path-indexes";
 
-export const MIGRATIONS: readonly Migration[] = [initialSchema];
+export const MIGRATIONS: readonly Migration[] = [initialSchema, hotPathIndexes];
 
 export function applyConnectionPragmas(db: Database.Database): void {
   db.pragma("journal_mode = WAL");

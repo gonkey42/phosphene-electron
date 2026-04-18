@@ -43,7 +43,7 @@ export function WorkspaceTabBar() {
   const draftInputRef = useRef<HTMLInputElement | null>(null);
   const hasAttemptedInitialLoadRef = useRef(false);
 
-  function setVisibleWorkspaces(nextWorkspaces: ReturnType<typeof mapWorkspace>[]) {
+  const setVisibleWorkspaces = useCallback((nextWorkspaces: ReturnType<typeof mapWorkspace>[]) => {
     setWorkspaces(nextWorkspaces);
 
     const currentActiveWorkspaceId = useAppStore.getState().activeWorkspaceId;
@@ -54,15 +54,15 @@ export function WorkspaceTabBar() {
     if (!hasActiveWorkspace && nextWorkspaces.length > 0) {
       setActiveWorkspace(nextWorkspaces[0].id);
     }
-  }
+  }, [setActiveWorkspace, setWorkspaces]);
 
-  function syncWorkspaces(items: WorkspaceListItem[]) {
+  const syncWorkspaces = useCallback((items: WorkspaceListItem[]) => {
     const nextWorkspaces = items.map(mapWorkspace);
     setVisibleWorkspaces(nextWorkspaces);
 
     clearSharedErrorChannel(WORKSPACE_LOAD_ERROR_CHANNEL);
     clearSharedErrorChannel(WORKSPACE_RELOAD_ERROR_CHANNEL);
-  }
+  }, [setVisibleWorkspaces]);
 
   const fetchWorkspaces = useCallback(async () => {
     return await listWorkspaces();
