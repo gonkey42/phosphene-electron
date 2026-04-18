@@ -12,7 +12,7 @@ import { useAppStore } from "../../stores/app-store";
 
 import "./ExcalidrawCanvas.css";
 
-type ExcalidrawCanvasProps = {
+export type ExcalidrawCanvasProps = {
   boardId: string;
   initialData: ExcalidrawInitialDataState | null;
   onChange: NonNullable<ComponentProps<typeof Excalidraw>["onChange"]>;

@@ -3,7 +3,7 @@ import { Component, type CSSProperties, type ReactNode } from "react";
 import { useAppStore } from "../../stores/app-store";
 import { useBoardPersistence } from "../../hooks/use-board-persistence";
 
-import { ExcalidrawCanvas } from "./ExcalidrawCanvas";
+import { LazyExcalidrawCanvas } from "./LazyExcalidrawCanvas";
 
 const panelStyle: CSSProperties = {
   position: "relative",
@@ -139,7 +139,7 @@ export function CanvasPanel({ workspaceId, isInteractive = true }: CanvasPanelPr
     <section style={panelStyle}>
       <div style={canvasAreaStyle}>
         <CanvasRenderBoundary boardId={activeBoardId}>
-          <ExcalidrawCanvas
+          <LazyExcalidrawCanvas
             boardId={activeBoardId}
             initialData={initialData}
             onChange={handleChange}
