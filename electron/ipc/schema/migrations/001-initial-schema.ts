@@ -84,8 +84,7 @@ const UPDATED_AT_TRIGGER_SQL = (table: string) => `
 
 const migration: Migration = {
   version: 1,
-  description:
-    "Initial schema: workspaces, boards, files, captures, settings + hot-path indexes",
+  description: "Initial schema: workspaces, boards, files, captures, settings",
   up(db) {
     db.exec(WORKSPACES_TABLE_SQL);
     db.exec(BOARDS_TABLE_SQL);
@@ -96,28 +95,6 @@ const migration: Migration = {
     for (const table of ["workspaces", "boards", "files", "captures"]) {
       db.exec(UPDATED_AT_TRIGGER_SQL(table));
     }
-
-    db.exec(
-      "CREATE INDEX IF NOT EXISTS boards_workspace_id_idx ON boards(workspace_id)",
-    );
-    db.exec(
-      "CREATE INDEX IF NOT EXISTS boards_position_idx ON boards(workspace_id, position)",
-    );
-    db.exec(
-      "CREATE INDEX IF NOT EXISTS boards_deleted_at_idx ON boards(deleted_at)",
-    );
-    db.exec(
-      "CREATE INDEX IF NOT EXISTS files_board_id_idx ON files(board_id)",
-    );
-    db.exec(
-      "CREATE INDEX IF NOT EXISTS captures_board_id_idx ON captures(board_id)",
-    );
-    db.exec(
-      "CREATE INDEX IF NOT EXISTS workspaces_position_idx ON workspaces(position)",
-    );
-    db.exec(
-      "CREATE INDEX IF NOT EXISTS workspaces_deleted_at_idx ON workspaces(deleted_at)",
-    );
   },
 };
 

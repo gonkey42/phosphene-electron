@@ -31,7 +31,7 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint -- --max-warnings=0
 
       - name: Rebuild better-sqlite3 for Node
         run: npm run rebuild:node

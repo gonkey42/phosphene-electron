@@ -79,4 +79,32 @@ describe("initializeSchema", () => {
     expect(countAfterFirst).toBe(1);
     expect(countAfterSecond).toBe(1);
   });
+
+  it("initializes each database connection independently", async () => {
+    const { initializeSchema, resetSchemaBootstrapForTests } = await import("./index");
+    resetSchemaBootstrapForTests();
+
+    const secondDb = new Database(":memory:");
+
+    try {
+      initializeSchema(db);
+      initializeSchema(secondDb);
+
+      const firstCount = (
+        db
+          .prepare("SELECT count(*) as count FROM workspaces WHERE deleted_at IS NULL")
+          .get() as { count: number }
+      ).count;
+      const secondCount = (
+        secondDb
+          .prepare("SELECT count(*) as count FROM workspaces WHERE deleted_at IS NULL")
+          .get() as { count: number }
+      ).count;
+
+      expect(firstCount).toBe(1);
+      expect(secondCount).toBe(1);
+    } finally {
+      secondDb.close();
+    }
+  });
 });

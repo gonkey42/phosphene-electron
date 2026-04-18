@@ -24,6 +24,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
+import { collectReleaseArtifacts } from "./release-lib.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const repoRoot = path.resolve(path.dirname(__filename), "..");
@@ -211,15 +212,20 @@ const notesPath = args["notes-file"]
 
 const plan = [
   {
+    step: "Bump version in package.json",
+    detail: `npm version ${args.bump} --no-git-tag-version  →  ${next}`,
+    note: "builds must happen after the bump so the packaged artifact version matches the release tag.",
+  },
+  {
     step: "Run gates",
     detail:
-      "npm run rebuild:electron && npm test && npm run lint && npm run build && npm run build:main && npm run build:electron",
+      "npm run rebuild:electron && npm test && npm run lint -- --max-warnings=0 && npm run build && npm run build:main && npm run build:electron",
     note: "build:electron chains electron-builder + verify:package (boot smoke).",
   },
   {
-    step: "Bump version in package.json",
-    detail: `npm version ${args.bump} --no-git-tag-version  →  ${next}`,
-    note: "also updates package-lock.json; no git tag or commit created by npm.",
+    step: "Collect release artifacts",
+    detail: `release/Phosphene-${next}-*.{dmg,zip}`,
+    note: "only artifacts matching the target version are uploaded; stale archives are ignored.",
   },
   {
     step: "Commit bump",
@@ -235,8 +241,8 @@ const plan = [
   },
   {
     step: "Create GitHub release",
-    detail: `gh release create ${nextTag} --title "Phosphene Electron ${nextTag}" --notes-file ${notesPath} ${releaseDir}/*.dmg ${releaseDir}/*.zip`,
-    note: "artifacts come from the local electron-builder output in release/.",
+    detail: `gh release create ${nextTag} --title "Phosphene Electron ${nextTag}" --notes-file ${notesPath} release/Phosphene-${next}-*.dmg release/Phosphene-${next}-*.zip`,
+    note: "artifacts come from the local electron-builder output in release/ and must match the target version.",
   },
   {
     step: "Post-upload verify",
@@ -278,37 +284,25 @@ info("LIVE RUN: starting in 5 seconds. Ctrl-C to abort.");
 // Tiny grace period so you have a chance to bail. Not a security feature.
 execFileSync("sleep", ["5"], { stdio: "inherit" });
 
-info("step 1/7: running gates");
-run("npm", ["run", "rebuild:electron"]);
-run("npm", ["test"]);
-run("npm", ["run", "lint"]);
-run("npm", ["run", "build"]);
-run("npm", ["run", "build:main"]);
-run("npm", ["run", "build:electron"]); // chains verify:package
+info("step 1/7: bumping version");
+run("npm", ["version", args.bump, "--no-git-tag-version"]);
 
-// Verify electron-builder actually produced artifacts BEFORE any git mutation.
-// If build:electron succeeded but the release/ dir is empty (wrong arch, stale
-// config, etc.), we must fail here — not after the bump commit and tag have
-// already been pushed. Collect the artifact list once and reuse it at upload
-// time so we don't do the work twice.
-const artifacts = fs.existsSync(releaseDir)
-  ? fs
-      .readdirSync(releaseDir)
-      .filter((f) => f.endsWith(".dmg") || f.endsWith(".zip"))
-      .map((f) => path.join(releaseDir, f))
-  : [];
-if (artifacts.length === 0) {
-  die(
-    `no .dmg or .zip artifacts found in ${releaseDir}. Did build:electron succeed? Aborting before any git mutation.`,
-  );
-}
+info("step 2/7: running gates");
+const bumpRecoveryHint =
+  "`git checkout -- package.json package-lock.json` to discard the version bump.";
+runOrDie("npm", ["run", "rebuild:electron"], bumpRecoveryHint);
+runOrDie("npm", ["test"], bumpRecoveryHint);
+runOrDie("npm", ["run", "lint", "--", "--max-warnings=0"], bumpRecoveryHint);
+runOrDie("npm", ["run", "build"], bumpRecoveryHint);
+runOrDie("npm", ["run", "build:main"], bumpRecoveryHint);
+runOrDie("npm", ["run", "build:electron"], bumpRecoveryHint);
+
+info("step 3/7: collecting release artifacts");
+const artifacts = collectReleaseArtifacts(releaseDir, next);
 info(`found ${artifacts.length} artifact(s) for upload:`);
 for (const a of artifacts) info(`  ${a}`);
 
-info("step 2/7: bumping version");
-run("npm", ["version", args.bump, "--no-git-tag-version"]);
-
-info("step 3/7: committing bump");
+info("step 4/7: committing bump");
 runOrDie(
   "git",
   ["add", "package.json", "package-lock.json"],
@@ -320,14 +314,14 @@ runOrDie(
   "package.json/package-lock.json may have been modified; `git checkout -- package.json package-lock.json` to discard the bump.",
 );
 
-info("step 4/7: pushing main");
+info("step 5/8: pushing main");
 runOrDie(
   "git",
   ["push", "origin", "main"],
-  `bump commit is at HEAD locally but not pushed; retry with \`git push origin main\` or undo with \`git reset --hard HEAD~1\`.`,
+  `bump commit is at HEAD locally but not pushed; retry with \`git push origin main\` or undo with \`git revert HEAD\`.`,
 );
 
-info("step 5/7: creating & pushing tag");
+info("step 6/8: creating & pushing tag");
 runOrDie(
   "git",
   ["tag", nextTag],
@@ -345,7 +339,7 @@ if (remoteTagRecheck.length > 0) {
   die(
     `tag ${nextTag} was created on origin by someone else while we were working. ` +
       `Local bump commit is already pushed to main. Resolve manually — likely ` +
-      `\`git tag -d ${nextTag}\` locally, then either \`git reset --hard origin/main\` ` +
+      `\`git tag -d ${nextTag}\` locally, then either \`git revert HEAD\` ` +
       `after coordinating with the other maintainer or adopt their tag.`,
   );
 }
@@ -355,7 +349,7 @@ runOrDie(
   `local tag ${nextTag} exists but was not pushed; retry with \`git push origin ${nextTag}\` or delete with \`git tag -d ${nextTag}\`.`,
 );
 
-info("step 6/7: creating GitHub release + uploading artifacts");
+info("step 7/8: creating GitHub release + uploading artifacts");
 info(`uploading ${artifacts.length} artifact(s):`);
 for (const a of artifacts) info(`  ${a}`);
 run("gh", [
@@ -369,7 +363,7 @@ run("gh", [
   ...artifacts,
 ]);
 
-info("step 7/7: post-upload verify");
+info("step 8/8: post-upload verify");
 postUploadVerify(nextTag);
 
 info(`DONE. Release ${nextTag} published.`);
