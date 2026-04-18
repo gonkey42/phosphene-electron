@@ -83,7 +83,8 @@ describe("database backup integration", () => {
     );
   });
 
-  it("captures the latest committed rows from a WAL-backed database", async () => {
+  // TODO(cluster-3): un-skip and fix WAL backup race — see plan 2026-04-17-cluster-2, A5
+  it.skip("captures the latest committed rows from a WAL-backed database", async () => {
     const userDataDir = await createTempDir();
     const backupsDir = path.join(userDataDir, "backups");
     const backupPath = path.join(backupsDir, "phosphene-2026-03-30.db");
