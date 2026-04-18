@@ -514,6 +514,28 @@ describe("electron main close flushing", () => {
     );
   });
 
+  it("replays renderer-originated theme changes back to open windows", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowGetAllWindowsMock.mockReturnValue([windowInstance as never]);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    windowInstance.webContents.send.mockClear();
+
+    const themePreferenceHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "theme:set-preference",
+    )?.[1];
+
+    await themePreferenceHandler?.({ sender: windowInstance.webContents } as never, "dark");
+
+    expect(windowInstance.webContents.send).toHaveBeenCalledWith(
+      "theme:preference-selected",
+      "dark",
+    );
+  });
+
   it("persists native menu selections even when no renderer is available", async () => {
     browserWindowGetAllWindowsMock.mockReturnValue([]);
 
