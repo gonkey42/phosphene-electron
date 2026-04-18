@@ -29,8 +29,9 @@ test-results/
 playwright-report/
 /.pw-tmp/
 
-# Local planning and review docs
-docs/
+# Local planning and review docs (but docs/release.md IS checked in)
+docs/*
+!docs/release.md
 ERROR_HANDLING_REVIEW.md
 Electron Resilience Hardening Implementation Plan.md
 MIGRATION-NOTES.md
