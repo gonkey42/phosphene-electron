@@ -2,9 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { backupDatabase } from "./database";
 
-const workspaceRoot = path.resolve(process.cwd());
 const tempDirs: string[] = [];
 
 async function createTempDir(): Promise<string> {
@@ -14,11 +14,6 @@ async function createTempDir(): Promise<string> {
 }
 
 describe("database backup integration", () => {
-  beforeAll(async () => {
-    const modulePath = path.join(workspaceRoot, "dist-electron", "ipc", "database.js");
-    await fs.access(modulePath);
-  });
-
   afterEach(async () => {
     await Promise.all(
       tempDirs.splice(0).map((dirPath) => fs.rm(dirPath, { recursive: true, force: true })),
@@ -31,7 +26,6 @@ describe("database backup integration", () => {
     const backupPath = path.join(backupsDir, "phosphene-2026-03-30.db");
     const dbPath = path.join(userDataDir, "phosphene.db");
     const database = new Database(dbPath);
-    const { backupDatabase } = await import(path.join(workspaceRoot, "dist-electron", "ipc", "database.js"));
 
     await fs.mkdir(backupsDir, { recursive: true });
     database.pragma("journal_mode = WAL");
