@@ -18,8 +18,8 @@ vi.mock("../../hooks/use-board-persistence", () => ({
   useBoardPersistence: useBoardPersistenceMock,
 }));
 
-vi.mock("./ExcalidrawCanvas", () => ({
-  ExcalidrawCanvas: (props: Record<string, unknown>) => {
+vi.mock("./LazyExcalidrawCanvas", () => ({
+  LazyExcalidrawCanvas: (props: Record<string, unknown>) => {
     if (shouldThrowCanvas) {
       throw new Error("Excalidraw crashed");
     }
@@ -98,7 +98,7 @@ describe("CanvasPanel", () => {
     expect(screen.getByTestId("mock-excalidraw-canvas")).toBeInTheDocument();
   });
 
-  it("passes interactivity through to ExcalidrawCanvas", () => {
+  it("passes interactivity through to the lazy Excalidraw canvas wrapper", () => {
     mockStoreState({
       activeBoardPerWorkspace: {
         "workspace-2": "board-2",
