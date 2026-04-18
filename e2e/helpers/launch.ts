@@ -8,13 +8,36 @@ const helperDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(helperDir, "..", "..");
 const mainEntry = path.join(repoRoot, "dist-electron", "main.js");
 
+export type LaunchAppOptions = {
+  userDataDir?: string;
+  removeUserDataDirOnCleanup?: boolean;
+};
+
+export function shouldRemoveUserDataDirOnCleanup(options: LaunchAppOptions = {}): boolean {
+  if (options.removeUserDataDirOnCleanup !== undefined) {
+    return options.removeUserDataDirOnCleanup;
+  }
+
+  return options.userDataDir === undefined;
+}
+
 export async function launchApp(): Promise<{
   app: ElectronApplication;
   window: Page;
   userDataDir: string;
+  closeApp: () => Promise<void>;
+  cleanup: () => Promise<void>;
+}>;
+export async function launchApp(options: LaunchAppOptions = {}): Promise<{
+  app: ElectronApplication;
+  window: Page;
+  userDataDir: string;
+  closeApp: () => Promise<void>;
   cleanup: () => Promise<void>;
 }> {
-  const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "phosphene-e2e-"));
+  const userDataDir =
+    options.userDataDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "phosphene-e2e-")));
+  const removeUserDataDirOnCleanup = shouldRemoveUserDataDirOnCleanup(options);
 
   const app = await electron.launch({
     args: [mainEntry, `--user-data-dir=${userDataDir}`],
@@ -32,9 +55,15 @@ export async function launchApp(): Promise<{
     app,
     window,
     userDataDir,
+    closeApp: async () => {
+      await app.close().catch(() => undefined);
+    },
     cleanup: async () => {
       await app.close().catch(() => undefined);
-      await fs.rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+
+      if (removeUserDataDirOnCleanup) {
+        await fs.rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+      }
     },
   };
 }
