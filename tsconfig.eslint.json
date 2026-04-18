@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts",
+    "electron/**/*.ts",
+    "e2e/**/*.ts",
+    "scripts/**/*.ts",
+    "scripts/**/*.mjs"
+  ]
+}
