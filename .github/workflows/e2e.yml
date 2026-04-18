@@ -1,0 +1,70 @@
+# E2E smoke suite on macOS arm64.
+#
+# Trigger logic:
+#   - push to main: always run.
+#   - pull_request (opened/synchronize/reopened): always run. We intentionally
+#     over-trigger here rather than use a `paths:` filter. A `paths:` filter at
+#     the workflow level also applies to `labeled` events, which would silently
+#     drop `run-e2e` label triggers on PRs that don't touch e2e/electron/src.
+#     A false run wastes 20 minutes; a missed run ships a regression.
+#   - pull_request (labeled): only run when the label is `run-e2e`. This lets
+#     contributors opt a PR in explicitly (e.g. after reviewer request) without
+#     needing to push a no-op commit.
+#
+# If this gets expensive, the right next step is a `paths-filter` action to
+# skip unrelated PRs while still honoring the label — not a `paths:` filter.
+
+name: E2E
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    # Run on push and on any non-labeled PR event. For labeled events, only run
+    # when the label added is `run-e2e` (otherwise every label add would spawn
+    # a 20-minute job).
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.event.action != 'labeled') ||
+      (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'run-e2e')
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild better-sqlite3 for Electron
+        run: npm run rebuild:electron
+
+      - name: Run Playwright e2e smoke suite
+        run: npm run test:e2e
+
+      - name: Upload test-results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
