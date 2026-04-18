@@ -127,6 +127,22 @@ function tryRun(cmd, cmdArgs) {
   });
 }
 
+// Run a step and, on failure, die with the normal error text plus a
+// task-specific recovery hint so the maintainer knows how to resume or
+// roll back without guessing.
+function runOrDie(cmd, cmdArgs, recoveryHint) {
+  const result = spawnSync(cmd, cmdArgs, {
+    cwd: repoRoot,
+    stdio: "inherit",
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    const full = `${cmd} ${cmdArgs.join(" ")}`;
+    die(`step failed: ${full}\nrecovery: ${recoveryHint}`);
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Preflight — runs for both dry-run AND real runs.
 // ---------------------------------------------------------------------------
@@ -270,31 +286,76 @@ run("npm", ["run", "build"]);
 run("npm", ["run", "build:main"]);
 run("npm", ["run", "build:electron"]); // chains verify:package
 
+// Verify electron-builder actually produced artifacts BEFORE any git mutation.
+// If build:electron succeeded but the release/ dir is empty (wrong arch, stale
+// config, etc.), we must fail here — not after the bump commit and tag have
+// already been pushed. Collect the artifact list once and reuse it at upload
+// time so we don't do the work twice.
+const artifacts = fs.existsSync(releaseDir)
+  ? fs
+      .readdirSync(releaseDir)
+      .filter((f) => f.endsWith(".dmg") || f.endsWith(".zip"))
+      .map((f) => path.join(releaseDir, f))
+  : [];
+if (artifacts.length === 0) {
+  die(
+    `no .dmg or .zip artifacts found in ${releaseDir}. Did build:electron succeed? Aborting before any git mutation.`,
+  );
+}
+info(`found ${artifacts.length} artifact(s) for upload:`);
+for (const a of artifacts) info(`  ${a}`);
+
 info("step 2/7: bumping version");
 run("npm", ["version", args.bump, "--no-git-tag-version"]);
 
 info("step 3/7: committing bump");
-run("git", ["add", "package.json", "package-lock.json"]);
-run("git", ["commit", "-m", `chore: bump version to ${next}`]);
+runOrDie(
+  "git",
+  ["add", "package.json", "package-lock.json"],
+  "`git checkout -- package.json package-lock.json` to discard the bump.",
+);
+runOrDie(
+  "git",
+  ["commit", "-m", `chore: bump version to ${next}`],
+  "package.json/package-lock.json may have been modified; `git checkout -- package.json package-lock.json` to discard the bump.",
+);
 
 info("step 4/7: pushing main");
-run("git", ["push", "origin", "main"]);
+runOrDie(
+  "git",
+  ["push", "origin", "main"],
+  `bump commit is at HEAD locally but not pushed; retry with \`git push origin main\` or undo with \`git reset --hard HEAD~1\`.`,
+);
 
 info("step 5/7: creating & pushing tag");
-run("git", ["tag", nextTag]);
-run("git", ["push", "origin", nextTag]);
-
-info("step 6/7: creating GitHub release + uploading artifacts");
-// Collect artifacts explicitly rather than relying on shell glob expansion.
-const artifacts = fs
-  .readdirSync(releaseDir)
-  .filter((f) => f.endsWith(".dmg") || f.endsWith(".zip"))
-  .map((f) => path.join(releaseDir, f));
-if (artifacts.length === 0) {
+runOrDie(
+  "git",
+  ["tag", nextTag],
+  "no recovery needed — nothing was tagged.",
+);
+// Re-check the remote for the tag RIGHT before pushing it. Between preflight
+// and now another maintainer might have created and pushed the same tag; if
+// we race past this, `git push origin <tag>` will fail and leave the repo in
+// a half-released state.
+const remoteTagRecheck = runCapture(
+  "git",
+  ["ls-remote", "--tags", "origin", `refs/tags/${nextTag}`],
+);
+if (remoteTagRecheck.length > 0) {
   die(
-    `no .dmg or .zip artifacts found in ${releaseDir}. Did build:electron succeed?`,
+    `tag ${nextTag} was created on origin by someone else while we were working. ` +
+      `Local bump commit is already pushed to main. Resolve manually — likely ` +
+      `\`git tag -d ${nextTag}\` locally, then either \`git reset --hard origin/main\` ` +
+      `after coordinating with the other maintainer or adopt their tag.`,
   );
 }
+runOrDie(
+  "git",
+  ["push", "origin", nextTag],
+  `local tag ${nextTag} exists but was not pushed; retry with \`git push origin ${nextTag}\` or delete with \`git tag -d ${nextTag}\`.`,
+);
+
+info("step 6/7: creating GitHub release + uploading artifacts");
 info(`uploading ${artifacts.length} artifact(s):`);
 for (const a of artifacts) info(`  ${a}`);
 run("gh", [
@@ -312,7 +373,16 @@ info("step 7/7: post-upload verify");
 postUploadVerify(nextTag);
 
 info(`DONE. Release ${nextTag} published.`);
-info(`URL: $(gh release view ${nextTag} --json url -q .url)`);
+const releaseUrl = runCapture("gh", [
+  "release",
+  "view",
+  nextTag,
+  "--json",
+  "url",
+  "-q",
+  ".url",
+]);
+info(`URL: ${releaseUrl}`);
 
 // ---------------------------------------------------------------------------
 // Post-upload verify — downloads the uploaded DMG and re-runs verify:package

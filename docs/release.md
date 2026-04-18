@@ -12,7 +12,7 @@ A **release** is a tagged version of the app that ships binaries (DMG + ZIP)
 to the GitHub Releases page. Release when:
 
 - a feature or fix is ready for users,
-- main is green (lint + typecheck + `npm test` at the expected pass count),
+- main is green (lint + typecheck + `npm test` — the only expected failure is the known pre-existing WAL backup integration test; any other failure is a blocker),
 - the working tree is clean.
 
 Do **not** release from a feature branch, a dirty tree, or a commit that
@@ -42,10 +42,11 @@ Everything below must be true before you run anything.
    NOT notarized**. There is no `afterSign` or `notarize` config in
    `package.json > build`. This is called out in the release notes template
    below. If you add notarization, update this section.
-6. **Tests.** `npm test` is expected to report **307 / 308 passing**. The
-   single failure (`database backup integration > captures the latest
-   committed rows from a WAL-backed database`) is a known pre-existing
-   integration flake and is not a release blocker. Any _new_ failure is.
+6. **Tests.** `npm test` is expected to report exactly one pre-existing
+   failure: `database backup integration > captures the latest committed
+   rows from a WAL-backed database` (the known WAL backup integration
+   flake, tracked as A5). Any _other_ failing test is a release blocker.
+   Don't hard-code a specific pass/total count here — the suite grows.
 
 ---
 
@@ -131,7 +132,7 @@ git status                         # must be clean
 
 # 1. gates
 npm run rebuild:electron
-npm test                           # expect 307/308
+npm test                           # expect only the known pre-existing WAL backup integration failure (A5); any other failing test is a blocker
 npm run lint
 npm run build
 npm run build:main
@@ -161,11 +162,13 @@ gh release create vX.Y.Z \
 # 6. post-upload verify
 TMP=$(mktemp -d)
 gh release download vX.Y.Z -D "$TMP" --pattern "*.dmg"
-hdiutil attach -nobrowse -readonly "$TMP"/*.dmg
-# note the mount point printed (e.g. /Volumes/Phosphene X.Y.Z-arm64)
-PHOSPHENE_APP_PATH="/Volumes/Phosphene X.Y.Z-arm64/Phosphene.app/Contents/MacOS/Phosphene" \
+# The mount point is the final field printed by hdiutil attach; it varies with
+# the DMG's volume name and arch, so don't hard-code it. Capture it:
+MOUNT=$(hdiutil attach -nobrowse -readonly "$TMP"/*.dmg | tail -1 | awk -F'\t' '{print $NF}')
+echo "mounted at: $MOUNT"
+PHOSPHENE_APP_PATH="$MOUNT/Phosphene.app/Contents/MacOS/Phosphene" \
   node scripts/verify-package.mjs
-hdiutil detach "/Volumes/Phosphene X.Y.Z-arm64"
+hdiutil detach "$MOUNT"
 ```
 
 ---
@@ -199,10 +202,10 @@ is copied from v0.2.2.
 - **<area>** — <what changed and why it matters>
 
 ### Validation
-- `npm test` — NNN / NNN passing (note any expected failures)
+- `npm test` — only the known pre-existing WAL backup integration failure (A5); any other failing test is a blocker
 - `npm run lint` — no new warnings
 - `npm run build` + `npm run build:main` + `npm run build:electron` — all succeed
-- `npm run test:e2e` — N / N smoke tests passing
+- `npm run test:e2e` — smoke tests passing
 
 ### Downloads
 - `Phosphene-X.Y.Z-arm64.dmg`
