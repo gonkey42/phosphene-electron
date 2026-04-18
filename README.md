@@ -47,6 +47,9 @@ Run the test suite:
 npm test
 ```
 
+This command always rebuilds `better-sqlite3` for the current Node runtime
+before running Vitest, so it is safe to run after Electron-targeted commands.
+
 Run a type check:
 
 ```bash
@@ -79,15 +82,23 @@ and other tooling, Electron for `dev`, `test:e2e`, and packaging. The two
 ABIs are incompatible, so switching between test modes and packaging mode
 requires rebuilding the binding.
 
-Two helper scripts manage this:
+The command contract is:
+
+- `npm test` rebuilds `better-sqlite3` for Node and then runs Vitest.
+- `npm run test:e2e` rebuilds `better-sqlite3` for Electron before launching
+  the Electron smoke suite.
+- `npm run rebuild:node` and `npm run rebuild:electron` remain available as
+  low-level helpers when you need to target a runtime directly.
+
+Two helper rebuild scripts still exist underneath that contract:
 
 - `npm run rebuild:electron` — removes `node_modules/better-sqlite3/build` and
   rebuilds the native module against the current Electron version using
   `electron-rebuild`. Run this before packaging or running Electron. It is
   chained automatically from `build:electron` and `test:e2e`.
 - `npm run rebuild:node` — removes the build dir and rebuilds against the
-  system Node via `npm rebuild better-sqlite3`. Run this before `npm test`
-  if you have just packaged or run Electron locally.
+  system Node via `npm rebuild better-sqlite3`. `npm test` already calls this
+  automatically.
 
 ### Why the explicit clean step?
 

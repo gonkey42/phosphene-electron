@@ -41,7 +41,8 @@
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "npm run test:node",
+    "test:node": "npm run rebuild:node && vitest run",
     "test:e2e": "npm run rebuild:electron && npm run build && npm run build:main && playwright test --config=e2e/playwright.config.ts",
     "test:e2e:headed": "npm run rebuild:electron && npm run build && npm run build:main && playwright test --config=e2e/playwright.config.ts --headed"
   },
