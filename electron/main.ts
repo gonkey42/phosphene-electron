@@ -359,7 +359,7 @@ function registerThemePreferenceIPC() {
       throw new Error(`Invalid theme preference: ${preference}`);
     }
 
-    setThemePreference(preference, { persist: true, notifyRenderer: false });
+    setThemePreference(preference, { persist: true, notifyRenderer: true });
   });
 }
 
