@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { suppressExpectedConsoleError } from "../src/test/expected-console-error";
 
 const appOnMock = vi.fn();
 const appQuitMock = vi.fn();
@@ -780,7 +781,7 @@ describe("electron main close flushing", () => {
   });
 
   it("logs explicit close flush failures separately from timeouts", async () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleErrorSpy = suppressExpectedConsoleError();
     const sendMock = vi.fn();
     const webContentsOnMock = vi.fn();
     const webContentsOffMock = vi.fn();
@@ -833,7 +834,7 @@ describe("electron main close flushing", () => {
 
   it("logs explicit quit flush failures separately from timeouts", async () => {
     appWhenReadyMock.mockReturnValue(new Promise(() => {}));
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleErrorSpy = suppressExpectedConsoleError();
     const sendMock = vi.fn();
     const webContentsOnMock = vi.fn();
     const webContentsOffMock = vi.fn();
@@ -884,7 +885,7 @@ describe("electron main close flushing", () => {
   });
 
   it("surfaces fatal bootstrap failures and quits the app", async () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleErrorSpy = suppressExpectedConsoleError();
     browserWindowLoadFileMock.mockRejectedValueOnce(new Error("missing dist index"));
 
     await import("./main");

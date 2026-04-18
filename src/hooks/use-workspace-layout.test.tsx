@@ -1,5 +1,6 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { suppressExpectedConsoleError } from "../test/expected-console-error";
 
 const { getWorkspaceLayoutMock, saveWorkspaceLayoutMock } = vi.hoisted(() => ({
   getWorkspaceLayoutMock: vi.fn(),
@@ -112,7 +113,7 @@ describe("useWorkspaceLayout", () => {
   });
 
   it("falls back to the default layout and logs load failures", async () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const consoleErrorSpy = suppressExpectedConsoleError();
     const loadError = new Error("load failed");
     getWorkspaceLayoutMock.mockRejectedValue(loadError);
 

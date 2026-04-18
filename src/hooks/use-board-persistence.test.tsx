@@ -1,6 +1,7 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { suppressExpectedConsoleError } from "../test/expected-console-error";
 
 const { getBoardMock, saveBoardCanvasDataMock } = vi.hoisted(() => ({
   getBoardMock: vi.fn(),
@@ -252,7 +253,7 @@ describe("useBoardPersistence", () => {
   });
 
   it("logs a failed board load and clears loading state", async () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const consoleErrorSpy = suppressExpectedConsoleError();
     const loadError = new Error("load failed");
     getBoardMock.mockRejectedValue(loadError);
 
@@ -272,7 +273,7 @@ describe("useBoardPersistence", () => {
   });
 
   it("logs parse failures and falls back to null initial data", async () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const consoleErrorSpy = suppressExpectedConsoleError();
     const parseError = new Error("Unexpected token");
     getBoardMock.mockResolvedValue({
       canvas_data: "{invalid json",

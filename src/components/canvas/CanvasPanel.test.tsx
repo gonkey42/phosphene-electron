@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { suppressExpectedConsoleError } from "../../test/expected-console-error";
 
 const { useAppStoreMock, useBoardPersistenceMock, excalidrawCanvasMock } = vi.hoisted(() => ({
   useAppStoreMock: vi.fn(),
@@ -177,7 +178,7 @@ describe("CanvasPanel", () => {
   });
 
   it("shows a canvas error state instead of blanking the app when the canvas throws", () => {
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const consoleErrorSpy = suppressExpectedConsoleError();
 
     shouldThrowCanvas = true;
 
