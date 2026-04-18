@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { waitForLoadedBrowserUrl } from "./helpers/browser-state";
 import { launchApp } from "./helpers/launch";
 
 test.describe("Phosphene smoke", () => {
@@ -42,10 +43,8 @@ test.describe("Phosphene smoke", () => {
     const { window, cleanup } = await launchApp();
     try {
       // BrowserPanel is always mounted for the active workspace. The actual
-      // BrowserView is a native view and its URL is surfaced to the renderer
-      // via `browser.onStateChanged`, which updates the address input's value.
-      // We assert against the controlled input value rather than the native
-      // view's content — that is the observable signal in the renderer DOM.
+      // BrowserView is a native view, so the source of truth is the browser
+      // state bridged back through `browser.onStateChanged`.
       const tabBar = window.getByRole("banner", { name: "Workspaces" });
       await expect(
         tabBar.getByRole("button", { name: "Home", exact: true }),
@@ -58,10 +57,8 @@ test.describe("Phosphene smoke", () => {
       await addressBar.fill("https://example.com");
       await window.keyboard.press("Enter");
 
-      // After the submit, the renderer will navigate the BrowserView and the
-      // main process will broadcast the new URL back via onStateChanged,
-      // which resets addressValue to the normalized/final URL.
-      await expect(addressBar).toHaveValue(/example\.com/, { timeout: 20_000 });
+      const browserState = await waitForLoadedBrowserUrl(window, /example\.com/);
+      expect(browserState.url).toMatch(/example\.com/);
     } finally {
       await cleanup();
     }
