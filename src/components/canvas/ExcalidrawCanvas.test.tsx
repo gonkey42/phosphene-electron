@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const excalidrawMock = vi.fn();
 const excalidrawApiMountMock = vi.fn();
 const excalidrawDropMock = vi.fn();
+const excalidrawDropSnapshots: Array<{
+  currentTarget: EventTarget | null;
+  event: Event;
+  target: EventTarget | null;
+}> = [];
 const setToastMock = vi.fn();
 const claimFocusMock = vi.fn();
 const updateSceneMock = vi.fn();
@@ -35,6 +40,11 @@ vi.mock("@excalidraw/excalidraw", () => ({
 
       const handleDrop = (event: Event) => {
         excalidrawDropMock(event);
+        excalidrawDropSnapshots.push({
+          currentTarget: event.currentTarget,
+          event,
+          target: event.target,
+        });
       };
 
       rootElement.addEventListener("drop", handleDrop);
@@ -121,6 +131,7 @@ function dispatchDrop(
   });
 
   target.dispatchEvent(event);
+  return event;
 }
 
 describe("ExcalidrawCanvas", () => {
@@ -129,6 +140,7 @@ describe("ExcalidrawCanvas", () => {
     excalidrawMock.mockClear();
     excalidrawApiMountMock.mockReset();
     excalidrawDropMock.mockReset();
+    excalidrawDropSnapshots.length = 0;
     setToastMock.mockReset();
     claimFocusMock.mockReset();
     refreshMock.mockReset();
@@ -461,7 +473,7 @@ describe("ExcalidrawCanvas", () => {
     const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
     expect(dropTarget).toBeTruthy();
 
-    dispatchDrop(
+    const browserDropEvent = dispatchDrop(
       dropTarget as Element,
       createDataTransfer(["text/uri-list"], (type) => (type === "text/uri-list" ? "https://example.com/photo.png" : "")),
       { clientX: 123, clientY: 456 },
@@ -471,14 +483,19 @@ describe("ExcalidrawCanvas", () => {
       await Promise.resolve();
     });
 
+    expect(browserDropEvent.defaultPrevented).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith("https://example.com/photo.png");
     expect(excalidrawDropMock).toHaveBeenCalledTimes(1);
-    const translatedEvent = excalidrawDropMock.mock.calls[0]?.[0] as DragEvent | undefined;
-    expect(translatedEvent?.dataTransfer?.files.length).toBe(1);
-    expect(translatedEvent?.dataTransfer?.files[0]?.name).toBe("photo.png");
-    expect(translatedEvent?.dataTransfer?.files[0]?.type).toBe("image/png");
-    expect(translatedEvent?.clientX).toBe(123);
-    expect(translatedEvent?.clientY).toBe(456);
+    expect(excalidrawDropSnapshots).toHaveLength(1);
+    const translatedEvent = excalidrawDropSnapshots[0];
+    expect(translatedEvent.currentTarget).toBe(dropTarget);
+    expect(translatedEvent.target).toBe(dropTarget);
+    expect(translatedEvent.event).toBe(excalidrawDropMock.mock.calls[0]?.[0]);
+    expect(translatedEvent.event.dataTransfer?.files.length).toBe(1);
+    expect(translatedEvent.event.dataTransfer?.files[0]?.name).toBe("photo.png");
+    expect(translatedEvent.event.dataTransfer?.files[0]?.type).toBe("image/png");
+    expect(translatedEvent.event.clientX).toBe(123);
+    expect(translatedEvent.event.clientY).toBe(456);
   });
 
   it("does not intercept an existing filesystem drop", async () => {
@@ -492,14 +509,18 @@ describe("ExcalidrawCanvas", () => {
     const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
     expect(dropTarget).toBeTruthy();
 
-    dispatchDrop(
+    const browserDropEvent = dispatchDrop(
       dropTarget as Element,
       createDataTransfer(["Files"], vi.fn(), createFileList([file])),
     );
 
+    expect(browserDropEvent.defaultPrevented).toBe(false);
     expect(excalidrawDropMock).toHaveBeenCalledTimes(1);
-    const receivedEvent = excalidrawDropMock.mock.calls[0]?.[0] as DragEvent | undefined;
-    expect(receivedEvent?.dataTransfer?.files[0]).toBe(file);
+    expect(excalidrawDropSnapshots).toHaveLength(1);
+    const receivedEvent = excalidrawDropSnapshots[0];
+    expect(receivedEvent.currentTarget).toBe(dropTarget);
+    expect(receivedEvent.target).toBe(dropTarget);
+    expect(receivedEvent.event.dataTransfer?.files[0]).toBe(file);
   });
 
   it("does nothing when non-interactive", async () => {
@@ -523,18 +544,25 @@ describe("ExcalidrawCanvas", () => {
     const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
     expect(dropTarget).toBeTruthy();
 
-    dispatchDrop(dropTarget as Element, createDataTransfer(["text/uri-list"], (type) =>
-      type === "text/uri-list" ? "https://example.com/photo.png" : "",
-    ));
+    const browserDropEvent = dispatchDrop(
+      dropTarget as Element,
+      createDataTransfer(["text/uri-list"], (type) =>
+        type === "text/uri-list" ? "https://example.com/photo.png" : "",
+      ),
+    );
 
     await act(async () => {
       await Promise.resolve();
     });
 
+    expect(browserDropEvent.defaultPrevented).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(excalidrawDropMock).toHaveBeenCalledTimes(1);
-    const receivedEvent = excalidrawDropMock.mock.calls[0]?.[0] as DragEvent | undefined;
-    expect(receivedEvent?.dataTransfer?.files.length).toBe(0);
+    expect(excalidrawDropSnapshots).toHaveLength(1);
+    const receivedEvent = excalidrawDropSnapshots[0];
+    expect(receivedEvent.currentTarget).toBe(dropTarget);
+    expect(receivedEvent.target).toBe(dropTarget);
+    expect(receivedEvent.event.dataTransfer?.files.length).toBe(0);
   });
 
   it("shows a toast when browser image import fails", async () => {
@@ -549,18 +577,23 @@ describe("ExcalidrawCanvas", () => {
     const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
     expect(dropTarget).toBeTruthy();
 
-    dispatchDrop(dropTarget as Element, createDataTransfer(["text/plain"], (type) =>
-      type === "text/plain" ? "https://example.com/photo.png" : "",
-    ));
+    const browserDropEvent = dispatchDrop(
+      dropTarget as Element,
+      createDataTransfer(["text/plain"], (type) =>
+        type === "text/plain" ? "https://example.com/photo.png" : "",
+      ),
+    );
 
     await act(async () => {
       await Promise.resolve();
     });
 
+    expect(browserDropEvent.defaultPrevented).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith("https://example.com/photo.png");
     expect(setToastMock).toHaveBeenCalledWith({
       message: "Failed to import dropped image.",
     });
     expect(excalidrawDropMock).not.toHaveBeenCalled();
+    expect(excalidrawDropSnapshots).toHaveLength(0);
   });
 });

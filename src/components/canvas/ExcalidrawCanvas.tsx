@@ -162,13 +162,27 @@ export function ExcalidrawCanvas({
 
       void translateBrowserDrop(event, imageUrl);
     },
-    [isInteractive],
+    [isInteractive, translateBrowserDrop],
   );
 
   function createSyntheticDropEvent(
     sourceEvent: DragEvent<HTMLDivElement>,
     dataTransfer: DataTransfer,
   ): Event {
+    if (typeof DragEvent === "function") {
+      try {
+        return new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          clientX: sourceEvent.clientX,
+          clientY: sourceEvent.clientY,
+          dataTransfer,
+        });
+      } catch {
+        // Fall through to the legacy Event-based shim below.
+      }
+    }
+
     const syntheticEvent = new Event("drop", {
       bubbles: true,
       cancelable: true,
