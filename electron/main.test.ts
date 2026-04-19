@@ -412,7 +412,21 @@ describe("electron main close flushing", () => {
       expect.arrayContaining([
         expect.objectContaining({ role: process.platform === "darwin" ? "appMenu" : "fileMenu" }),
         expect.objectContaining({ role: "editMenu" }),
-        expect.objectContaining({ role: "viewMenu" }),
+        expect.objectContaining({
+          label: "View",
+          submenu: expect.arrayContaining([
+            expect.objectContaining({ role: "reload" }),
+            expect.objectContaining({ role: "togglefullscreen" }),
+            expect.objectContaining({
+              label: "Theme",
+              submenu: expect.arrayContaining([
+                expect.objectContaining({ label: "System" }),
+                expect.objectContaining({ label: "Light" }),
+                expect.objectContaining({ label: "Dark" }),
+              ]),
+            }),
+          ]),
+        }),
         expect.objectContaining({ role: "windowMenu" }),
         expect.objectContaining({ role: "help" }),
       ]),
@@ -420,7 +434,7 @@ describe("electron main close flushing", () => {
     expect(menuSetApplicationMenuMock).toHaveBeenCalledTimes(1);
 
     const menu = menuSetApplicationMenuMock.mock.calls[0]?.[0] as MockMenu;
-    const viewMenuItem = menu.items.find((item) => item.role === "viewMenu");
+    const viewMenuItem = menu.items.find((item) => item.label === "View");
     const viewSubmenuItems = viewMenuItem?.submenu?.items ?? [];
 
     expect(viewSubmenuItems.some((item) => item.role === "togglefullscreen")).toBe(true);
@@ -452,7 +466,7 @@ describe("electron main close flushing", () => {
 
     expect(menuSetApplicationMenuMock).toHaveBeenCalledTimes(2);
     const updatedMenu = menuSetApplicationMenuMock.mock.calls[1]?.[0] as MockMenu;
-    const updatedViewMenuItem = updatedMenu.items.find((item) => item.role === "viewMenu");
+    const updatedViewMenuItem = updatedMenu.items.find((item) => item.label === "View");
     const updatedThemeMenu = updatedViewMenuItem?.submenu?.items.at(-1) as MockMenuItem;
     expect(updatedThemeMenu.submenu?.items).toEqual(
       expect.arrayContaining([
@@ -544,7 +558,7 @@ describe("electron main close flushing", () => {
     await waitForAsyncEffects();
 
     const menu = menuSetApplicationMenuMock.mock.calls.at(-1)?.[0] as MockMenu;
-    const viewMenuItem = menu.items.find((item) => item.role === "viewMenu");
+    const viewMenuItem = menu.items.find((item) => item.label === "View");
     const themeMenu = viewMenuItem?.submenu?.items.at(-1) as MockMenuItem;
     const darkItem = themeMenu.submenu?.items.find((item) => item.label === "Dark");
 
@@ -570,7 +584,7 @@ describe("electron main close flushing", () => {
       expect.arrayContaining([
         expect.objectContaining({ role: "appMenu" }),
         expect.objectContaining({ role: "fileMenu" }),
-        expect.objectContaining({ role: "viewMenu" }),
+        expect.objectContaining({ label: "View" }),
       ]),
     );
   });

@@ -50,6 +50,7 @@ describe("registerFilesystemIPC", () => {
     statMock.mockReset();
     backupDatabaseMock.mockReset();
     getDatabaseMock.mockReset();
+    vi.unstubAllGlobals();
   });
 
   it("registers the paths handlers with validated joins for preload callers", async () => {
@@ -198,6 +199,33 @@ describe("registerFilesystemIPC", () => {
       },
     });
     expect(readFileMock).toHaveBeenCalledWith("/tmp/canvas/board.PNG");
+  });
+
+  it("reads remote images through the main process when given an http url", async () => {
+    const { registerFilesystemIPC } = await import("./filesystem");
+
+    registerFilesystemIPC("/app/data");
+
+    const readRemoteImageHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === "storage:read-remote-image",
+    )?.[1];
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(Uint8Array.from([112, 110, 103]), {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(readRemoteImageHandler({}, "https://example.com/photo.png")).resolves.toEqual({
+      ok: true,
+      value: {
+        name: "photo.png",
+        mimeType: "image/png",
+        data: Uint8Array.from([112, 110, 103]),
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/photo.png");
   });
 
   it("writes and reads board images beneath the images area using relative paths", async () => {

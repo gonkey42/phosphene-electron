@@ -1,3 +1,4 @@
+import { storage } from "../platform/desktop-api";
 import { getImageFileExtension, isSupportedImageMimeType } from "./image-mime";
 
 export function extractWebImageUrl(
@@ -38,6 +39,8 @@ export function extractWebImageUrl(
 export async function readImageUrlAsFile(
   url: string,
   fetchImpl: typeof fetch = fetch,
+  readRemoteImage: (url: string) => Promise<{ name: string; mimeType: string; data: Uint8Array }> =
+    storage.readRemoteImage,
 ): Promise<File> {
   const parsedUrl = new URL(url);
 
@@ -45,7 +48,20 @@ export async function readImageUrlAsFile(
     throw new Error(`Unsupported remote image url: ${url}`);
   }
 
-  const response = await fetchImpl(url);
+  let response: Response;
+
+  try {
+    response = await fetchImpl(url);
+  } catch {
+    const remoteImage = await readRemoteImage(url);
+
+    if (!isSupportedImageMimeType(remoteImage.mimeType)) {
+      throw new Error(`Unsupported remote image type: ${remoteImage.mimeType || "unknown"}`);
+    }
+
+    return new File([remoteImage.data], remoteImage.name, { type: remoteImage.mimeType });
+  }
+
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}`);
   }

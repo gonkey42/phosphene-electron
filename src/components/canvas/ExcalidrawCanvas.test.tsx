@@ -155,6 +155,7 @@ describe("ExcalidrawCanvas", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    delete (window as Window & { desktop?: unknown }).desktop;
   });
 
   it("suppresses immediate mount changes across board switches until ready", async () => {
@@ -496,6 +497,49 @@ describe("ExcalidrawCanvas", () => {
     expect(translatedEvent.event.dataTransfer?.files[0]?.type).toBe("image/png");
     expect(translatedEvent.event.clientX).toBe(123);
     expect(translatedEvent.event.clientY).toBe(456);
+  });
+
+  it("falls back to the desktop bridge when renderer fetch rejects", async () => {
+    const onChange = vi.fn();
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    const readRemoteImageMock = vi.fn().mockResolvedValue({
+      name: "photo.png",
+      mimeType: "image/png",
+      data: Uint8Array.from([112, 110, 103]),
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    (window as Window & { desktop?: unknown }).desktop = {
+      storage: {
+        readRemoteImage: readRemoteImageMock,
+      },
+    };
+
+    const { container } = render(
+      <ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />,
+    );
+
+    const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
+    expect(dropTarget).toBeTruthy();
+
+    const browserDropEvent = dispatchDrop(
+      dropTarget as Element,
+      createDataTransfer(["text/uri-list"], (type) =>
+        type === "text/uri-list" ? "https://example.com/photo.png" : "",
+      ),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(browserDropEvent.defaultPrevented).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/photo.png");
+    expect(readRemoteImageMock).toHaveBeenCalledWith("https://example.com/photo.png");
+    expect(excalidrawDropMock).toHaveBeenCalledTimes(1);
+    expect(excalidrawDropSnapshots).toHaveLength(1);
+    expect(excalidrawDropSnapshots[0].event.dataTransfer?.files[0]?.name).toBe("photo.png");
+    expect(setToastMock).not.toHaveBeenCalled();
   });
 
   it("does not intercept an existing filesystem drop", async () => {

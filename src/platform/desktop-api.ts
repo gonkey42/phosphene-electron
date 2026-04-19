@@ -237,6 +237,9 @@ export const storage = {
   readDroppedImage(path: string) {
     return getDesktop().storage.readDroppedImage(path);
   },
+  readRemoteImage(url: string) {
+    return getDesktop().storage.readRemoteImage(url);
+  },
   writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array) {
     return getDesktop().storage.writeBoardImage(boardId, fileId, mimeType, data);
   },

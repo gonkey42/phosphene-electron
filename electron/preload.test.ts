@@ -58,6 +58,7 @@ type ExposedDesktop = {
     ensureDirectories(): Promise<void>;
     runDailyBackup(): Promise<unknown>;
     readDroppedImage(path: string): Promise<{ name: string; mimeType: string; data: Uint8Array }>;
+    readRemoteImage(url: string): Promise<{ name: string; mimeType: string; data: Uint8Array }>;
     writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array): Promise<string>;
     readBoardImage(path: string): Promise<Uint8Array | null>;
   };
@@ -153,6 +154,14 @@ describe("preload filesystem IPC", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
+        value: {
+          name: "remote.png",
+          mimeType: "image/png",
+          data: fileBytes,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         value: "/app/data/images/board-1_file-1.png",
       });
 
@@ -165,6 +174,11 @@ describe("preload filesystem IPC", () => {
       desktop.storage.readDroppedImage("/app/data/images/file.png"),
     ).resolves.toEqual({
       name: "file.png",
+      mimeType: "image/png",
+      data: fileBytes,
+    });
+    await expect(desktop.storage.readRemoteImage("https://example.com/photo.png")).resolves.toEqual({
+      name: "remote.png",
       mimeType: "image/png",
       data: fileBytes,
     });
@@ -184,6 +198,7 @@ describe("preload filesystem IPC", () => {
           ensureDirectories: expect.any(Function),
           runDailyBackup: expect.any(Function),
           readDroppedImage: expect.any(Function),
+          readRemoteImage: expect.any(Function),
           writeBoardImage: expect.any(Function),
           readBoardImage: expect.any(Function),
         }),
@@ -225,6 +240,7 @@ describe("preload filesystem IPC", () => {
       .mockResolvedValueOnce({ ok: true, value: undefined })
       .mockResolvedValueOnce({ ok: true, value: { status: "created", destinationPath: "/app/data/backups/phosphene-2026-04-19.db" } })
       .mockResolvedValueOnce({ ok: true, value: { name: "dropped.PNG", mimeType: "image/png", data: imageBytes } })
+      .mockResolvedValueOnce({ ok: true, value: { name: "remote.png", mimeType: "image/png", data: imageBytes } })
       .mockResolvedValueOnce({ ok: true, value: "images/board-1_file-1.png" })
       .mockResolvedValueOnce({ ok: true, value: imageBytes })
       .mockResolvedValueOnce({ ok: true, value: null });
@@ -239,6 +255,7 @@ describe("preload filesystem IPC", () => {
           ensureDirectories: expect.any(Function),
           runDailyBackup: expect.any(Function),
           readDroppedImage: expect.any(Function),
+          readRemoteImage: expect.any(Function),
           writeBoardImage: expect.any(Function),
           readBoardImage: expect.any(Function),
         }),
@@ -255,6 +272,11 @@ describe("preload filesystem IPC", () => {
       mimeType: "image/png",
       data: imageBytes,
     });
+    await expect(desktop.storage.readRemoteImage("https://example.com/photo.png")).resolves.toEqual({
+      name: "remote.png",
+      mimeType: "image/png",
+      data: imageBytes,
+    });
     await expect(
       desktop.storage.writeBoardImage("board-1", "file-1", "image/png", imageBytes),
     ).resolves.toBe("images/board-1_file-1.png");
@@ -267,6 +289,7 @@ describe("preload filesystem IPC", () => {
       ["storage:ensure-directories"],
       ["storage:run-daily-backup"],
       ["storage:read-dropped-image", "/tmp/dropped.png"],
+      ["storage:read-remote-image", "https://example.com/photo.png"],
       ["storage:write-board-image", "board-1", "file-1", "image/png", imageBytes],
       ["storage:read-board-image", "images/board-1_file-1.png"],
       ["storage:read-board-image", "images/missing.png"],

@@ -129,6 +129,28 @@ describe("web image drop utilities", () => {
     await expect(file?.text()).resolves.toBe("png-bytes");
   });
 
+  it("falls back to the desktop bridge when renderer fetch rejects", async () => {
+    const { readImageUrlAsFile } = await import("./web-image-drop");
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    const readRemoteImageMock = vi.fn().mockResolvedValue({
+      name: "photo.png",
+      mimeType: "image/png",
+      data: Uint8Array.from([112, 110, 103]),
+    });
+
+    const file = await readImageUrlAsFile(
+      "https://example.com/photo.png",
+      fetchMock,
+      readRemoteImageMock,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/photo.png");
+    expect(readRemoteImageMock).toHaveBeenCalledWith("https://example.com/photo.png");
+    expect(file.name).toBe("photo.png");
+    expect(file.type).toBe("image/png");
+    await expect(file.arrayBuffer()).resolves.toEqual(Uint8Array.from([112, 110, 103]).buffer);
+  });
+
   it("rejects remote assets with unsupported mime types", async () => {
     const { readImageUrlAsFile } = await import("./web-image-drop");
     const fetchMock = vi.fn().mockResolvedValue(

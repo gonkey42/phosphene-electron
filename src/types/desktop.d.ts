@@ -88,6 +88,11 @@ interface DesktopStorageAPI {
     mimeType: string;
     data: Uint8Array;
   }>;
+  readRemoteImage(url: string): Promise<{
+    name: string;
+    mimeType: string;
+    data: Uint8Array;
+  }>;
   writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array): Promise<string>;
   readBoardImage(path: string): Promise<Uint8Array | null>;
 }
