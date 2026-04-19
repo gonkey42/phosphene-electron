@@ -1,4 +1,4 @@
-import { isSupportedImageFile } from "./drop-handler";
+import { getImageFileExtension, isSupportedImageMimeType } from "./image-mime";
 
 export function extractWebImageUrl(
   dataTransfer: Pick<DataTransfer, "files" | "types" | "getData">,
@@ -53,12 +53,12 @@ export async function readImageUrlAsFile(
 
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
 
-  if (!isSupportedImageFile(new File([], "remote-image", { type: contentType }))) {
+  if (!isSupportedImageMimeType(contentType)) {
     throw new Error(`Unsupported remote image type: ${contentType || "unknown"}`);
   }
 
   const blob = await response.blob();
-  const name = decodeURIComponent(parsedUrl.pathname.split("/").pop() || "image");
+  const name = getFileNameFromUrl(parsedUrl, contentType);
 
   return new File([blob], name, { type: contentType });
 }
@@ -71,11 +71,13 @@ export function createSyntheticDropTransfer(file: File): DataTransfer {
     return nativeTransfer;
   }
 
+  const items = createDataTransferItemList(file);
+
   return {
     dropEffect: "none",
     effectAllowed: "all",
     files: createFileList([file]),
-    items: createDataTransferItemList(file),
+    items,
     types: ["Files"],
     getData: () => "",
     setData: () => undefined,
@@ -115,25 +117,37 @@ function createFileList(files: File[]): FileList {
 }
 
 function createDataTransferItemList(file: File): DataTransferItemList {
+  const item = {
+    kind: "file",
+    type: file.type,
+    getAsFile: () => file,
+    getAsString: (_callback: (data: string) => void) => undefined,
+    webkitGetAsEntry: () => null,
+  } as DataTransferItem;
+
   return {
+    0: item,
     length: 1,
     add: () => null,
     clear: () => undefined,
     remove: () => undefined,
-    item: (index: number) =>
-      index === 0
-        ? ({
-            kind: "file",
-            type: file.type,
-            getAsFile: () => file,
-            getAsString: (_callback: (data: string) => void) => undefined,
-            webkitGetAsEntry: () => null,
-          } as DataTransferItem)
-        : null,
+    item: (index: number) => (index === 0 ? item : null),
     [Symbol.iterator]: function* () {
-      yield this.item(0) as DataTransferItem;
+      yield item;
     },
   } as DataTransferItemList;
+}
+
+function getFileNameFromUrl(parsedUrl: URL, mimeType: string): string {
+  const basename = parsedUrl.pathname.split("/").pop();
+  const decodedBasename = basename ? decodeURIComponent(basename) : "";
+
+  if (decodedBasename && decodedBasename !== "/") {
+    return decodedBasename;
+  }
+
+  const extension = getImageFileExtension(mimeType);
+  return extension ? `image.${extension}` : "image";
 }
 
 function firstHttpUrl(text: string): string | null {

@@ -1,8 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("web image drop utilities", () => {
   beforeEach(() => {
     vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("extracts an image url from dragged html", async () => {
@@ -115,5 +119,30 @@ describe("web image drop utilities", () => {
     expect(transfer.items.length).toBe(1);
     expect(transfer.items.item(0)?.getAsFile()).toBe(file);
     expect(Array.from(transfer.types)).toEqual(["Files"]);
+  });
+
+  it("creates a fallback synthetic drop transfer with indexed access", async () => {
+    vi.stubGlobal("DataTransfer", undefined);
+
+    const { createSyntheticDropTransfer } = await import("./web-image-drop");
+    const file = new File(["png-bytes"], "photo.png", { type: "image/png" });
+
+    const transfer = createSyntheticDropTransfer(file);
+
+    expect(transfer.items[0]?.getAsFile()).toBe(file);
+    expect(transfer.items.item(0)?.getAsFile()).toBe(file);
+  });
+
+  it("falls back to a mime-appropriate default filename when the url has no basename", async () => {
+    const { readImageUrlAsFile } = await import("./web-image-drop");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("png-bytes", {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    const file = await readImageUrlAsFile("https://example.com/", fetchMock);
+
+    expect(file.name).toBe("image.png");
   });
 });
