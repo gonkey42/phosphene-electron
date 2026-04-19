@@ -1,32 +1,3 @@
-type DesktopMutationResult = {
-  rowsAffected: number;
-};
-
-interface DesktopDatabase {
-  execute(sql: string, params?: unknown[]): Promise<DesktopMutationResult>;
-  select<TRows extends readonly unknown[] = unknown[]>(
-    sql: string,
-    params?: unknown[],
-  ): Promise<TRows>;
-  backup(destinationPath: string): Promise<
-    | {
-        status: "created";
-        destinationPath: string;
-      }
-    | {
-        status: "skipped";
-        reason: "already-exists";
-        destinationPath: string;
-      }
-    | {
-        status: "failed";
-        reason: "permission-denied" | "destination-missing" | "backup-failed";
-        destinationPath: string;
-        message: string;
-      }
-  >;
-}
-
 interface DesktopBoardListItem {
   id: string;
   workspaceId: string | null;
@@ -93,16 +64,6 @@ interface DesktopSettingsAPI {
   setActiveWorkspaceId(workspaceId: string): Promise<void>;
 }
 
-interface DesktopFilesystem {
-  exists(path: string): Promise<boolean>;
-  mkdir(path: string): Promise<void>;
-  readFile(path: string): Promise<Uint8Array>;
-  writeFile(path: string, data: Uint8Array): Promise<void>;
-  copyFile(src: string, dest: string): Promise<void>;
-  readDir(path: string): Promise<Array<{ name: string }>>;
-  remove(path: string): Promise<void>;
-}
-
 interface DesktopStorageAPI {
   ensureDirectories(): Promise<void>;
   runDailyBackup(): Promise<
@@ -129,11 +90,6 @@ interface DesktopStorageAPI {
   }>;
   writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array): Promise<string>;
   readBoardImage(path: string): Promise<Uint8Array | null>;
-}
-
-interface DesktopPaths {
-  appDataDir(): Promise<string>;
-  join(...parts: string[]): Promise<string>;
 }
 
 interface DesktopLifecycle {
@@ -180,12 +136,9 @@ interface DesktopThemeAPI {
 }
 
 interface DesktopAPI {
-  db: DesktopDatabase;
   boards: DesktopBoardsAPI;
   workspaces: DesktopWorkspacesAPI;
-  fs: DesktopFilesystem;
   storage: DesktopStorageAPI;
-  paths: DesktopPaths;
   lifecycle: DesktopLifecycle;
   browser: DesktopBrowserAPI;
   contextMenu: DesktopContextMenuAPI;

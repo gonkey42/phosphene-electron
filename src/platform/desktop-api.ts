@@ -21,10 +21,6 @@ export type DatabaseBackupResult =
       message: string;
     };
 
-export type MutationResult = {
-  rowsAffected: number;
-};
-
 export type BoardListItem = {
   id: string;
   workspaceId: string | null;
@@ -171,21 +167,6 @@ function ensureLifecycleListeners() {
 
 ensureLifecycleListeners();
 
-export const db = {
-  execute(sql: string, params?: unknown[]): Promise<MutationResult> {
-    return getDesktop().db.execute(sql, params);
-  },
-  select<TRows extends readonly unknown[] = unknown[]>(
-    sql: string,
-    params?: unknown[],
-  ): Promise<TRows> {
-    return getDesktop().db.select<TRows>(sql, params);
-  },
-  backup(destinationPath: string): Promise<DatabaseBackupResult> {
-    return getDesktop().db.backup(destinationPath);
-  },
-};
-
 export const boards = {
   list(workspaceId: string | null = null) {
     return getDesktop().boards.list(workspaceId);
@@ -246,30 +227,6 @@ export const settings = {
   },
 };
 
-export const fs = {
-  exists(path: string) {
-    return getDesktop().fs.exists(path);
-  },
-  mkdir(path: string) {
-    return getDesktop().fs.mkdir(path);
-  },
-  readFile(path: string) {
-    return getDesktop().fs.readFile(path);
-  },
-  writeFile(path: string, data: Uint8Array) {
-    return getDesktop().fs.writeFile(path, data);
-  },
-  copyFile(src: string, dest: string) {
-    return getDesktop().fs.copyFile(src, dest);
-  },
-  readDir(path: string) {
-    return getDesktop().fs.readDir(path);
-  },
-  remove(path: string) {
-    return getDesktop().fs.remove(path);
-  },
-};
-
 export const storage = {
   ensureDirectories() {
     return getDesktop().storage.ensureDirectories();
@@ -285,15 +242,6 @@ export const storage = {
   },
   readBoardImage(path: string) {
     return getDesktop().storage.readBoardImage(path);
-  },
-};
-
-export const paths = {
-  appDataDir() {
-    return getDesktop().paths.appDataDir();
-  },
-  join(...parts: string[]) {
-    return getDesktop().paths.join(...parts);
   },
 };
 

@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const ensureDirectoriesMock = vi.fn();
 const existsMock = vi.fn();
 const mkdirMock = vi.fn();
 const appDataDirMock = vi.fn();
 const joinMock = vi.fn();
-const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
 vi.mock("../platform/desktop-api", () => ({
+  storage: {
+    ensureDirectories: ensureDirectoriesMock,
+  },
   fs: {
     exists: existsMock,
     mkdir: mkdirMock,
@@ -19,50 +22,24 @@ vi.mock("../platform/desktop-api", () => ({
 
 describe("file storage helpers", () => {
   beforeEach(() => {
+    ensureDirectoriesMock.mockReset();
     existsMock.mockReset();
     mkdirMock.mockReset();
     appDataDirMock.mockReset();
     joinMock.mockReset();
-    errorSpy.mockClear();
   });
 
-  it("creates images and captures directories when they are missing", async () => {
+  it("delegates directory setup to the storage bridge instead of raw fs and paths", async () => {
     appDataDirMock.mockResolvedValue("/app/data");
     joinMock.mockResolvedValueOnce("/app/data/images").mockResolvedValueOnce("/app/data/captures");
     existsMock.mockResolvedValue(false);
+    ensureDirectoriesMock.mockResolvedValue(undefined);
 
     const { ensureStorageDirectories } = await import("./file-storage");
     await ensureStorageDirectories();
 
-    expect(mkdirMock).toHaveBeenCalledWith("/app/data/images");
-    expect(mkdirMock).toHaveBeenCalledWith("/app/data/captures");
-  });
-
-  it("rethrows inaccessible directory checks instead of treating them as missing", async () => {
-    const permissionError = Object.assign(new Error("permission denied"), { code: "EACCES" });
-
-    appDataDirMock.mockResolvedValue("/app/data");
-    joinMock.mockResolvedValueOnce("/app/data/images").mockResolvedValueOnce("/app/data/captures");
-    existsMock.mockRejectedValue(permissionError);
-
-    const { ensureStorageDirectories } = await import("./file-storage");
-
-    await expect(ensureStorageDirectories()).rejects.toBe(permissionError);
+    expect(ensureDirectoriesMock).toHaveBeenCalledTimes(1);
+    expect(appDataDirMock).not.toHaveBeenCalled();
     expect(mkdirMock).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith("Storage path is inaccessible:", {
-      path: "/app/data/images",
-      code: "EACCES",
-      message: "permission denied",
-    });
-  });
-
-  it("returns the expected application storage locations", async () => {
-    appDataDirMock.mockResolvedValue("/app/data");
-    joinMock.mockResolvedValueOnce("/app/data/images").mockResolvedValueOnce("/app/data/captures");
-
-    const { getImagesDir, getCapturesDir } = await import("./file-storage");
-
-    await expect(getImagesDir()).resolves.toBe("/app/data/images");
-    await expect(getCapturesDir()).resolves.toBe("/app/data/captures");
   });
 });

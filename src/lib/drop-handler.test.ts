@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const readFileMock = vi.fn();
+const readDroppedImageMock = vi.fn();
 
 vi.mock("../platform/desktop-api", () => ({
+  storage: {
+    readDroppedImage: readDroppedImageMock,
+  },
   fs: {
     readFile: readFileMock,
   },
@@ -12,6 +16,28 @@ describe("drop handler utilities", () => {
   beforeEach(() => {
     vi.resetModules();
     readFileMock.mockReset();
+    readDroppedImageMock.mockReset();
+  });
+
+  it("reads a dropped filesystem image path through the storage bridge", async () => {
+    const droppedImage = {
+      name: "image.PNG",
+      mimeType: "image/png",
+      data: Uint8Array.from([112, 110, 103]),
+    };
+
+    readFileMock.mockResolvedValue(Uint8Array.from([112, 110, 103]));
+    readDroppedImageMock.mockResolvedValue(droppedImage);
+
+    const { readImagePathAsFile } = await import("./drop-handler");
+    const file = await readImagePathAsFile("/Users/hal9000/Desktop/image.PNG");
+
+    expect(readDroppedImageMock).toHaveBeenCalledWith("/Users/hal9000/Desktop/image.PNG");
+    expect(readFileMock).not.toHaveBeenCalled();
+    expect(file).toBeInstanceOf(File);
+    expect(file.name).toBe("image.PNG");
+    expect(file.type).toBe("image/png");
+    await expect(file.text()).resolves.toBe("png");
   });
 
   it("reads a dropped file as a data url", async () => {
@@ -53,19 +79,6 @@ describe("drop handler utilities", () => {
     expect(isSupportedImageFile(new File(["txt"], "notes.txt", { type: "text/plain" }))).toBe(
       false,
     );
-  });
-
-  it("reads a dropped filesystem image path as a browser File", async () => {
-    readFileMock.mockResolvedValue(Uint8Array.from([112, 110, 103]));
-
-    const { readImagePathAsFile } = await import("./drop-handler");
-    const file = await readImagePathAsFile("/Users/hal9000/Desktop/image.PNG");
-
-    expect(readFileMock).toHaveBeenCalledWith("/Users/hal9000/Desktop/image.PNG");
-    expect(file).toBeInstanceOf(File);
-    expect(file.name).toBe("image.PNG");
-    expect(file.type).toBe("image/png");
-    await expect(file.text()).resolves.toBe("png");
   });
 
   it("recognizes supported dropped image paths by extension", async () => {

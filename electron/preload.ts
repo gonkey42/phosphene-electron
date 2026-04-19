@@ -28,10 +28,6 @@ type FilesystemResult<T> =
       error: SerializedFilesystemError;
     };
 
-type MutationResult = {
-  rowsAffected: number;
-};
-
 type StorageDroppedImage = {
   name: string;
   mimeType: string;
@@ -172,20 +168,6 @@ ipcRenderer.on("lifecycle:flush-request", (_event, requestId: string) => {
 });
 
 contextBridge.exposeInMainWorld("desktop", {
-  db: {
-    execute(sql: string, params?: unknown[]): Promise<MutationResult> {
-      return ipcRenderer.invoke("db:execute", sql, params);
-    },
-    select<TRows extends readonly unknown[] = unknown[]>(
-      sql: string,
-      params?: unknown[],
-    ): Promise<TRows> {
-      return ipcRenderer.invoke("db:select", sql, params);
-    },
-    backup(destinationPath: string) {
-      return ipcRenderer.invoke("db:backup", destinationPath);
-    },
-  },
   storage: {
     ensureDirectories(): Promise<void> {
       return invokeFilesystem("storage:ensure-directories");
@@ -258,37 +240,6 @@ contextBridge.exposeInMainWorld("desktop", {
     },
     setActiveWorkspaceId(workspaceId: string) {
       return ipcRenderer.invoke("settings:set-active-workspace-id", workspaceId);
-    },
-  },
-  fs: {
-    exists(path: string) {
-      return invokeFilesystem<boolean>("fs:exists", path);
-    },
-    mkdir(path: string) {
-      return invokeFilesystem<void>("fs:mkdir", path);
-    },
-    readFile(path: string): Promise<Uint8Array> {
-      return invokeFilesystem<Uint8Array>("fs:readFile", path);
-    },
-    writeFile(path: string, data: Uint8Array) {
-      return invokeFilesystem<void>("fs:writeFile", path, data);
-    },
-    copyFile(src: string, dest: string) {
-      return invokeFilesystem<void>("fs:copyFile", src, dest);
-    },
-    readDir(path: string) {
-      return invokeFilesystem<Array<{ name: string }>>("fs:readDir", path);
-    },
-    remove(path: string) {
-      return invokeFilesystem<void>("fs:remove", path);
-    },
-  },
-  paths: {
-    appDataDir() {
-      return ipcRenderer.invoke("paths:appDataDir");
-    },
-    join(...parts: string[]) {
-      return ipcRenderer.invoke("paths:join", ...parts);
     },
   },
   lifecycle: {
