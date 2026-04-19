@@ -8,18 +8,17 @@ export function extractWebImageUrl(
   }
 
   const types = new Set(Array.from(dataTransfer.types));
+  const htmlCandidate = types.has("text/html")
+    ? firstHttpUrlFromHtml(dataTransfer.getData("text/html"))
+    : null;
+
+  if (htmlCandidate) {
+    return htmlCandidate;
+  }
 
   if (types.has("text/uri-list")) {
     const uriList = dataTransfer.getData("text/uri-list");
-    const candidate = firstHttpUrl(uriList);
-    if (candidate) {
-      return candidate;
-    }
-  }
-
-  if (types.has("text/html")) {
-    const html = dataTransfer.getData("text/html");
-    const candidate = firstHttpUrlFromHtml(html);
+    const candidate = firstLikelyRemoteImageUrl(uriList);
     if (candidate) {
       return candidate;
     }
@@ -27,7 +26,7 @@ export function extractWebImageUrl(
 
   if (types.has("text/plain")) {
     const plainText = dataTransfer.getData("text/plain");
-    const candidate = firstHttpUrl(plainText);
+    const candidate = firstLikelyRemoteImageUrl(plainText);
     if (candidate) {
       return candidate;
     }
@@ -153,7 +152,7 @@ function getFileNameFromUrl(parsedUrl: URL, mimeType: string): string {
   return extension ? `image.${extension}` : "image";
 }
 
-function firstHttpUrl(text: string): string | null {
+function firstLikelyRemoteImageUrl(text: string): string | null {
   for (const line of text.split(/\r?\n/)) {
     const candidate = line.trim();
 
@@ -161,7 +160,7 @@ function firstHttpUrl(text: string): string | null {
       continue;
     }
 
-    if (isHttpUrl(candidate)) {
+    if (isLikelyRemoteImageUrl(candidate)) {
       return candidate;
     }
   }
@@ -186,6 +185,20 @@ function isHttpUrl(value: string): boolean {
   try {
     const parsedUrl = new URL(value);
     return parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isLikelyRemoteImageUrl(value: string): boolean {
+  try {
+    const parsedUrl = new URL(value);
+
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return false;
+    }
+
+    return /\.(png|jpe?g|gif|svg|webp)$/i.test(parsedUrl.pathname);
   } catch {
     return false;
   }

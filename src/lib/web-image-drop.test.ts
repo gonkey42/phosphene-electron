@@ -71,6 +71,19 @@ describe("web image drop utilities", () => {
     expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/from-html.png");
   });
 
+  it("prefers an html image src over a non-image uri-list entry", async () => {
+    const { extractWebImageUrl } = await import("./web-image-drop");
+    const dataTransfer = createDataTransfer(["text/uri-list", "text/html"], (type) => {
+      if (type === "text/uri-list") {
+        return "https://example.com/article";
+      }
+
+      return '<img src="https://example.com/from-html.png">';
+    });
+
+    expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/from-html.png");
+  });
+
   it("prefers an image src over an earlier non-image src in html", async () => {
     const { extractWebImageUrl } = await import("./web-image-drop");
     const dataTransfer = createDataTransfer(["text/html"], (type) =>
@@ -80,6 +93,15 @@ describe("web image drop utilities", () => {
     );
 
     expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/photo.png");
+  });
+
+  it("returns null for a plain link drop without an image signal", async () => {
+    const { extractWebImageUrl } = await import("./web-image-drop");
+    const dataTransfer = createDataTransfer(["text/plain"], (type) =>
+      type === "text/plain" ? "https://example.com/article" : "",
+    );
+
+    expect(extractWebImageUrl(dataTransfer)).toBeNull();
   });
 
   it("returns null when the drop already contains files", async () => {

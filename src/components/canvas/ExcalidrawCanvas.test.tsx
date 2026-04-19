@@ -523,6 +523,39 @@ describe("ExcalidrawCanvas", () => {
     expect(receivedEvent.event.dataTransfer?.files[0]).toBe(file);
   });
 
+  it("does not intercept a plain non-image url drop", async () => {
+    const onChange = vi.fn();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { container } = render(
+      <ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />,
+    );
+
+    const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
+    expect(dropTarget).toBeTruthy();
+
+    const browserDropEvent = dispatchDrop(
+      dropTarget as Element,
+      createDataTransfer(["text/plain"], (type) =>
+        type === "text/plain" ? "https://example.com/article" : "",
+      ),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(browserDropEvent.defaultPrevented).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(excalidrawDropMock).toHaveBeenCalledTimes(1);
+    expect(excalidrawDropSnapshots).toHaveLength(1);
+    const receivedEvent = excalidrawDropSnapshots[0];
+    expect(receivedEvent.currentTarget).toBe(dropTarget);
+    expect(receivedEvent.target).toBe(dropTarget);
+    expect(receivedEvent.event.dataTransfer?.files.length).toBe(0);
+  });
+
   it("does nothing when non-interactive", async () => {
     const onChange = vi.fn();
     const fetchMock = vi.fn().mockResolvedValue(
