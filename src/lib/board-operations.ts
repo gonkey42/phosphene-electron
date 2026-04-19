@@ -1,6 +1,4 @@
-import { getDb } from "./database";
-import type { DatabaseLike } from "./database";
-import { boards } from "../platform/desktop-api";
+import { boards, type BoardListItem as DesktopBoardListItem, type BoardRecord as DesktopBoardRecord } from "../platform/desktop-api";
 
 export interface BoardRecord {
   id: string;
@@ -35,40 +33,37 @@ export function mapBoardItems(items: BoardListItem[]) {
   }));
 }
 
-async function getDatabase(): Promise<DatabaseLike> {
-  return await getDb();
-}
-
-function assertSingleBoardMutation(result: { rowsAffected: number }, action: string): void {
-  if (result.rowsAffected === 0) {
-    throw new Error(`Board ${action} affected 0 rows`);
-  }
-}
-
 export async function listBoards(workspaceId?: string): Promise<BoardListItem[]> {
-  const db = await getDatabase();
+  const items = (await boards.list(workspaceId ?? null)) as DesktopBoardListItem[];
 
-  if (workspaceId === undefined) {
-    return db.select<BoardListItem[]>(
-      "SELECT id, name, description, position, updated_at, workspace_id FROM boards WHERE deleted_at IS NULL ORDER BY position",
-      [],
-    );
-  }
-
-  return db.select<BoardListItem[]>(
-    "SELECT id, name, description, position, updated_at, workspace_id FROM boards WHERE deleted_at IS NULL AND workspace_id = $1 ORDER BY position",
-    [workspaceId],
-  );
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    position: item.position,
+    updated_at: item.updatedAt,
+    workspace_id: item.workspaceId,
+  }));
 }
 
 export async function getBoard(boardId: string): Promise<BoardRecord | null> {
-  const db = await getDatabase();
-  const rows = await db.select<BoardRecord[]>(
-    "SELECT id, workspace_id, name, description, canvas_data, thumbnail, position, created_at, updated_at, deleted_at FROM boards WHERE id = $1 AND deleted_at IS NULL LIMIT 1",
-    [boardId],
-  );
+  const board = (await boards.get(boardId)) as DesktopBoardRecord | null;
+  if (!board) {
+    return null;
+  }
 
-  return rows[0] ?? null;
+  return {
+    id: board.id,
+    workspace_id: board.workspaceId,
+    name: board.name,
+    description: board.description,
+    canvas_data: board.canvasData,
+    thumbnail: board.thumbnail,
+    position: board.position,
+    created_at: board.createdAt,
+    updated_at: board.updatedAt,
+    deleted_at: board.deletedAt,
+  };
 }
 
 export async function createBoard(name: string, workspaceId: string | null): Promise<string> {
@@ -76,37 +71,17 @@ export async function createBoard(name: string, workspaceId: string | null): Pro
 }
 
 export async function renameBoard(boardId: string, name: string): Promise<void> {
-  const db = await getDatabase();
-  const result = await db.execute("UPDATE boards SET name = $2 WHERE id = $1 AND deleted_at IS NULL", [
-    boardId,
-    name,
-  ]);
-  assertSingleBoardMutation(result, "rename");
+  await boards.rename(boardId, name);
 }
 
 export async function deleteBoard(boardId: string): Promise<void> {
-  const db = await getDatabase();
-  const result = await db.execute(
-    "UPDATE boards SET deleted_at = datetime('now','utc') WHERE id = $1 AND deleted_at IS NULL",
-    [boardId],
-  );
-  assertSingleBoardMutation(result, "delete");
+  await boards.delete(boardId);
 }
 
 export async function saveBoardCanvasData(boardId: string, canvasData: string): Promise<void> {
-  const db = await getDatabase();
-  const result = await db.execute(
-    "UPDATE boards SET canvas_data = $2 WHERE id = $1 AND deleted_at IS NULL",
-    [boardId, canvasData],
-  );
-  assertSingleBoardMutation(result, "save");
+  await boards.saveCanvasData(boardId, canvasData);
 }
 
 export async function saveBoardThumbnail(boardId: string, thumbnail: string): Promise<void> {
-  const db = await getDatabase();
-  const result = await db.execute("UPDATE boards SET thumbnail = $2 WHERE id = $1 AND deleted_at IS NULL", [
-    boardId,
-    thumbnail,
-  ]);
-  assertSingleBoardMutation(result, "thumbnail save");
+  await boards.saveThumbnail(boardId, thumbnail);
 }

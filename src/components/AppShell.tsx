@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { runDailyBackup } from "../lib/backup";
 import { loadActiveWorkspaceId, saveActiveWorkspaceId } from "../lib/active-workspace-setting";
-import { getDb } from "../lib/database";
 import { ensureStorageDirectories } from "../lib/file-storage";
 import { listWorkspaces, mapWorkspace } from "../lib/workspace-operations";
 import { useThemeController } from "../hooks/use-theme-controller";
@@ -42,7 +41,6 @@ export function AppShell() {
       setInitializationState({ status: "loading" });
 
       try {
-        await getDb();
         await ensureStorageDirectories();
         void runDailyBackup().catch((error) => {
           reportError("Backup failed", error);

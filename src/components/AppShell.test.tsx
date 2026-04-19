@@ -8,7 +8,6 @@ import type { ResolvedTheme, ThemePreference } from "../lib/theme-settings";
 const {
   loadActiveWorkspaceIdMock,
   saveActiveWorkspaceIdMock,
-  getDbMock,
   ensureStorageDirectoriesMock,
   keyboardProviderMock,
   runDailyBackupMock,
@@ -21,7 +20,6 @@ const {
 } = vi.hoisted(() => ({
   loadActiveWorkspaceIdMock: vi.fn(),
   saveActiveWorkspaceIdMock: vi.fn(),
-  getDbMock: vi.fn(),
   ensureStorageDirectoriesMock: vi.fn(),
   keyboardProviderMock: vi.fn(),
   runDailyBackupMock: vi.fn(),
@@ -36,10 +34,6 @@ const {
   useThemeControllerMock: vi.fn(),
   tabBarMock: vi.fn(),
   workspaceContainerMock: vi.fn(),
-}));
-
-vi.mock("../lib/database", () => ({
-  getDb: getDbMock,
 }));
 
 vi.mock("../lib/active-workspace-setting", () => ({
@@ -91,7 +85,6 @@ vi.mock("./workspace/WorkspaceContainer", () => ({
 
 describe("AppShell", () => {
   beforeEach(async () => {
-    getDbMock.mockReset();
     loadActiveWorkspaceIdMock.mockReset();
     saveActiveWorkspaceIdMock.mockReset();
     ensureStorageDirectoriesMock.mockReset();
@@ -111,6 +104,7 @@ describe("AppShell", () => {
     });
     loadActiveWorkspaceIdMock.mockResolvedValue(null);
     saveActiveWorkspaceIdMock.mockResolvedValue(undefined);
+    runDailyBackupMock.mockResolvedValue(undefined);
 
     const { clearSharedErrors } = await import("../hooks/shared-error-store");
     clearSharedErrors();
@@ -136,8 +130,6 @@ describe("AppShell", () => {
     listWorkspacesMock.mockResolvedValue([
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
     ]);
-    getDbMock.mockResolvedValue({});
-    runDailyBackupMock.mockResolvedValue(undefined);
 
     const { AppShell } = await import("./AppShell");
     render(<AppShell />);
@@ -146,7 +138,6 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("workspace-tab-bar")).toBeInTheDocument();
     expect(await screen.findByTestId("workspace-container")).toBeInTheDocument();
-    expect(getDbMock).toHaveBeenCalledTimes(1);
     expect(ensureStorageDirectoriesMock).toHaveBeenCalledTimes(1);
     expect(runDailyBackupMock).toHaveBeenCalledTimes(1);
     expect(ensureStorageDirectoriesMock.mock.invocationCallOrder[0]).toBeLessThan(
@@ -170,8 +161,6 @@ describe("AppShell", () => {
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
       { id: "workspace-2", name: "Workspace 2", icon: "✨", position: 1 },
     ]);
-    getDbMock.mockResolvedValue({});
-    runDailyBackupMock.mockResolvedValue(undefined);
     loadActiveWorkspaceIdMock.mockResolvedValue("workspace-2");
 
     const { AppShell } = await import("./AppShell");
@@ -192,8 +181,6 @@ describe("AppShell", () => {
         resolveWorkspaceLoad = resolve;
       }),
     );
-    getDbMock.mockResolvedValue({});
-    runDailyBackupMock.mockResolvedValue(undefined);
     const onThemePreferenceChange = vi.fn();
     useThemeControllerMock.mockImplementation(() => {
       const [themeState, setThemeState] = useState<{
@@ -237,8 +224,6 @@ describe("AppShell", () => {
 
   it("registers the global keyboard shortcuts hook", async () => {
     listWorkspacesMock.mockResolvedValue([]);
-    getDbMock.mockResolvedValue({});
-    runDailyBackupMock.mockResolvedValue(undefined);
 
     const { AppShell } = await import("./AppShell");
     render(<AppShell />);
@@ -248,8 +233,6 @@ describe("AppShell", () => {
 
   it("wraps the ready shell in the keyboard provider", async () => {
     listWorkspacesMock.mockResolvedValue([]);
-    getDbMock.mockResolvedValue({});
-    runDailyBackupMock.mockResolvedValue(undefined);
 
     const { AppShell } = await import("./AppShell");
     render(<AppShell />);
@@ -260,8 +243,6 @@ describe("AppShell", () => {
 
   it("does not trigger a second workspace load after startup completes with an empty list", async () => {
     listWorkspacesMock.mockResolvedValue([]);
-    getDbMock.mockResolvedValue({});
-    runDailyBackupMock.mockResolvedValue(undefined);
 
     const { AppShell } = await import("./AppShell");
     render(<AppShell />);
@@ -275,8 +256,6 @@ describe("AppShell", () => {
     listWorkspacesMock.mockResolvedValue([
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
     ]);
-    getDbMock.mockResolvedValue({});
-    runDailyBackupMock.mockResolvedValue(undefined);
 
     const { AppShell } = await import("./AppShell");
     const { useAppStore } = await import("../stores/app-store");
@@ -299,8 +278,6 @@ describe("AppShell", () => {
 
   it("does not render the loading screen while initialization is idle", async () => {
     listWorkspacesMock.mockResolvedValue([]);
-    getDbMock.mockResolvedValue({});
-    runDailyBackupMock.mockResolvedValue(undefined);
 
     const { AppShell } = await import("./AppShell");
     const { useAppStore } = await import("../stores/app-store");
@@ -320,7 +297,7 @@ describe("AppShell", () => {
   });
 
   it("renders a retryable startup failure when initialization fails", async () => {
-    getDbMock.mockRejectedValue(new Error("Desktop API not available"));
+    ensureStorageDirectoriesMock.mockRejectedValue(new Error("Storage unavailable"));
 
     const { AppShell } = await import("./AppShell");
     render(<AppShell />);
@@ -329,7 +306,7 @@ describe("AppShell", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Unable to start Phosphene");
-    expect(alert).toHaveTextContent("Desktop API not available");
+    expect(alert).toHaveTextContent("Storage unavailable");
     expect(screen.queryByText("Loading Phosphene...")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
 
@@ -346,9 +323,6 @@ describe("AppShell", () => {
   });
 
   it("retries initialization after a startup failure", async () => {
-    getDbMock.mockResolvedValue({});
-    ensureStorageDirectoriesMock.mockResolvedValue(undefined);
-    runDailyBackupMock.mockResolvedValue(undefined);
     listWorkspacesMock
       .mockRejectedValueOnce(new Error("Workspace scan failed"))
       .mockResolvedValueOnce([{ id: "workspace-1", name: "Home", icon: "🏠", position: 0 }]);
@@ -358,14 +332,12 @@ describe("AppShell", () => {
 
     await screen.findByRole("alert");
 
-    expect(getDbMock).toHaveBeenCalledTimes(1);
     expect(ensureStorageDirectoriesMock).toHaveBeenCalledTimes(1);
     expect(listWorkspacesMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
     expect(await screen.findByTestId("workspace-tab-bar")).toBeInTheDocument();
-    expect(getDbMock).toHaveBeenCalledTimes(2);
     expect(ensureStorageDirectoriesMock).toHaveBeenCalledTimes(2);
     expect(listWorkspacesMock).toHaveBeenCalledTimes(2);
 

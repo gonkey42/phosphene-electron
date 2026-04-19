@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { contextBridge, ipcRenderer } from "electron";
+import type { DatabaseBackupResult } from "./ipc/database";
 
 const LIFECYCLE_FLUSH_REQUEST_EVENT = "phosphene:lifecycle:flush-request";
 const LIFECYCLE_FLUSH_COMPLETE_EVENT = "phosphene:lifecycle:flush-complete";
@@ -27,8 +28,10 @@ type FilesystemResult<T> =
       error: SerializedFilesystemError;
     };
 
-type MutationResult = {
-  rowsAffected: number;
+type StorageDroppedImage = {
+  name: string;
+  mimeType: string;
+  data: Uint8Array;
 };
 
 type BrowserBounds = {
@@ -52,6 +55,7 @@ let lifecycleReady =
   (window as Window & { [LIFECYCLE_READY_FLAG]?: boolean })[LIFECYCLE_READY_FLAG] === true;
 
 const THEME_PREFERENCE_SELECTED_CHANNEL = "theme:preference-selected";
+const THEME_GET_PREFERENCE_CHANNEL = "theme:get-preference";
 const THEME_SET_PREFERENCE_CHANNEL = "theme:set-preference";
 type ThemePreference = "system" | "light" | "dark";
 
@@ -164,62 +168,78 @@ ipcRenderer.on("lifecycle:flush-request", (_event, requestId: string) => {
 });
 
 contextBridge.exposeInMainWorld("desktop", {
-  db: {
-    execute(sql: string, params?: unknown[]): Promise<MutationResult> {
-      return ipcRenderer.invoke("db:execute", sql, params);
+  storage: {
+    ensureDirectories(): Promise<void> {
+      return invokeFilesystem("storage:ensure-directories");
     },
-    select<TRows extends readonly unknown[] = unknown[]>(
-      sql: string,
-      params?: unknown[],
-    ): Promise<TRows> {
-      return ipcRenderer.invoke("db:select", sql, params);
+    runDailyBackup(): Promise<DatabaseBackupResult> {
+      return invokeFilesystem("storage:run-daily-backup");
     },
-    backup(destinationPath: string) {
-      return ipcRenderer.invoke("db:backup", destinationPath);
+    readDroppedImage(path: string): Promise<StorageDroppedImage> {
+      return invokeFilesystem("storage:read-dropped-image", path);
+    },
+    writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array): Promise<string> {
+      return invokeFilesystem("storage:write-board-image", boardId, fileId, mimeType, data);
+    },
+    readBoardImage(path: string): Promise<Uint8Array | null> {
+      return invokeFilesystem("storage:read-board-image", path);
     },
   },
   boards: {
+    list(workspaceId: string | null = null) {
+      return ipcRenderer.invoke("boards:list", workspaceId);
+    },
+    get(boardId: string) {
+      return ipcRenderer.invoke("boards:get", boardId);
+    },
     createBoard(name: string, workspaceId: string | null) {
       return ipcRenderer.invoke("boards:create", name, workspaceId);
     },
+    rename(boardId: string, name: string) {
+      return ipcRenderer.invoke("boards:rename", boardId, name);
+    },
+    delete(boardId: string) {
+      return ipcRenderer.invoke("boards:delete", boardId);
+    },
+    saveCanvasData(boardId: string, canvasData: string) {
+      return ipcRenderer.invoke("boards:save-canvas-data", boardId, canvasData);
+    },
+    saveThumbnail(boardId: string, thumbnail: string) {
+      return ipcRenderer.invoke("boards:save-thumbnail", boardId, thumbnail);
+    },
   },
   workspaces: {
+    list() {
+      return ipcRenderer.invoke("workspaces:list");
+    },
+    get(workspaceId: string) {
+      return ipcRenderer.invoke("workspaces:get", workspaceId);
+    },
     createWorkspace(name: string, icon?: string) {
       return ipcRenderer.invoke("workspaces:create", name, icon);
+    },
+    rename(workspaceId: string, name: string) {
+      return ipcRenderer.invoke("workspaces:rename", workspaceId, name);
+    },
+    delete(workspaceId: string) {
+      return ipcRenderer.invoke("workspaces:delete", workspaceId);
     },
     reorderWorkspaces(orderedIds: string[]) {
       return ipcRenderer.invoke("workspaces:reorder", orderedIds);
     },
-  },
-  fs: {
-    exists(path: string) {
-      return invokeFilesystem<boolean>("fs:exists", path);
+    getLayout(workspaceId: string) {
+      return ipcRenderer.invoke("workspaces:get-layout", workspaceId);
     },
-    mkdir(path: string) {
-      return invokeFilesystem<void>("fs:mkdir", path);
-    },
-    readFile(path: string): Promise<Uint8Array> {
-      return invokeFilesystem<Uint8Array>("fs:readFile", path);
-    },
-    writeFile(path: string, data: Uint8Array) {
-      return invokeFilesystem<void>("fs:writeFile", path, data);
-    },
-    copyFile(src: string, dest: string) {
-      return invokeFilesystem<void>("fs:copyFile", src, dest);
-    },
-    readDir(path: string) {
-      return invokeFilesystem<Array<{ name: string }>>("fs:readDir", path);
-    },
-    remove(path: string) {
-      return invokeFilesystem<void>("fs:remove", path);
+    saveLayout(workspaceId: string, layoutConfig: object) {
+      return ipcRenderer.invoke("workspaces:save-layout", workspaceId, layoutConfig);
     },
   },
-  paths: {
-    appDataDir() {
-      return ipcRenderer.invoke("paths:appDataDir");
+  settings: {
+    getActiveWorkspaceId() {
+      return ipcRenderer.invoke("settings:get-active-workspace-id");
     },
-    join(...parts: string[]) {
-      return ipcRenderer.invoke("paths:join", ...parts);
+    setActiveWorkspaceId(workspaceId: string) {
+      return ipcRenderer.invoke("settings:set-active-workspace-id", workspaceId);
     },
   },
   lifecycle: {
@@ -268,6 +288,9 @@ contextBridge.exposeInMainWorld("desktop", {
     },
   },
   theme: {
+    getPreference() {
+      return ipcRenderer.invoke(THEME_GET_PREFERENCE_CHANNEL);
+    },
     setPreference(preference: "system" | "light" | "dark") {
       return ipcRenderer.invoke(THEME_SET_PREFERENCE_CHANNEL, preference);
     },

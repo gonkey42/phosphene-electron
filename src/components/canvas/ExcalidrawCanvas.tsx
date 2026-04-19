@@ -38,7 +38,6 @@ export function ExcalidrawCanvas({
   const { claimFocus } = useKeyboardContext();
   const resolvedTheme = useAppStore((state) => state.resolvedTheme);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const isReadyRef = useRef(false);
   const activeBoardIdRef = useRef(boardId);
   const wasInteractiveRef = useRef(isInteractive);
@@ -108,7 +107,7 @@ export function ExcalidrawCanvas({
   }, [claimFocus, isInteractive]);
 
   return (
-    <div ref={wrapperRef} className="excalidraw-wrapper" onPointerDown={handlePointerDown}>
+    <div className="excalidraw-wrapper" onPointerDown={handlePointerDown}>
       <Excalidraw
         key={`${boardId}:${reactivationKey}`}
         excalidrawAPI={setExcalidrawApi}
@@ -121,51 +120,3 @@ export function ExcalidrawCanvas({
     </div>
   );
 }
-
-function isPointInsideRect(point: { x: number; y: number }, rect: DOMRect): boolean {
-  return (
-    point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom
-  );
-}
-
-function getDropTarget(wrapper: HTMLDivElement): HTMLElement {
-  return wrapper.firstElementChild instanceof HTMLElement ? wrapper.firstElementChild : wrapper;
-}
-
-function createSyntheticDropEvent(files: File[], point: { x: number; y: number }): Event {
-  const event = new Event("drop", {
-    bubbles: true,
-    cancelable: true,
-  });
-
-  Object.defineProperties(event, {
-    dataTransfer: {
-      value: createDataTransfer(files),
-    },
-    clientX: {
-      value: point.x,
-    },
-    clientY: {
-      value: point.y,
-    },
-  });
-
-  return event;
-}
-
-function createDataTransfer(files: File[]): { files: File[] | FileList } | DataTransfer {
-  if (typeof DataTransfer === "function") {
-    const dataTransfer = new DataTransfer();
-
-    for (const file of files) {
-      dataTransfer.items.add(file);
-    }
-
-    return dataTransfer;
-  }
-
-  return { files };
-}
-
-const task9HelperKeepalive = [isPointInsideRect, getDropTarget, createSyntheticDropEvent];
-void task9HelperKeepalive;

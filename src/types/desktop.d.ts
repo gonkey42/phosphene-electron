@@ -1,14 +1,72 @@
-type DesktopMutationResult = {
-  rowsAffected: number;
-};
+interface DesktopBoardListItem {
+  id: string;
+  workspaceId: string | null;
+  name: string;
+  description: string | null;
+  position: number;
+  updatedAt: string;
+}
 
-interface DesktopDatabase {
-  execute(sql: string, params?: unknown[]): Promise<DesktopMutationResult>;
-  select<TRows extends readonly unknown[] = unknown[]>(
-    sql: string,
-    params?: unknown[],
-  ): Promise<TRows>;
-  backup(destinationPath: string): Promise<
+interface DesktopBoardRecord {
+  id: string;
+  workspaceId: string | null;
+  name: string;
+  description: string | null;
+  canvasData: string | null;
+  thumbnail: string | null;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+interface DesktopBoardsAPI {
+  list(workspaceId?: string | null): Promise<DesktopBoardListItem[]>;
+  get(boardId: string): Promise<DesktopBoardRecord | null>;
+  createBoard(name: string, workspaceId: string | null): Promise<string>;
+  rename(boardId: string, name: string): Promise<void>;
+  delete(boardId: string): Promise<void>;
+  saveCanvasData(boardId: string, canvasData: string): Promise<void>;
+  saveThumbnail(boardId: string, thumbnail: string): Promise<void>;
+}
+
+interface DesktopWorkspaceListItem {
+  id: string;
+  name: string;
+  icon: string | null;
+  position: number;
+}
+
+interface DesktopWorkspaceRecord {
+  id: string;
+  name: string;
+  icon: string | null;
+  position: number;
+  layoutConfig: object | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+interface DesktopWorkspacesAPI {
+  list(): Promise<DesktopWorkspaceListItem[]>;
+  get(workspaceId: string): Promise<DesktopWorkspaceRecord | null>;
+  createWorkspace(name: string, icon?: string): Promise<string>;
+  rename(workspaceId: string, name: string): Promise<void>;
+  delete(workspaceId: string): Promise<boolean>;
+  reorderWorkspaces(orderedIds: string[]): Promise<void>;
+  getLayout(workspaceId: string): Promise<object | null>;
+  saveLayout(workspaceId: string, layoutConfig: object): Promise<void>;
+}
+
+interface DesktopSettingsAPI {
+  getActiveWorkspaceId(): Promise<string | null>;
+  setActiveWorkspaceId(workspaceId: string): Promise<void>;
+}
+
+interface DesktopStorageAPI {
+  ensureDirectories(): Promise<void>;
+  runDailyBackup(): Promise<
     | {
         status: "created";
         destinationPath: string;
@@ -25,30 +83,13 @@ interface DesktopDatabase {
         message: string;
       }
   >;
-}
-
-interface DesktopBoardsAPI {
-  createBoard(name: string, workspaceId: string | null): Promise<string>;
-}
-
-interface DesktopWorkspacesAPI {
-  createWorkspace(name: string, icon?: string): Promise<string>;
-  reorderWorkspaces(orderedIds: string[]): Promise<void>;
-}
-
-interface DesktopFilesystem {
-  exists(path: string): Promise<boolean>;
-  mkdir(path: string): Promise<void>;
-  readFile(path: string): Promise<Uint8Array>;
-  writeFile(path: string, data: Uint8Array): Promise<void>;
-  copyFile(src: string, dest: string): Promise<void>;
-  readDir(path: string): Promise<Array<{ name: string }>>;
-  remove(path: string): Promise<void>;
-}
-
-interface DesktopPaths {
-  appDataDir(): Promise<string>;
-  join(...parts: string[]): Promise<string>;
+  readDroppedImage(path: string): Promise<{
+    name: string;
+    mimeType: string;
+    data: Uint8Array;
+  }>;
+  writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array): Promise<string>;
+  readBoardImage(path: string): Promise<Uint8Array | null>;
 }
 
 interface DesktopLifecycle {
@@ -89,19 +130,19 @@ interface DesktopContextMenuAPI {
 type DesktopThemePreference = "system" | "light" | "dark";
 
 interface DesktopThemeAPI {
+  getPreference(): Promise<DesktopThemePreference>;
   setPreference(preference: DesktopThemePreference): Promise<void>;
   onPreferenceSelected(callback: (preference: DesktopThemePreference) => void): () => void;
 }
 
 interface DesktopAPI {
-  db: DesktopDatabase;
   boards: DesktopBoardsAPI;
   workspaces: DesktopWorkspacesAPI;
-  fs: DesktopFilesystem;
-  paths: DesktopPaths;
+  storage: DesktopStorageAPI;
   lifecycle: DesktopLifecycle;
   browser: DesktopBrowserAPI;
   contextMenu: DesktopContextMenuAPI;
+  settings: DesktopSettingsAPI;
   theme: DesktopThemeAPI;
 }
 

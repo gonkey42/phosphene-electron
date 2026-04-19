@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -21,17 +21,31 @@ export function WorkspaceContainer() {
     previousActiveWorkspaceId,
     renderedActiveWorkspaceId,
     renderedActiveWorkspaceIndex,
-    mountedWorkspaces,
     mountedWorkspaceIds,
     direction,
   } = useWorkspaceMounting(workspaces, activeWorkspaceId);
   const previousActiveWorkspaceIdRef = useRef(previousActiveWorkspaceId);
+  const previousMountedWorkspaceIdsRef = useRef<string[]>(mountedWorkspaceIds);
+  previousActiveWorkspaceIdRef.current = previousActiveWorkspaceId;
+  const renderedWorkspaceIds = useMemo(() => {
+    const ids = new Set(mountedWorkspaceIds);
+
+    if (exitingWorkspaceId) {
+      ids.add(exitingWorkspaceId);
+    }
+
+    return ids;
+  }, [exitingWorkspaceId, mountedWorkspaceIds]);
+  const renderedWorkspaces = useMemo(
+    () => workspaces.filter((workspace) => renderedWorkspaceIds.has(workspace.id)),
+    [renderedWorkspaceIds, workspaces],
+  );
 
   useEffect(() => {
-    previousActiveWorkspaceIdRef.current = previousActiveWorkspaceId;
-  }, [previousActiveWorkspaceId]);
+    previousMountedWorkspaceIdsRef.current = mountedWorkspaceIds;
+  }, [mountedWorkspaceIds]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousWorkspaceId = previousActiveWorkspaceIdRef.current;
 
     if (activeWorkspaceIndex < 0) {
@@ -51,13 +65,13 @@ export function WorkspaceContainer() {
 
   return (
     <div className="workspace-viewport">
-      {mountedWorkspaces.map((workspace) => {
+      {renderedWorkspaces.map((workspace) => {
         const isActive = workspace.id === renderedActiveWorkspaceId;
         const isExiting = workspace.id === exitingWorkspaceId;
         const isVisible = isActive || isExiting;
         const isInteractive = isActive;
         const workspaceIndex = workspaces.findIndex((item) => item.id === workspace.id);
-        const hasMountedWorkspace = mountedWorkspaceIds.includes(workspace.id);
+        const hasMountedWorkspace = previousMountedWorkspaceIdsRef.current.includes(workspace.id);
 
         return (
           <motion.div

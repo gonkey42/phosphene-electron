@@ -116,6 +116,19 @@ describe("registerDatabaseIPC", () => {
     expect(runMock.mock.calls.length).toBe(runCallsBefore);
   });
 
+  it("preserves SQL string literals while translating positional placeholders for execute handlers", async () => {
+    const { registerDatabaseIPC } = await import("./database");
+
+    registerDatabaseIPC("/app/data");
+
+    const executeHandler = handleMock.mock.calls.find(([channel]) => channel === "db:execute")?.[1];
+
+    executeHandler({}, "UPDATE boards SET name = '$1' WHERE id = $1", ["board-1"]);
+
+    expect(prepareMock).toHaveBeenCalledWith("UPDATE boards SET name = '$1' WHERE id = ?");
+    expect(runMock).toHaveBeenCalledWith("board-1");
+  });
+
   it("rejects malformed select payloads before preparing SQL", async () => {
     const { registerDatabaseIPC } = await import("./database");
 
@@ -147,6 +160,123 @@ describe("registerDatabaseIPC", () => {
       "[IPC db:backup] Invalid payload: expected destinationPath to be a string",
     );
     expect(backupMock).not.toHaveBeenCalled();
+  });
+
+  it("registers additive board, workspace, and settings persistence channels", async () => {
+    const { registerDatabaseIPC } = await import("./database");
+
+    registerDatabaseIPC("/app/data");
+
+    const channels = handleMock.mock.calls.map(([channel]) => channel);
+
+    expect(channels).toEqual(
+      expect.arrayContaining([
+        "db:execute",
+        "db:select",
+        "db:backup",
+        "boards:create",
+        "boards:list",
+        "boards:get",
+        "boards:rename",
+        "boards:delete",
+        "boards:save-canvas-data",
+        "boards:save-thumbnail",
+        "workspaces:create",
+        "workspaces:reorder",
+        "workspaces:list",
+        "workspaces:get",
+        "workspaces:rename",
+        "workspaces:delete",
+        "workspaces:get-layout",
+        "workspaces:save-layout",
+        "settings:get-active-workspace-id",
+        "settings:set-active-workspace-id",
+      ]),
+    );
+  });
+
+  it("rejects duplicate workspace IDs before persisting reorder positions", async () => {
+    const activeWorkspaces = [
+      { id: "workspace-1" },
+      { id: "workspace-2" },
+      { id: "workspace-3" },
+    ];
+    let updateCalls = 0;
+
+    const database = {
+      prepare(sql: string) {
+        if (sql === "SELECT id FROM workspaces WHERE deleted_at IS NULL ORDER BY position") {
+          return {
+            all() {
+              return activeWorkspaces;
+            },
+          };
+        }
+
+        if (sql === "UPDATE workspaces SET position = ? WHERE id = ? AND deleted_at IS NULL") {
+          return {
+            run() {
+              updateCalls += 1;
+              return { changes: 1 };
+            },
+          };
+        }
+
+        throw new Error(`Unexpected SQL: ${sql}`);
+      },
+      transaction(callback: (...args: any[]) => unknown) {
+        return (...args: any[]) => callback(...args);
+      },
+    };
+
+    const { reorderWorkspaces } = await import("./database");
+
+    expect(() =>
+      reorderWorkspaces(database as never, ["workspace-1", "workspace-1", "workspace-3"]),
+    ).toThrow("Workspace reorder payload must contain each active workspace exactly once");
+    expect(updateCalls).toBe(0);
+  });
+
+  it("rejects partial workspace reorder payloads before persisting positions", async () => {
+    const activeWorkspaces = [
+      { id: "workspace-1" },
+      { id: "workspace-2" },
+      { id: "workspace-3" },
+    ];
+    let updateCalls = 0;
+
+    const database = {
+      prepare(sql: string) {
+        if (sql === "SELECT id FROM workspaces WHERE deleted_at IS NULL ORDER BY position") {
+          return {
+            all() {
+              return activeWorkspaces;
+            },
+          };
+        }
+
+        if (sql === "UPDATE workspaces SET position = ? WHERE id = ? AND deleted_at IS NULL") {
+          return {
+            run() {
+              updateCalls += 1;
+              return { changes: 1 };
+            },
+          };
+        }
+
+        throw new Error(`Unexpected SQL: ${sql}`);
+      },
+      transaction(callback: (...args: any[]) => unknown) {
+        return (...args: any[]) => callback(...args);
+      },
+    };
+
+    const { reorderWorkspaces } = await import("./database");
+
+    expect(() => reorderWorkspaces(database as never, ["workspace-1", "workspace-3"])).toThrow(
+      "Workspace reorder payload must contain each active workspace exactly once",
+    );
+    expect(updateCalls).toBe(0);
   });
 
   it("backs up the database through SQLite instead of copying the db file directly", async () => {
@@ -426,6 +556,14 @@ describe("registerDatabaseIPC", () => {
 
     const database = {
       prepare(sql: string) {
+        if (sql === "SELECT id FROM workspaces WHERE deleted_at IS NULL ORDER BY position") {
+          return {
+            all() {
+              return state.workspaces.map((workspace) => ({ id: workspace.id }));
+            },
+          };
+        }
+
         if (sql === "UPDATE workspaces SET position = ? WHERE id = ? AND deleted_at IS NULL") {
           return {
             run(position: number, id: string) {
@@ -481,6 +619,14 @@ describe("registerDatabaseIPC", () => {
 
     const database = {
       prepare(sql: string) {
+        if (sql === "SELECT id FROM workspaces WHERE deleted_at IS NULL ORDER BY position") {
+          return {
+            all() {
+              return state.workspaces.map((workspace) => ({ id: workspace.id }));
+            },
+          };
+        }
+
         if (sql === "UPDATE workspaces SET position = ? WHERE id = ? AND deleted_at IS NULL") {
           return {
             run(position: number, id: string) {

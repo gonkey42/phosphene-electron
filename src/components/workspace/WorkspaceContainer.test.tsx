@@ -2,6 +2,7 @@ import type { HTMLAttributes, ReactNode } from "react";
 
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { flushSync } from "react-dom";
 
 const { sidebarMock, canvasPanelMock, motionDivMock, panelLayoutMock } = vi.hoisted(() => ({
   sidebarMock: vi.fn(),
@@ -342,6 +343,23 @@ describe("WorkspaceContainer", () => {
     }
   });
 
+  it("preserves the outgoing workspace during the active-workspace handoff frame", () => {
+    vi.useFakeTimers();
+
+    try {
+      render(<WorkspaceContainer />);
+
+      flushSync(() => {
+        useAppStore.setState({ activeWorkspaceId: "workspace-5" });
+      });
+
+      expect(screen.getByTestId("workspace-page-motion-workspace-3")).toBeInTheDocument();
+      expect(screen.getByTestId("workspace-page-motion-workspace-5")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("hides outgoing workspace pages from the accessibility tree during exit transitions", () => {
     vi.useFakeTimers();
 
@@ -365,7 +383,7 @@ describe("WorkspaceContainer", () => {
     }
   });
 
-  it("lazy-mounts distant workspaces on first activation and keeps them mounted afterwards", () => {
+  it("keeps the outgoing workspace mounted only until its exit animation completes", () => {
     vi.useFakeTimers();
 
     try {
@@ -386,19 +404,22 @@ describe("WorkspaceContainer", () => {
         useAppStore.setState({ activeWorkspaceId: "workspace-3" });
       });
 
+      expect(screen.getByTestId("sidebar-workspace-5")).toBeInTheDocument();
+      expect(screen.getByTestId("canvas-workspace-5")).toBeInTheDocument();
+
       act(() => {
         vi.advanceTimersByTime(400);
       });
 
-      expect(screen.getByTestId("sidebar-workspace-5")).toBeInTheDocument();
-      expect(screen.getByTestId("canvas-workspace-5")).toBeInTheDocument();
-      expect(screen.getByTestId("workspace-page-motion-workspace-5")).toHaveClass("hidden");
+      expect(screen.queryByTestId("sidebar-workspace-5")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("canvas-workspace-5")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("workspace-page-motion-workspace-5")).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("keeps previously mounted workspaces sticky after they fall out of range", () => {
+  it("keeps only the active workspace neighborhood mounted after a distant activation", () => {
     vi.useFakeTimers();
 
     try {
@@ -408,16 +429,29 @@ describe("WorkspaceContainer", () => {
         useAppStore.setState({ activeWorkspaceId: "workspace-5" });
       });
 
+      expect(screen.queryByTestId("sidebar-workspace-2")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("canvas-workspace-2")).not.toBeInTheDocument();
+      expect(screen.getByTestId("sidebar-workspace-3")).toBeInTheDocument();
+      expect(screen.getByTestId("canvas-workspace-3")).toBeInTheDocument();
+      expect(screen.getByTestId("workspace-page-motion-workspace-3")).not.toHaveClass(
+        "hidden",
+      );
+      expect(screen.getByTestId("sidebar-workspace-4")).toBeInTheDocument();
+      expect(screen.getByTestId("canvas-workspace-4")).toBeInTheDocument();
+      expect(screen.getByTestId("sidebar-workspace-5")).toBeInTheDocument();
+      expect(screen.getByTestId("canvas-workspace-5")).toBeInTheDocument();
+
       act(() => {
         vi.advanceTimersByTime(400);
       });
 
-      expect(screen.getByTestId("sidebar-workspace-2")).toBeInTheDocument();
-      expect(screen.getByTestId("canvas-workspace-2")).toBeInTheDocument();
-      expect(screen.getByTestId("workspace-page-motion-workspace-2")).toHaveClass("hidden");
-      expect(screen.getByTestId("sidebar-workspace-3")).toBeInTheDocument();
-      expect(screen.getByTestId("canvas-workspace-3")).toBeInTheDocument();
-      expect(screen.getByTestId("workspace-page-motion-workspace-3")).toHaveClass("hidden");
+      expect(screen.queryByTestId("sidebar-workspace-3")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("canvas-workspace-3")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("workspace-page-motion-workspace-3")).not.toBeInTheDocument();
+      expect(screen.getByTestId("sidebar-workspace-4")).toBeInTheDocument();
+      expect(screen.getByTestId("canvas-workspace-4")).toBeInTheDocument();
+      expect(screen.getByTestId("sidebar-workspace-5")).toBeInTheDocument();
+      expect(screen.getByTestId("canvas-workspace-5")).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

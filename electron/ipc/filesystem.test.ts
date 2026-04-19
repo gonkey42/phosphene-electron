@@ -8,6 +8,9 @@ const writeFileMock = vi.fn();
 const copyFileMock = vi.fn();
 const readdirMock = vi.fn();
 const unlinkMock = vi.fn();
+const statMock = vi.fn();
+const backupDatabaseMock = vi.fn();
+const getDatabaseMock = vi.fn();
 
 vi.mock("electron", () => ({
   ipcMain: {
@@ -24,7 +27,13 @@ vi.mock("node:fs/promises", () => ({
     copyFile: copyFileMock,
     readdir: readdirMock,
     unlink: unlinkMock,
+    stat: statMock,
   },
+}));
+
+vi.mock("./database", () => ({
+  backupDatabase: backupDatabaseMock,
+  getDatabase: getDatabaseMock,
 }));
 
 describe("registerFilesystemIPC", () => {
@@ -38,6 +47,9 @@ describe("registerFilesystemIPC", () => {
     copyFileMock.mockReset();
     readdirMock.mockReset();
     unlinkMock.mockReset();
+    statMock.mockReset();
+    backupDatabaseMock.mockReset();
+    getDatabaseMock.mockReset();
   });
 
   it("registers the paths handlers with validated joins for preload callers", async () => {
@@ -164,5 +176,175 @@ describe("registerFilesystemIPC", () => {
     );
 
     expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it("reads dropped images with renderer-friendly metadata", async () => {
+    const { registerFilesystemIPC } = await import("./filesystem");
+
+    registerFilesystemIPC("/app/data");
+
+    const droppedImageHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === "storage:read-dropped-image",
+    )?.[1];
+
+    readFileMock.mockResolvedValueOnce(Uint8Array.from([112, 110, 103]));
+
+    await expect(droppedImageHandler({}, "/tmp/canvas/board.PNG")).resolves.toEqual({
+      ok: true,
+      value: {
+        name: "board.PNG",
+        mimeType: "image/png",
+        data: Uint8Array.from([112, 110, 103]),
+      },
+    });
+    expect(readFileMock).toHaveBeenCalledWith("/tmp/canvas/board.PNG");
+  });
+
+  it("writes and reads board images beneath the images area using relative paths", async () => {
+    const { registerFilesystemIPC } = await import("./filesystem");
+
+    registerFilesystemIPC("/app/data");
+
+    const writeBoardImageHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === "storage:write-board-image",
+    )?.[1];
+    const readBoardImageHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === "storage:read-board-image",
+    )?.[1];
+
+    writeFileMock.mockResolvedValueOnce(undefined);
+    readFileMock.mockResolvedValueOnce(Uint8Array.from([9, 8, 7]));
+
+    await expect(
+      writeBoardImageHandler({}, "board-1", "file-1", "image/png", Uint8Array.from([1, 2, 3])),
+    ).resolves.toEqual({
+      ok: true,
+      value: "images/board-1_file-1.png",
+    });
+    expect(writeFileMock).toHaveBeenCalledWith(
+      "/app/data/images/board-1_file-1.png",
+      Uint8Array.from([1, 2, 3]),
+    );
+
+    await expect(readBoardImageHandler({}, "images/board-1_file-1.png")).resolves.toEqual({
+      ok: true,
+      value: Uint8Array.from([9, 8, 7]),
+    });
+    expect(readFileMock).toHaveBeenCalledWith("/app/data/images/board-1_file-1.png");
+
+    readFileMock.mockRejectedValueOnce(Object.assign(new Error("missing"), { code: "ENOENT" }));
+    await expect(readBoardImageHandler({}, "images/missing.png")).resolves.toEqual({
+      ok: true,
+      value: null,
+    });
+  });
+
+  it("rejects board image traversal outside the images area before touching the filesystem", async () => {
+    const { registerFilesystemIPC } = await import("./filesystem");
+
+    registerFilesystemIPC("/app/data");
+
+    const writeBoardImageHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === "storage:write-board-image",
+    )?.[1];
+    const readBoardImageHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === "storage:read-board-image",
+    )?.[1];
+
+    await expect(
+      writeBoardImageHandler(
+        {},
+        "../escape",
+        "file-1",
+        "image/png",
+        Uint8Array.from([1, 2, 3]),
+      ),
+    ).rejects.toThrow(
+      "[IPC storage:write-board-image] Invalid payload: expected board image path to stay within app data",
+    );
+    await expect(readBoardImageHandler({}, "images/../escape.png")).rejects.toThrow(
+      "[IPC storage:read-board-image] Invalid payload: expected board image path to stay within app data",
+    );
+
+    expect(readFileMock).not.toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
+
+  it("creates backups, skips cleanup on skipped backup, and surfaces failure results", async () => {
+    const { registerFilesystemIPC } = await import("./filesystem");
+
+    registerFilesystemIPC("/app/data");
+
+    const backupHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === "storage:run-daily-backup",
+    )?.[1];
+
+    getDatabaseMock.mockReturnValue({ database: true });
+    backupDatabaseMock.mockResolvedValueOnce({
+      status: "created",
+      destinationPath: "/app/data/backups/phosphene-2026-04-19.db",
+    });
+    readdirMock.mockResolvedValueOnce([
+      { name: "phosphene-2026-04-19.db", isFile: () => true },
+      { name: "phosphene-2026-04-18.db", isFile: () => true },
+      { name: "phosphene-2026-04-17.db", isFile: () => true },
+      { name: "phosphene-2026-04-16.db", isFile: () => true },
+      { name: "phosphene-2026-04-15.db", isFile: () => true },
+      { name: "phosphene-2026-04-14.db", isFile: () => true },
+      { name: "phosphene-2026-04-13.db", isFile: () => true },
+      { name: "phosphene-2026-04-12.db", isFile: () => true },
+    ]);
+
+    await expect(backupHandler({}, undefined)).resolves.toEqual({
+      ok: true,
+      value: {
+        status: "created",
+        destinationPath: "/app/data/backups/phosphene-2026-04-19.db",
+      },
+    });
+    expect(backupDatabaseMock).toHaveBeenCalledWith(
+      { database: true },
+      "/app/data/backups/phosphene-2026-04-19.db",
+    );
+    expect(readdirMock).toHaveBeenCalledWith("/app/data/backups", { withFileTypes: true });
+    expect(unlinkMock).toHaveBeenCalledWith("/app/data/backups/phosphene-2026-04-12.db");
+
+    backupDatabaseMock.mockResolvedValueOnce({
+      status: "skipped",
+      reason: "already-exists",
+      destinationPath: "/app/data/backups/phosphene-2026-04-19.db",
+    });
+    readdirMock.mockClear();
+    unlinkMock.mockClear();
+
+    await expect(backupHandler({}, undefined)).resolves.toEqual({
+      ok: true,
+      value: {
+        status: "skipped",
+        reason: "already-exists",
+        destinationPath: "/app/data/backups/phosphene-2026-04-19.db",
+      },
+    });
+    expect(readdirMock).not.toHaveBeenCalled();
+    expect(unlinkMock).not.toHaveBeenCalled();
+
+    backupDatabaseMock.mockResolvedValueOnce({
+      status: "failed",
+      reason: "backup-failed",
+      destinationPath: "/app/data/backups/phosphene-2026-04-19.db",
+      message: "boom",
+    });
+
+    await expect(backupHandler({}, undefined)).resolves.toEqual({
+      ok: true,
+      value: {
+        status: "failed",
+        reason: "backup-failed",
+        destinationPath: "/app/data/backups/phosphene-2026-04-19.db",
+        message: "boom",
+      },
+    });
+    expect(readdirMock).not.toHaveBeenCalled();
+    expect(unlinkMock).not.toHaveBeenCalled();
   });
 });

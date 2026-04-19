@@ -1,4 +1,4 @@
-import { fs } from "../platform/desktop-api";
+import { storage } from "../platform/desktop-api";
 
 export function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -20,18 +20,8 @@ export function isSupportedImagePath(path: string): boolean {
 }
 
 export async function readImagePathAsFile(path: string): Promise<File> {
-  const mimeType = getMimeTypeFromPath(path);
-
-  if (!mimeType) {
-    throw new Error(`Unsupported dropped image path: ${path}`);
-  }
-
-  const bytes = await fs.readFile(path);
-  return new File([bytes], getFileName(path), { type: mimeType });
-}
-
-function getFileName(path: string): string {
-  return path.split(/[/\\]/).pop() ?? "image";
+  const droppedImage = await storage.readDroppedImage(path);
+  return new File([droppedImage.data], droppedImage.name, { type: droppedImage.mimeType });
 }
 
 function getMimeTypeFromPath(path: string): string | null {
