@@ -25,6 +25,46 @@ export type MutationResult = {
   rowsAffected: number;
 };
 
+export type BoardListItem = {
+  id: string;
+  workspaceId: string | null;
+  name: string;
+  description: string | null;
+  position: number;
+  updatedAt: string;
+};
+
+export type BoardRecord = {
+  id: string;
+  workspaceId: string | null;
+  name: string;
+  description: string | null;
+  canvasData: string | null;
+  thumbnail: string | null;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+};
+
+export type WorkspaceListItem = {
+  id: string;
+  name: string;
+  icon: string | null;
+  position: number;
+};
+
+export type WorkspaceRecord = {
+  id: string;
+  name: string;
+  icon: string | null;
+  position: number;
+  layoutConfig: object | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+};
+
 export type BrowserBounds = {
   x: number;
   y: number;
@@ -147,17 +187,62 @@ export const db = {
 };
 
 export const boards = {
+  list(workspaceId: string | null = null) {
+    return getDesktop().boards.list(workspaceId);
+  },
+  get(boardId: string) {
+    return getDesktop().boards.get(boardId);
+  },
   createBoard(name: string, workspaceId: string | null): Promise<string> {
     return getDesktop().boards.createBoard(name, workspaceId);
+  },
+  rename(boardId: string, name: string) {
+    return getDesktop().boards.rename(boardId, name);
+  },
+  delete(boardId: string) {
+    return getDesktop().boards.delete(boardId);
+  },
+  saveCanvasData(boardId: string, canvasData: string) {
+    return getDesktop().boards.saveCanvasData(boardId, canvasData);
+  },
+  saveThumbnail(boardId: string, thumbnail: string) {
+    return getDesktop().boards.saveThumbnail(boardId, thumbnail);
   },
 };
 
 export const workspaces = {
+  list() {
+    return getDesktop().workspaces.list();
+  },
+  get(workspaceId: string) {
+    return getDesktop().workspaces.get(workspaceId);
+  },
   createWorkspace(name: string, icon?: string): Promise<string> {
     return getDesktop().workspaces.createWorkspace(name, icon);
   },
+  rename(workspaceId: string, name: string) {
+    return getDesktop().workspaces.rename(workspaceId, name);
+  },
+  delete(workspaceId: string) {
+    return getDesktop().workspaces.delete(workspaceId);
+  },
   reorderWorkspaces(orderedIds: string[]): Promise<void> {
     return getDesktop().workspaces.reorderWorkspaces(orderedIds);
+  },
+  getLayout(workspaceId: string) {
+    return getDesktop().workspaces.getLayout(workspaceId);
+  },
+  saveLayout(workspaceId: string, layoutConfig: object) {
+    return getDesktop().workspaces.saveLayout(workspaceId, layoutConfig);
+  },
+};
+
+export const settings = {
+  getActiveWorkspaceId() {
+    return getDesktop().settings.getActiveWorkspaceId();
+  },
+  setActiveWorkspaceId(workspaceId: string) {
+    return getDesktop().settings.setActiveWorkspaceId(workspaceId);
   },
 };
 
@@ -244,6 +329,9 @@ export const contextMenu = {
 };
 
 export const theme = {
+  getPreference() {
+    return getDesktop().theme.getPreference();
+  },
   setPreference(preference: "system" | "light" | "dark") {
     return getDesktop().theme.setPreference(preference);
   },

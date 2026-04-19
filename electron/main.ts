@@ -31,6 +31,7 @@ const QUIT_FLUSH_TIMEOUT_MS = 1500;
 const closeApprovedWindowIds = new Set<number>();
 const closeFlushInProgressWindowIds = new Set<number>();
 const THEME_PREFERENCE_SELECTED_CHANNEL = "theme:preference-selected";
+const THEME_GET_PREFERENCE_CHANNEL = "theme:get-preference";
 const THEME_SET_PREFERENCE_CHANNEL = "theme:set-preference";
 
 type ThemePreference = "system" | "light" | "dark";
@@ -353,7 +354,16 @@ function hydratePersistedThemePreference() {
   hasCurrentThemePreference = true;
 }
 
+function getThemePreference(): ThemePreference {
+  if (!hasCurrentThemePreference) {
+    hydratePersistedThemePreference();
+  }
+
+  return currentThemePreference;
+}
+
 function registerThemePreferenceIPC() {
+  ipcMain.handle(THEME_GET_PREFERENCE_CHANNEL, async () => getThemePreference());
   ipcMain.handle(THEME_SET_PREFERENCE_CHANNEL, async (_event, preference: string) => {
     if (!isThemePreference(preference)) {
       throw new Error(`Invalid theme preference: ${preference}`);

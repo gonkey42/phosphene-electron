@@ -27,13 +27,70 @@ interface DesktopDatabase {
   >;
 }
 
+interface DesktopBoardListItem {
+  id: string;
+  workspaceId: string | null;
+  name: string;
+  description: string | null;
+  position: number;
+  updatedAt: string;
+}
+
+interface DesktopBoardRecord {
+  id: string;
+  workspaceId: string | null;
+  name: string;
+  description: string | null;
+  canvasData: string | null;
+  thumbnail: string | null;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
 interface DesktopBoardsAPI {
+  list(workspaceId?: string | null): Promise<DesktopBoardListItem[]>;
+  get(boardId: string): Promise<DesktopBoardRecord | null>;
   createBoard(name: string, workspaceId: string | null): Promise<string>;
+  rename(boardId: string, name: string): Promise<void>;
+  delete(boardId: string): Promise<void>;
+  saveCanvasData(boardId: string, canvasData: string): Promise<void>;
+  saveThumbnail(boardId: string, thumbnail: string): Promise<void>;
+}
+
+interface DesktopWorkspaceListItem {
+  id: string;
+  name: string;
+  icon: string | null;
+  position: number;
+}
+
+interface DesktopWorkspaceRecord {
+  id: string;
+  name: string;
+  icon: string | null;
+  position: number;
+  layoutConfig: object | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
 }
 
 interface DesktopWorkspacesAPI {
+  list(): Promise<DesktopWorkspaceListItem[]>;
+  get(workspaceId: string): Promise<DesktopWorkspaceRecord | null>;
   createWorkspace(name: string, icon?: string): Promise<string>;
+  rename(workspaceId: string, name: string): Promise<void>;
+  delete(workspaceId: string): Promise<boolean>;
   reorderWorkspaces(orderedIds: string[]): Promise<void>;
+  getLayout(workspaceId: string): Promise<object | null>;
+  saveLayout(workspaceId: string, layoutConfig: object): Promise<void>;
+}
+
+interface DesktopSettingsAPI {
+  getActiveWorkspaceId(): Promise<string | null>;
+  setActiveWorkspaceId(workspaceId: string): Promise<void>;
 }
 
 interface DesktopFilesystem {
@@ -89,6 +146,7 @@ interface DesktopContextMenuAPI {
 type DesktopThemePreference = "system" | "light" | "dark";
 
 interface DesktopThemeAPI {
+  getPreference(): Promise<DesktopThemePreference>;
   setPreference(preference: DesktopThemePreference): Promise<void>;
   onPreferenceSelected(callback: (preference: DesktopThemePreference) => void): () => void;
 }
@@ -102,6 +160,7 @@ interface DesktopAPI {
   lifecycle: DesktopLifecycle;
   browser: DesktopBrowserAPI;
   contextMenu: DesktopContextMenuAPI;
+  settings: DesktopSettingsAPI;
   theme: DesktopThemeAPI;
 }
 

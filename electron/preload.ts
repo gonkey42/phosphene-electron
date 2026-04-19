@@ -52,6 +52,7 @@ let lifecycleReady =
   (window as Window & { [LIFECYCLE_READY_FLAG]?: boolean })[LIFECYCLE_READY_FLAG] === true;
 
 const THEME_PREFERENCE_SELECTED_CHANNEL = "theme:preference-selected";
+const THEME_GET_PREFERENCE_CHANNEL = "theme:get-preference";
 const THEME_SET_PREFERENCE_CHANNEL = "theme:set-preference";
 type ThemePreference = "system" | "light" | "dark";
 
@@ -179,16 +180,60 @@ contextBridge.exposeInMainWorld("desktop", {
     },
   },
   boards: {
+    list(workspaceId: string | null = null) {
+      return ipcRenderer.invoke("boards:list", workspaceId);
+    },
+    get(boardId: string) {
+      return ipcRenderer.invoke("boards:get", boardId);
+    },
     createBoard(name: string, workspaceId: string | null) {
       return ipcRenderer.invoke("boards:create", name, workspaceId);
     },
+    rename(boardId: string, name: string) {
+      return ipcRenderer.invoke("boards:rename", boardId, name);
+    },
+    delete(boardId: string) {
+      return ipcRenderer.invoke("boards:delete", boardId);
+    },
+    saveCanvasData(boardId: string, canvasData: string) {
+      return ipcRenderer.invoke("boards:save-canvas-data", boardId, canvasData);
+    },
+    saveThumbnail(boardId: string, thumbnail: string) {
+      return ipcRenderer.invoke("boards:save-thumbnail", boardId, thumbnail);
+    },
   },
   workspaces: {
+    list() {
+      return ipcRenderer.invoke("workspaces:list");
+    },
+    get(workspaceId: string) {
+      return ipcRenderer.invoke("workspaces:get", workspaceId);
+    },
     createWorkspace(name: string, icon?: string) {
       return ipcRenderer.invoke("workspaces:create", name, icon);
     },
+    rename(workspaceId: string, name: string) {
+      return ipcRenderer.invoke("workspaces:rename", workspaceId, name);
+    },
+    delete(workspaceId: string) {
+      return ipcRenderer.invoke("workspaces:delete", workspaceId);
+    },
     reorderWorkspaces(orderedIds: string[]) {
       return ipcRenderer.invoke("workspaces:reorder", orderedIds);
+    },
+    getLayout(workspaceId: string) {
+      return ipcRenderer.invoke("workspaces:get-layout", workspaceId);
+    },
+    saveLayout(workspaceId: string, layoutConfig: object) {
+      return ipcRenderer.invoke("workspaces:save-layout", workspaceId, layoutConfig);
+    },
+  },
+  settings: {
+    getActiveWorkspaceId() {
+      return ipcRenderer.invoke("settings:get-active-workspace-id");
+    },
+    setActiveWorkspaceId(workspaceId: string) {
+      return ipcRenderer.invoke("settings:set-active-workspace-id", workspaceId);
     },
   },
   fs: {
@@ -268,6 +313,9 @@ contextBridge.exposeInMainWorld("desktop", {
     },
   },
   theme: {
+    getPreference() {
+      return ipcRenderer.invoke(THEME_GET_PREFERENCE_CHANNEL);
+    },
     setPreference(preference: "system" | "light" | "dark") {
       return ipcRenderer.invoke(THEME_SET_PREFERENCE_CHANNEL, preference);
     },

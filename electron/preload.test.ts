@@ -17,11 +17,47 @@ type ExposedDesktop = {
     backup(destinationPath: string): Promise<unknown>;
   };
   boards: {
+    list(workspaceId?: string | null): Promise<Array<{ id: string; workspaceId: string | null; name: string; description: string | null; position: number; updatedAt: string }>>;
+    get(boardId: string): Promise<{
+      id: string;
+      workspaceId: string | null;
+      name: string;
+      description: string | null;
+      canvasData: string | null;
+      thumbnail: string | null;
+      position: number;
+      createdAt: string;
+      updatedAt: string;
+      deletedAt: string | null;
+    } | null>;
     createBoard(name: string, workspaceId: string | null): Promise<string>;
+    rename(boardId: string, name: string): Promise<void>;
+    delete(boardId: string): Promise<void>;
+    saveCanvasData(boardId: string, canvasData: string): Promise<void>;
+    saveThumbnail(boardId: string, thumbnail: string): Promise<void>;
   };
   workspaces: {
+    list(): Promise<Array<{ id: string; name: string; icon: string | null; position: number }>>;
+    get(workspaceId: string): Promise<{
+      id: string;
+      name: string;
+      icon: string | null;
+      position: number;
+      layoutConfig: object | null;
+      createdAt: string;
+      updatedAt: string;
+      deletedAt: string | null;
+    } | null>;
     createWorkspace(name: string, icon?: string): Promise<string>;
+    rename(workspaceId: string, name: string): Promise<void>;
+    delete(workspaceId: string): Promise<boolean>;
     reorderWorkspaces(orderedIds: string[]): Promise<void>;
+    getLayout(workspaceId: string): Promise<object | null>;
+    saveLayout(workspaceId: string, layoutConfig: object): Promise<void>;
+  };
+  settings: {
+    getActiveWorkspaceId(): Promise<string | null>;
+    setActiveWorkspaceId(workspaceId: string): Promise<void>;
   };
   fs: {
     exists(path: string): Promise<boolean>;
@@ -62,6 +98,7 @@ type ExposedDesktop = {
     showAddressInputMenu(): Promise<void>;
   };
   theme: {
+    getPreference(): Promise<"system" | "light" | "dark">;
     setPreference(preference: "system" | "light" | "dark"): Promise<void>;
     onPreferenceSelected(callback: (preference: "system" | "light" | "dark") => void): () => void;
   };
@@ -227,6 +264,152 @@ describe("preload filesystem IPC", () => {
       ["fs:remove", "/app/data/images/thumb.png"],
       ["paths:appDataDir"],
       ["paths:join", "/app/data", "images", "board-1"],
+    ]);
+  });
+
+  it("exposes additive board, workspace, settings, and theme persistence APIs", async () => {
+    invokeMock
+      .mockResolvedValueOnce([{ id: "board-1", workspaceId: null, name: "Board 1", description: null, position: 0, updatedAt: "2026-04-19T00:00:00Z" }])
+      .mockResolvedValueOnce({
+        id: "board-1",
+        workspaceId: null,
+        name: "Board 1",
+        description: null,
+        canvasData: null,
+        thumbnail: null,
+        position: 0,
+        createdAt: "2026-04-19T00:00:00Z",
+        updatedAt: "2026-04-19T00:00:00Z",
+        deletedAt: null,
+      })
+      .mockResolvedValueOnce("board-2")
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ id: "workspace-1", name: "Home", icon: "🏠", position: 0 }])
+      .mockResolvedValueOnce({
+        id: "workspace-1",
+        name: "Home",
+        icon: "🏠",
+        position: 0,
+        layoutConfig: { left: 320 },
+        createdAt: "2026-04-19T00:00:00Z",
+        updatedAt: "2026-04-19T00:00:00Z",
+        deletedAt: null,
+      })
+      .mockResolvedValueOnce("workspace-2")
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ left: 320 })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce("workspace-1")
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce("dark")
+      .mockResolvedValueOnce(undefined);
+
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+
+    expect(desktop).toEqual(
+      expect.objectContaining({
+        boards: expect.objectContaining({
+          list: expect.any(Function),
+          get: expect.any(Function),
+          createBoard: expect.any(Function),
+          rename: expect.any(Function),
+          delete: expect.any(Function),
+          saveCanvasData: expect.any(Function),
+          saveThumbnail: expect.any(Function),
+        }),
+        workspaces: expect.objectContaining({
+          list: expect.any(Function),
+          get: expect.any(Function),
+          createWorkspace: expect.any(Function),
+          rename: expect.any(Function),
+          delete: expect.any(Function),
+          reorderWorkspaces: expect.any(Function),
+          getLayout: expect.any(Function),
+          saveLayout: expect.any(Function),
+        }),
+        settings: expect.objectContaining({
+          getActiveWorkspaceId: expect.any(Function),
+          setActiveWorkspaceId: expect.any(Function),
+        }),
+        theme: expect.objectContaining({
+          getPreference: expect.any(Function),
+          setPreference: expect.any(Function),
+          onPreferenceSelected: expect.any(Function),
+        }),
+      }),
+    );
+
+    await expect(desktop.boards.list()).resolves.toEqual([
+      { id: "board-1", workspaceId: null, name: "Board 1", description: null, position: 0, updatedAt: "2026-04-19T00:00:00Z" },
+    ]);
+    await expect(desktop.boards.get("board-1")).resolves.toEqual({
+      id: "board-1",
+      workspaceId: null,
+      name: "Board 1",
+      description: null,
+      canvasData: null,
+      thumbnail: null,
+      position: 0,
+      createdAt: "2026-04-19T00:00:00Z",
+      updatedAt: "2026-04-19T00:00:00Z",
+      deletedAt: null,
+    });
+    await expect(desktop.boards.createBoard("Board 2", null)).resolves.toBe("board-2");
+    await expect(desktop.boards.rename("board-1", "Renamed board")).resolves.toBeUndefined();
+    await expect(desktop.boards.delete("board-1")).resolves.toBeUndefined();
+    await expect(desktop.boards.saveCanvasData("board-1", "{\"type\":\"excalidraw\"}")).resolves.toBeUndefined();
+    await expect(desktop.boards.saveThumbnail("board-1", "thumbnail-data")).resolves.toBeUndefined();
+    await expect(desktop.workspaces.list()).resolves.toEqual([
+      { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
+    ]);
+    await expect(desktop.workspaces.get("workspace-1")).resolves.toEqual({
+      id: "workspace-1",
+      name: "Home",
+      icon: "🏠",
+      position: 0,
+      layoutConfig: { left: 320 },
+      createdAt: "2026-04-19T00:00:00Z",
+      updatedAt: "2026-04-19T00:00:00Z",
+      deletedAt: null,
+    });
+    await expect(desktop.workspaces.createWorkspace("Workspace 2", "🪟")).resolves.toBe("workspace-2");
+    await expect(desktop.workspaces.rename("workspace-1", "Renamed workspace")).resolves.toBeUndefined();
+    await expect(desktop.workspaces.delete("workspace-1")).resolves.toBe(true);
+    await expect(desktop.workspaces.reorderWorkspaces(["workspace-2", "workspace-1"])).resolves.toBeUndefined();
+    await expect(desktop.workspaces.getLayout("workspace-1")).resolves.toEqual({ left: 320 });
+    await expect(desktop.workspaces.saveLayout("workspace-1", { left: 320 })).resolves.toBeUndefined();
+    await expect(desktop.settings.getActiveWorkspaceId()).resolves.toBe("workspace-1");
+    await expect(desktop.settings.setActiveWorkspaceId("workspace-2")).resolves.toBeUndefined();
+    await expect(desktop.theme.getPreference()).resolves.toBe("dark");
+    await expect(desktop.theme.setPreference("light")).resolves.toBeUndefined();
+
+    expect(invokeMock.mock.calls).toEqual([
+      ["boards:list", null],
+      ["boards:get", "board-1"],
+      ["boards:create", "Board 2", null],
+      ["boards:rename", "board-1", "Renamed board"],
+      ["boards:delete", "board-1"],
+      ["boards:save-canvas-data", "board-1", "{\"type\":\"excalidraw\"}"],
+      ["boards:save-thumbnail", "board-1", "thumbnail-data"],
+      ["workspaces:list"],
+      ["workspaces:get", "workspace-1"],
+      ["workspaces:create", "Workspace 2", "🪟"],
+      ["workspaces:rename", "workspace-1", "Renamed workspace"],
+      ["workspaces:delete", "workspace-1"],
+      ["workspaces:reorder", ["workspace-2", "workspace-1"]],
+      ["workspaces:get-layout", "workspace-1"],
+      ["workspaces:save-layout", "workspace-1", { left: 320 }],
+      ["settings:get-active-workspace-id"],
+      ["settings:set-active-workspace-id", "workspace-2"],
+      ["theme:get-preference"],
+      ["theme:set-preference", "light"],
     ]);
   });
 
