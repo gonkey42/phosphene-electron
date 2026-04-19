@@ -33,13 +33,30 @@ test.describe("Phosphene startup migration", () => {
         sidebar.getByRole("button", { name: "Legacy Board", exact: true }),
       ).toBeVisible();
 
-      const schemaRows = await launch.window.evaluate(async () => {
-        return window.desktop.db.select<Array<{ version: number }>>(
-          "SELECT MAX(version) AS version FROM schema_version",
-          [],
-        );
-      });
-      expect(schemaRows).toEqual([{ version: LATEST_SCHEMA_VERSION }]);
+      const schemaVersion = await launch.app.evaluate((_electron, databasePath: string) => {
+        const sqliteModule = process.getBuiltinModule?.("node:sqlite") as
+          | typeof import("node:sqlite")
+          | undefined;
+
+        if (!sqliteModule) {
+          throw new Error("node:sqlite is unavailable in the Electron main process");
+        }
+
+        const database = new sqliteModule.DatabaseSync(databasePath, {
+          readOnly: true,
+        });
+
+        try {
+          const row = database.prepare("SELECT MAX(version) AS version FROM schema_version").get() as
+            | { version: number | null }
+            | undefined;
+          return row?.version ?? null;
+        } finally {
+          database.close();
+        }
+      }, path.join(userDataDir, "phosphene.db"));
+
+      expect(schemaVersion).toBe(LATEST_SCHEMA_VERSION);
     } finally {
       await launch?.cleanup();
       await fs.rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);

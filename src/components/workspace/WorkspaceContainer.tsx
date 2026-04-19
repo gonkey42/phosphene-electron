@@ -24,7 +24,9 @@ export function WorkspaceContainer() {
     mountedWorkspaceIds,
     direction,
   } = useWorkspaceMounting(workspaces, activeWorkspaceId);
+  const previousActiveWorkspaceIdRef = useRef(previousActiveWorkspaceId);
   const previousMountedWorkspaceIdsRef = useRef<string[]>(mountedWorkspaceIds);
+  previousActiveWorkspaceIdRef.current = previousActiveWorkspaceId;
   const renderedWorkspaceIds = useMemo(() => {
     const ids = new Set(mountedWorkspaceIds);
 
@@ -44,7 +46,7 @@ export function WorkspaceContainer() {
   }, [mountedWorkspaceIds]);
 
   useLayoutEffect(() => {
-    const previousWorkspaceId = previousActiveWorkspaceId;
+    const previousWorkspaceId = previousActiveWorkspaceIdRef.current;
 
     if (activeWorkspaceIndex < 0) {
       return;
