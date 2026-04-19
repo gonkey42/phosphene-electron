@@ -83,6 +83,12 @@ Build the packaged desktop app:
 npm run build:electron
 ```
 
+Run the Electron smoke suite:
+
+```bash
+npm run test:e2e
+```
+
 ## Native Module Rebuild Scripts
 
 Phosphene depends on `better-sqlite3`, a native module that must be compiled
@@ -123,18 +129,25 @@ directory first forces a clean rebuild. This was the root cause of the broken
 v0.2.2 DMG, which shipped a Node-ABI binding instead of an Electron-ABI one.
 
 `npm run build:electron` chains `rebuild:electron` → `build` → `build:main` →
-`electron-builder` and emits the DMG to `release/`.
+`electron-builder` and emits versioned DMG + ZIP artifacts to `release/`.
 
 ## Release Artifacts
 
 Packaged outputs are written to:
 
 - `release/mac-arm64/Phosphene.app`
-- `release/Phosphene-0.1.0-arm64.dmg`
-- `release/Phosphene-0.1.0-arm64-mac.zip`
+- `release/Phosphene-0.2.3-arm64.dmg`
+- `release/Phosphene-0.2.3-arm64-mac.zip`
+
+## Releases
+
+- Latest published release: [`v0.2.3`](https://github.com/gonkey42/phosphene-electron/releases/tag/v0.2.3)
+- Automated release flow: `npm run release -- --bump patch --notes-file <path> --dry-run`
+- Authoritative release checklist: `docs/release.md`
 
 ## Project Notes
 
 - The renderer talks to native capabilities through the Electron preload bridge in `window.desktop`.
 - SQLite access and filesystem operations live in the Electron main process.
-- Migration details are captured in `MIGRATION-NOTES.md`.
+- The app intentionally keeps using `~/Library/Application Support/app.phosphene.desktop` as its macOS user-data directory.
+- Native `better-sqlite3` runtime/ABI details are documented in `docs/adr/0001-better-sqlite3-runtime-strategy.md`.
