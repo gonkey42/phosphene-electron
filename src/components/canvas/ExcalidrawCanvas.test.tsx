@@ -5,9 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const excalidrawMock = vi.fn();
 const excalidrawApiMountMock = vi.fn();
 const excalidrawDropMock = vi.fn();
+type TestDropEvent = Event & {
+  clientX: number;
+  clientY: number;
+  dataTransfer?: DataTransfer;
+};
 const excalidrawDropSnapshots: Array<{
   currentTarget: EventTarget | null;
-  event: Event;
+  event: TestDropEvent;
   target: EventTarget | null;
 }> = [];
 const setToastMock = vi.fn();
@@ -42,7 +47,7 @@ vi.mock("@excalidraw/excalidraw", () => ({
         excalidrawDropMock(event);
         excalidrawDropSnapshots.push({
           currentTarget: event.currentTarget,
-          event,
+          event: event as TestDropEvent,
           target: event.target,
         });
       };
@@ -108,11 +113,11 @@ function dispatchDrop(
   target: Element,
   dataTransfer: Pick<DataTransfer, "files" | "types" | "getData">,
   coords: { clientX: number; clientY: number } = { clientX: 0, clientY: 0 },
-) {
+) : TestDropEvent {
   const event = new Event("drop", {
     bubbles: true,
     cancelable: true,
-  });
+  }) as TestDropEvent;
 
   Object.defineProperty(event, "dataTransfer", {
     configurable: true,
@@ -155,7 +160,7 @@ describe("ExcalidrawCanvas", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    delete (window as Window & { desktop?: unknown }).desktop;
+    Reflect.deleteProperty(window, "desktop");
   });
 
   it("suppresses immediate mount changes across board switches until ready", async () => {
@@ -509,11 +514,14 @@ describe("ExcalidrawCanvas", () => {
     });
 
     vi.stubGlobal("fetch", fetchMock);
-    (window as Window & { desktop?: unknown }).desktop = {
-      storage: {
-        readRemoteImage: readRemoteImageMock,
-      },
-    };
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        storage: {
+          readRemoteImage: readRemoteImageMock,
+        },
+      } as unknown as DesktopAPI,
+    });
 
     const { container } = render(
       <ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />,
