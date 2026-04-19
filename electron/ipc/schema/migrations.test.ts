@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -122,6 +123,58 @@ describe("runMigrations", () => {
         "workspaces_deleted_at_idx",
       ]),
     );
+  });
+
+  it("migrates the committed pre-v0.2.2 fixture to the latest version without losing content", async () => {
+    const fixturePath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../e2e/fixtures/v0.2.1-user-data/phosphene.db",
+    );
+    const tempDir = mkdtempSync(join(tmpdir(), "phosphene-migration-fixture-"));
+    const copiedFixturePath = join(tempDir, "phosphene.db");
+    let db: Database.Database | null = null;
+
+    try {
+      copyFileSync(fixturePath, copiedFixturePath);
+      db = new Database(copiedFixturePath);
+      const { runMigrations, getCurrentVersion } = await import("./migrations");
+
+      runMigrations(db);
+
+      expect(getCurrentVersion(db)).toBe(2);
+      expect(
+        db
+          .prepare("SELECT name FROM workspaces WHERE deleted_at IS NULL ORDER BY position")
+          .all(),
+      ).toEqual([{ name: "Legacy Workspace" }]);
+      expect(
+        db
+          .prepare("SELECT name FROM boards WHERE deleted_at IS NULL ORDER BY position")
+          .all(),
+      ).toEqual([{ name: "Legacy Board" }]);
+      expect(
+        db
+          .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE '%_idx'")
+          .all(),
+      ).toEqual(
+        expect.arrayContaining([
+          { name: "boards_workspace_id_idx" },
+          { name: "boards_position_idx" },
+          { name: "boards_deleted_at_idx" },
+          { name: "files_board_id_idx" },
+          { name: "captures_board_id_idx" },
+          { name: "workspaces_position_idx" },
+          { name: "workspaces_deleted_at_idx" },
+        ]),
+      );
+    } finally {
+      try {
+        db?.close();
+      } catch {
+        // ignore
+      }
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("is idempotent — second run does not re-execute migrations", async () => {
