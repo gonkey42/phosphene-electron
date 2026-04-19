@@ -1,5 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+function createFileList(files: File[]): FileList {
+  const fileList = {
+    length: files.length,
+    item: (index: number) => files[index] ?? null,
+    [Symbol.iterator]: function* () {
+      yield* files;
+    },
+  } as FileList;
+
+  files.forEach((file, index) => {
+    Object.defineProperty(fileList, index, {
+      configurable: true,
+      enumerable: true,
+      value: file,
+      writable: false,
+    });
+  });
+
+  return fileList;
+}
+
+function createDataTransfer(types: string[], getData: (type: string) => string, files?: FileList) {
+  return {
+    files: files ?? createFileList([]),
+    types,
+    getData,
+  } satisfies Pick<DataTransfer, "files" | "types" | "getData">;
+}
+
 describe("web image drop utilities", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -11,56 +40,53 @@ describe("web image drop utilities", () => {
 
   it("extracts an image url from dragged html", async () => {
     const { extractWebImageUrl } = await import("./web-image-drop");
-    const dataTransfer: Pick<DataTransfer, "files" | "types" | "getData"> = {
-      files: [],
-      types: ["text/html"],
-      getData: (type: string) =>
-        type === "text/html"
-          ? '<img src="https://example.com/assets/photo.png">'
-          : "",
-    } as DataTransfer;
+    const dataTransfer = createDataTransfer(["text/html"], (type) =>
+      type === "text/html" ? '<img src="https://example.com/assets/photo.png">' : "",
+    );
 
     expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/assets/photo.png");
   });
 
   it("prefers uri list before plain text", async () => {
     const { extractWebImageUrl } = await import("./web-image-drop");
-    const dataTransfer: Pick<DataTransfer, "files" | "types" | "getData"> = {
-      files: [],
-      types: ["text/uri-list", "text/plain"],
-      getData: (type: string) =>
-        type === "text/uri-list"
-          ? "https://example.com/first.png\nhttps://example.com/second.png"
-          : "https://example.com/plain.png",
-    } as DataTransfer;
+    const dataTransfer = createDataTransfer(["text/uri-list", "text/plain"], (type) =>
+      type === "text/uri-list"
+        ? "https://example.com/first.png\nhttps://example.com/second.png"
+        : "https://example.com/plain.png",
+    );
 
     expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/first.png");
   });
 
   it("prefers html over plain text when both are present", async () => {
     const { extractWebImageUrl } = await import("./web-image-drop");
-    const dataTransfer: Pick<DataTransfer, "files" | "types" | "getData"> = {
-      files: [],
-      types: ["text/html", "text/plain"],
-      getData: (type: string) => {
-        if (type === "text/html") {
-          return '<img src="https://example.com/from-html.png">';
-        }
+    const dataTransfer = createDataTransfer(["text/html", "text/plain"], (type) => {
+      if (type === "text/html") {
+        return '<img src="https://example.com/from-html.png">';
+      }
 
-        return "https://example.com/from-plain.png";
-      },
-    };
+      return "https://example.com/from-plain.png";
+    });
 
     expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/from-html.png");
   });
 
+  it("prefers an image src over an earlier non-image src in html", async () => {
+    const { extractWebImageUrl } = await import("./web-image-drop");
+    const dataTransfer = createDataTransfer(["text/html"], (type) =>
+      type === "text/html"
+        ? '<script src="https://example.com/not-an-image.js"></script><img src="https://example.com/photo.png">'
+        : "",
+    );
+
+    expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/photo.png");
+  });
+
   it("returns null when the drop already contains files", async () => {
     const { extractWebImageUrl } = await import("./web-image-drop");
-    const dataTransfer: Pick<DataTransfer, "files" | "types" | "getData"> = {
-      files: [{ name: "image.png" }] as unknown as FileList,
-      types: ["text/uri-list", "text/plain"],
-      getData: vi.fn(),
-    };
+    const dataTransfer = createDataTransfer(["text/uri-list", "text/plain"], vi.fn(), createFileList([
+      new File(["png"], "image.png", { type: "image/png" }),
+    ]));
 
     expect(extractWebImageUrl(dataTransfer)).toBeNull();
   });
@@ -115,9 +141,9 @@ describe("web image drop utilities", () => {
     const transfer = createSyntheticDropTransfer(file);
 
     expect(transfer.files.length).toBe(1);
-    expect(transfer.files.item(0)).toBe(file);
+    expect(transfer.files[0]).toBe(file);
     expect(transfer.items.length).toBe(1);
-    expect(transfer.items.item(0)?.getAsFile()).toBe(file);
+    expect(transfer.items[0]?.getAsFile()).toBe(file);
     expect(Array.from(transfer.types)).toEqual(["Files"]);
   });
 
@@ -130,7 +156,7 @@ describe("web image drop utilities", () => {
     const transfer = createSyntheticDropTransfer(file);
 
     expect(transfer.items[0]?.getAsFile()).toBe(file);
-    expect(transfer.items.item(0)?.getAsFile()).toBe(file);
+    expect(transfer.files[0]).toBe(file);
   });
 
   it("falls back to a mime-appropriate default filename when the url has no basename", async () => {

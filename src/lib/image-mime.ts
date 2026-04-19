@@ -9,7 +9,7 @@ const IMAGE_MIME_TYPE_TO_EXTENSION = {
 export type SupportedImageMimeType = keyof typeof IMAGE_MIME_TYPE_TO_EXTENSION;
 
 export function isSupportedImageMimeType(mimeType: string): mimeType is SupportedImageMimeType {
-  return mimeType in IMAGE_MIME_TYPE_TO_EXTENSION;
+  return Object.prototype.hasOwnProperty.call(IMAGE_MIME_TYPE_TO_EXTENSION, mimeType);
 }
 
 export function getImageFileExtension(mimeType: string): string | null {

@@ -102,6 +102,9 @@ function createFileList(files: File[]): FileList {
   const fileList = {
     length: files.length,
     item: (index: number) => files[index] ?? null,
+    [Symbol.iterator]: function* () {
+      yield* files;
+    },
   } as FileList;
 
   files.forEach((file, index) => {
@@ -167,7 +170,7 @@ function firstHttpUrl(text: string): string | null {
 }
 
 function firstHttpUrlFromHtml(html: string): string | null {
-  const matches = html.matchAll(/src\s*=\s*["']([^"']+)["']/gi);
+  const matches = html.matchAll(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi);
 
   for (const match of matches) {
     const candidate = match[1];
