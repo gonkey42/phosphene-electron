@@ -6,7 +6,7 @@ describe("web image drop utilities", () => {
   });
 
   it("extracts an image url from dragged html", async () => {
-    const { extractRemoteImageUrl } = await import("./web-image-drop");
+    const { extractWebImageUrl } = await import("./web-image-drop");
     const dataTransfer = {
       files: [],
       types: ["text/html"],
@@ -16,11 +16,11 @@ describe("web image drop utilities", () => {
           : "",
     } as DataTransfer;
 
-    expect(extractRemoteImageUrl(dataTransfer)).toBe("https://example.com/assets/photo.png");
+    expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/assets/photo.png");
   });
 
   it("prefers uri list before plain text", async () => {
-    const { extractRemoteImageUrl } = await import("./web-image-drop");
+    const { extractWebImageUrl } = await import("./web-image-drop");
     const dataTransfer = {
       files: [],
       types: ["text/uri-list", "text/plain"],
@@ -30,29 +30,29 @@ describe("web image drop utilities", () => {
           : "https://example.com/plain.png",
     } as DataTransfer;
 
-    expect(extractRemoteImageUrl(dataTransfer)).toBe("https://example.com/first.png");
+    expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/first.png");
   });
 
   it("returns null when the drop already contains files", async () => {
-    const { extractRemoteImageUrl } = await import("./web-image-drop");
+    const { extractWebImageUrl } = await import("./web-image-drop");
     const dataTransfer = {
       files: [{ name: "image.png" }] as unknown as FileList,
       types: ["text/uri-list", "text/plain"],
       getData: vi.fn(),
     } as DataTransfer;
 
-    expect(extractRemoteImageUrl(dataTransfer)).toBeNull();
+    expect(extractWebImageUrl(dataTransfer)).toBeNull();
   });
 
   it("downloads a supported remote image as a file", async () => {
-    const { downloadRemoteImageAsFile } = await import("./web-image-drop");
+    const { readImageUrlAsFile } = await import("./web-image-drop");
     const response = new Response("png-bytes", {
       headers: { "content-type": "image/png" },
     });
     const fetchMock = vi.fn().mockResolvedValue(response);
     vi.stubGlobal("fetch", fetchMock);
 
-    const file = await downloadRemoteImageAsFile("https://example.com/photo.png");
+    const file = await readImageUrlAsFile("https://example.com/photo.png");
 
     expect(fetchMock).toHaveBeenCalledWith("https://example.com/photo.png");
     expect(file).toBeInstanceOf(File);
@@ -62,7 +62,7 @@ describe("web image drop utilities", () => {
   });
 
   it("rejects remote assets with unsupported mime types", async () => {
-    const { downloadRemoteImageAsFile } = await import("./web-image-drop");
+    const { readImageUrlAsFile } = await import("./web-image-drop");
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -72,8 +72,21 @@ describe("web image drop utilities", () => {
       ),
     );
 
-    await expect(downloadRemoteImageAsFile("https://example.com/readme.txt")).rejects.toThrow(
+    await expect(readImageUrlAsFile("https://example.com/readme.txt")).rejects.toThrow(
       "Unsupported remote image type: text/plain",
     );
+  });
+
+  it("creates a synthetic drop transfer for a file", async () => {
+    const { createSyntheticDropTransfer } = await import("./web-image-drop");
+    const file = new File(["png-bytes"], "photo.png", { type: "image/png" });
+
+    const transfer = createSyntheticDropTransfer(file);
+
+    expect(transfer.files.length).toBe(1);
+    expect(transfer.files.item(0)).toBe(file);
+    expect(transfer.items.length).toBe(1);
+    expect(transfer.items.item(0)?.getAsFile()).toBe(file);
+    expect(Array.from(transfer.types)).toEqual(["Files"]);
   });
 });

@@ -6,7 +6,7 @@ const SUPPORTED_IMAGE_MIME_TYPES = new Set([
   "image/webp",
 ]);
 
-export function extractRemoteImageUrl(dataTransfer: DataTransfer): string | null {
+export function extractWebImageUrl(dataTransfer: DataTransfer): string | null {
   if (dataTransfer.files.length > 0) {
     return null;
   }
@@ -40,7 +40,7 @@ export function extractRemoteImageUrl(dataTransfer: DataTransfer): string | null
   return null;
 }
 
-export async function downloadRemoteImageAsFile(url: string): Promise<File> {
+export async function readImageUrlAsFile(url: string): Promise<File> {
   const parsedUrl = new URL(url);
 
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
@@ -58,6 +58,62 @@ export async function downloadRemoteImageAsFile(url: string): Promise<File> {
   const name = decodeURIComponent(parsedUrl.pathname.split("/").pop() || "image");
 
   return new File([blob], name, { type: contentType });
+}
+
+export function createSyntheticDropTransfer(file: File): DataTransfer {
+  const fileList = createFileList([file]);
+
+  return {
+    dropEffect: "none",
+    effectAllowed: "all",
+    files: fileList,
+    items: createDataTransferItemList(file),
+    types: ["Files"],
+    getData: () => "",
+    setData: () => undefined,
+    clearData: () => undefined,
+    setDragImage: () => undefined,
+  } as DataTransfer;
+}
+
+function createFileList(files: File[]): FileList {
+  const fileList = {
+    length: files.length,
+    item: (index: number) => files[index] ?? null,
+  } as FileList;
+
+  files.forEach((file, index) => {
+    Object.defineProperty(fileList, index, {
+      configurable: true,
+      enumerable: true,
+      value: file,
+      writable: false,
+    });
+  });
+
+  return fileList;
+}
+
+function createDataTransferItemList(file: File): DataTransferItemList {
+  return {
+    length: 1,
+    add: () => null,
+    clear: () => undefined,
+    remove: () => undefined,
+    item: (index: number) =>
+      index === 0
+        ? ({
+            kind: "file",
+            type: file.type,
+            getAsFile: () => file,
+            getAsString: (_callback: (data: string) => void) => undefined,
+            webkitGetAsEntry: () => null,
+          } as DataTransferItem)
+        : null,
+    [Symbol.iterator]: function* () {
+      yield this.item(0) as DataTransferItem;
+    },
+  } as DataTransferItemList;
 }
 
 function firstHttpUrl(text: string): string | null {
