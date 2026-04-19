@@ -24,11 +24,15 @@ test.describe("Phosphene persistence", () => {
       ).toBeVisible({ timeout: 15_000 });
 
       await firstTabBar.getByRole("button", { name: "Create workspace" }).click();
-      await expect(
-        firstTabBar.getByRole("button", { name: "Workspace 2", exact: true }),
-      ).toBeVisible();
+      const workspaceTwoButton = firstTabBar.getByRole("button", {
+        name: "Workspace 2",
+        exact: true,
+      });
+      await expect(workspaceTwoButton).toBeVisible();
+      await expect(workspaceTwoButton).toHaveAttribute("aria-current", "page");
 
       const firstSidebar = firstLaunch.window.getByRole("complementary", { name: "Workspace boards" });
+      await expect(firstSidebar.getByText("No boards yet.")).toBeVisible();
       await firstSidebar.getByRole("button", { name: "Create board" }).click();
       await expect(firstSidebar.getByRole("button", { name: "Board 1", exact: true })).toBeVisible();
 

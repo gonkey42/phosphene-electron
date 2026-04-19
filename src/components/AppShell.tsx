@@ -1,6 +1,7 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import { runDailyBackup } from "../lib/backup";
+import { loadActiveWorkspaceId, saveActiveWorkspaceId } from "../lib/active-workspace-setting";
 import { getDb } from "../lib/database";
 import { ensureStorageDirectories } from "../lib/file-storage";
 import { listWorkspaces, mapWorkspace } from "../lib/workspace-operations";
@@ -20,6 +21,7 @@ const APP_INIT_ERROR_CHANNEL = "app-shell:init";
 export function AppShell() {
   const status = useAppStore((state) => state.status);
   const initializationError = useAppStore((state) => state.initializationError);
+  const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const setInitializationState = useAppStore((state) => state.setInitializationState);
   const setWorkspaces = useAppStore((state) => state.setWorkspaces);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
@@ -45,12 +47,18 @@ export function AppShell() {
         void runDailyBackup().catch((error) => {
           reportError("Backup failed", error);
         });
+        const persistedActiveWorkspaceId = await loadActiveWorkspaceId();
         const workspaces = (await listWorkspaces()).map(mapWorkspace);
 
         clearSharedErrorChannel(APP_INIT_ERROR_CHANNEL);
         setWorkspaces(workspaces);
         if (workspaces.length > 0) {
-          setActiveWorkspace(workspaces[0].id);
+          const nextActiveWorkspaceId =
+            persistedActiveWorkspaceId &&
+            workspaces.some((workspace) => workspace.id === persistedActiveWorkspaceId)
+            ? persistedActiveWorkspaceId
+            : workspaces[0].id;
+          setActiveWorkspace(nextActiveWorkspaceId);
         }
         setInitializationState({ status: "ready" });
       } catch (error) {
@@ -71,6 +79,16 @@ export function AppShell() {
 
     void init();
   }, [initAttempt, reportError, setActiveWorkspace, setInitializationState, setWorkspaces]);
+
+  useEffect(() => {
+    if (status !== "ready" || !activeWorkspaceId) {
+      return;
+    }
+
+    void saveActiveWorkspaceId(activeWorkspaceId).catch((error) => {
+      reportError("Failed to persist active workspace", error, { activeWorkspaceId });
+    });
+  }, [activeWorkspaceId, reportError, status]);
 
   if (status === "error" && initializationError) {
     return (
