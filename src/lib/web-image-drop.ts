@@ -1,12 +1,8 @@
-const SUPPORTED_IMAGE_MIME_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/svg+xml",
-  "image/webp",
-]);
+import { isSupportedImageFile } from "./drop-handler";
 
-export function extractWebImageUrl(dataTransfer: DataTransfer): string | null {
+export function extractWebImageUrl(
+  dataTransfer: Pick<DataTransfer, "files" | "types" | "getData">,
+): string | null {
   if (dataTransfer.files.length > 0) {
     return null;
   }
@@ -40,17 +36,20 @@ export function extractWebImageUrl(dataTransfer: DataTransfer): string | null {
   return null;
 }
 
-export async function readImageUrlAsFile(url: string): Promise<File> {
+export async function readImageUrlAsFile(
+  url: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<File> {
   const parsedUrl = new URL(url);
 
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
     throw new Error(`Unsupported remote image url: ${url}`);
   }
 
-  const response = await fetch(url);
+  const response = await fetchImpl(url);
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
 
-  if (!SUPPORTED_IMAGE_MIME_TYPES.has(contentType)) {
+  if (!isSupportedImageFile(new File([], "remote-image", { type: contentType }))) {
     throw new Error(`Unsupported remote image type: ${contentType || "unknown"}`);
   }
 

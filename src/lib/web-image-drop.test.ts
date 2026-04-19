@@ -7,7 +7,7 @@ describe("web image drop utilities", () => {
 
   it("extracts an image url from dragged html", async () => {
     const { extractWebImageUrl } = await import("./web-image-drop");
-    const dataTransfer = {
+    const dataTransfer: Pick<DataTransfer, "files" | "types" | "getData"> = {
       files: [],
       types: ["text/html"],
       getData: (type: string) =>
@@ -21,7 +21,7 @@ describe("web image drop utilities", () => {
 
   it("prefers uri list before plain text", async () => {
     const { extractWebImageUrl } = await import("./web-image-drop");
-    const dataTransfer = {
+    const dataTransfer: Pick<DataTransfer, "files" | "types" | "getData"> = {
       files: [],
       types: ["text/uri-list", "text/plain"],
       getData: (type: string) =>
@@ -35,11 +35,11 @@ describe("web image drop utilities", () => {
 
   it("returns null when the drop already contains files", async () => {
     const { extractWebImageUrl } = await import("./web-image-drop");
-    const dataTransfer = {
+    const dataTransfer: Pick<DataTransfer, "files" | "types" | "getData"> = {
       files: [{ name: "image.png" }] as unknown as FileList,
       types: ["text/uri-list", "text/plain"],
       getData: vi.fn(),
-    } as DataTransfer;
+    };
 
     expect(extractWebImageUrl(dataTransfer)).toBeNull();
   });
@@ -50,9 +50,8 @@ describe("web image drop utilities", () => {
       headers: { "content-type": "image/png" },
     });
     const fetchMock = vi.fn().mockResolvedValue(response);
-    vi.stubGlobal("fetch", fetchMock);
 
-    const file = await readImageUrlAsFile("https://example.com/photo.png");
+    const file = await readImageUrlAsFile("https://example.com/photo.png", fetchMock);
 
     expect(fetchMock).toHaveBeenCalledWith("https://example.com/photo.png");
     expect(file).toBeInstanceOf(File);
@@ -63,16 +62,13 @@ describe("web image drop utilities", () => {
 
   it("rejects remote assets with unsupported mime types", async () => {
     const { readImageUrlAsFile } = await import("./web-image-drop");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        new Response("text", {
-          headers: { "content-type": "text/plain" },
-        }),
-      ),
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("text", {
+        headers: { "content-type": "text/plain" },
+      }),
     );
 
-    await expect(readImageUrlAsFile("https://example.com/readme.txt")).rejects.toThrow(
+    await expect(readImageUrlAsFile("https://example.com/readme.txt", fetchMock)).rejects.toThrow(
       "Unsupported remote image type: text/plain",
     );
   });
