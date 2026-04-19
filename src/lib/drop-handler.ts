@@ -1,4 +1,5 @@
 import { storage } from "../platform/desktop-api";
+import { isSupportedImageMimeType } from "./image-mime";
 
 export function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -10,9 +11,7 @@ export function readFileAsDataURL(file: File): Promise<string> {
 }
 
 export function isSupportedImageFile(file: File): boolean {
-  return ["image/png", "image/jpeg", "image/gif", "image/svg+xml", "image/webp"].includes(
-    file.type,
-  );
+  return isSupportedImageMimeType(file.type);
 }
 
 export function isSupportedImagePath(path: string): boolean {

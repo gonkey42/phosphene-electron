@@ -268,7 +268,25 @@ function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
           MenuItemConstructorOptions[])
       : [{ role: "fileMenu" as const }]),
     { role: "editMenu" as const },
-    { role: "viewMenu" as const },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" as const },
+        { role: "forceReload" as const },
+        { role: "toggleDevTools" as const },
+        { type: "separator" as const },
+        { role: "resetZoom" as const },
+        { role: "zoomIn" as const },
+        { role: "zoomOut" as const },
+        { type: "separator" as const },
+        { role: "togglefullscreen" as const },
+        { type: "separator" as const },
+        {
+          label: "Theme",
+          submenu: buildThemeSubmenuTemplate(),
+        },
+      ],
+    },
     { role: "windowMenu" as const },
     { role: "help" as const },
   ];
@@ -298,26 +316,8 @@ function buildThemeSubmenuTemplate(): MenuItemConstructorOptions[] {
   ];
 }
 
-function insertThemeMenu(menu: Menu) {
-  const viewMenuItem = menu.items.find((item) => item.role === "viewMenu");
-  const viewSubmenu = viewMenuItem?.submenu;
-
-  if (!viewSubmenu) {
-    return;
-  }
-
-  viewSubmenu.append(new MenuItem({ type: "separator" }));
-  viewSubmenu.append(
-    new MenuItem({
-      label: "Theme",
-      submenu: buildThemeSubmenuTemplate(),
-    }),
-  );
-}
-
 function installApplicationMenu() {
   const menu = Menu.buildFromTemplate(buildApplicationMenuTemplate());
-  insertThemeMenu(menu);
   Menu.setApplicationMenu(menu);
 }
 

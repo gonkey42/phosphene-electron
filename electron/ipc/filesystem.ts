@@ -56,6 +56,12 @@ function getImageExtensionFromMime(mimeType: string): string {
   return extensionMap[mimeType] ?? "png";
 }
 
+function isSupportedImageMimeType(mimeType: string): boolean {
+  return ["image/png", "image/jpeg", "image/svg+xml", "image/gif", "image/webp"].includes(
+    mimeType,
+  );
+}
+
 function getMimeTypeFromPath(filePath: string): string | null {
   const extension = path.extname(filePath).slice(1).toLowerCase();
   const mimeTypeMap: Record<string, string> = {
@@ -72,6 +78,18 @@ function getMimeTypeFromPath(filePath: string): string | null {
 
 function getFileName(filePath: string): string {
   return path.basename(filePath);
+}
+
+function getRemoteImageName(url: string, mimeType: string): string {
+  const parsedUrl = new URL(url);
+  const basename = path.posix.basename(parsedUrl.pathname);
+  const decodedBasename = basename ? decodeURIComponent(basename) : "";
+
+  if (decodedBasename && decodedBasename !== "/") {
+    return decodedBasename;
+  }
+
+  return `image.${getImageExtensionFromMime(mimeType)}`;
 }
 
 function isMissingPathError(error: unknown): boolean {
@@ -298,6 +316,44 @@ export function registerFilesystemIPC(userDataPath: string): void {
       };
     });
   },
+  );
+
+  ipcMain.handle(
+    "storage:read-remote-image",
+    async (_event, url: unknown): Promise<FilesystemResult<StorageDroppedImage>> => {
+      const validatedUrl = assertStringPath("storage:read-remote-image", url, "url");
+
+      return captureFilesystemResult(async () => {
+        const parsedUrl = new URL(validatedUrl);
+
+        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+          throw createIPCContractError(
+            "storage:read-remote-image",
+            `unsupported remote image url: ${validatedUrl}`,
+          );
+        }
+
+        const response = await fetch(validatedUrl);
+
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`);
+        }
+
+        const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
+
+        if (!isSupportedImageMimeType(mimeType)) {
+          throw new Error(`Unsupported remote image type: ${mimeType || "unknown"}`);
+        }
+
+        const buffer = new Uint8Array(await response.arrayBuffer());
+
+        return {
+          name: getRemoteImageName(validatedUrl, mimeType),
+          mimeType,
+          data: buffer,
+        };
+      });
+    },
   );
 
   ipcMain.handle(

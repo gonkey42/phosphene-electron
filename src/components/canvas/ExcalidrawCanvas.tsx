@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type DragEvent } from "react";
 
 import { Excalidraw } from "@excalidraw/excalidraw";
 import type {
@@ -9,6 +9,11 @@ import "@excalidraw/excalidraw/index.css";
 
 import { useKeyboardContext } from "../../contexts/KeyboardContext";
 import { useAppStore } from "../../stores/app-store";
+import {
+  createSyntheticDropTransfer,
+  extractWebImageUrl,
+  readImageUrlAsFile,
+} from "../../lib/web-image-drop";
 
 import "./ExcalidrawCanvas.css";
 
@@ -38,6 +43,7 @@ export function ExcalidrawCanvas({
   const { claimFocus } = useKeyboardContext();
   const resolvedTheme = useAppStore((state) => state.resolvedTheme);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const isReadyRef = useRef(false);
   const activeBoardIdRef = useRef(boardId);
   const wasInteractiveRef = useRef(isInteractive);
@@ -106,8 +112,108 @@ export function ExcalidrawCanvas({
     claimFocus("canvas");
   }, [claimFocus, isInteractive]);
 
+  const translateBrowserDrop = useCallback(
+    async (event: DragEvent<HTMLDivElement>, imageUrl: string) => {
+      try {
+        const file = await readImageUrlAsFile(imageUrl);
+        const syntheticTransfer = createSyntheticDropTransfer(file);
+        const target = event.target instanceof Element ? event.target : wrapperRef.current?.firstElementChild;
+
+        if (!target) {
+          return;
+        }
+
+        target.dispatchEvent(
+          createSyntheticDropEvent(event, syntheticTransfer),
+        );
+      } catch (error) {
+        const message = "Failed to import dropped image.";
+
+        apiRef.current?.setToast({
+          message,
+        });
+        console.error(message, error);
+      }
+    },
+    [],
+  );
+
+  const handleDropCapture = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      if (!isInteractive) {
+        return;
+      }
+
+      const dataTransfer = event.dataTransfer;
+
+      if (dataTransfer.files.length > 0) {
+        return;
+      }
+
+      const imageUrl = extractWebImageUrl(dataTransfer);
+
+      if (!imageUrl) {
+        console.warn("Unsupported browser drop payload", Array.from(dataTransfer.types));
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      void translateBrowserDrop(event, imageUrl);
+    },
+    [isInteractive, translateBrowserDrop],
+  );
+
+  function createSyntheticDropEvent(
+    sourceEvent: DragEvent<HTMLDivElement>,
+    dataTransfer: DataTransfer,
+  ): Event {
+    if (typeof DragEvent === "function") {
+      try {
+        return new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          clientX: sourceEvent.clientX,
+          clientY: sourceEvent.clientY,
+          dataTransfer,
+        });
+      } catch {
+        // Fall through to the legacy Event-based shim below.
+      }
+    }
+
+    const syntheticEvent = new Event("drop", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    Object.defineProperty(syntheticEvent, "dataTransfer", {
+      configurable: true,
+      enumerable: true,
+      value: dataTransfer,
+    });
+    Object.defineProperty(syntheticEvent, "clientX", {
+      configurable: true,
+      enumerable: true,
+      value: sourceEvent.clientX,
+    });
+    Object.defineProperty(syntheticEvent, "clientY", {
+      configurable: true,
+      enumerable: true,
+      value: sourceEvent.clientY,
+    });
+
+    return syntheticEvent;
+  }
+
   return (
-    <div className="excalidraw-wrapper" onPointerDown={handlePointerDown}>
+    <div
+      ref={wrapperRef}
+      className="excalidraw-wrapper"
+      onDropCapture={handleDropCapture}
+      onPointerDown={handlePointerDown}
+    >
       <Excalidraw
         key={`${boardId}:${reactivationKey}`}
         excalidrawAPI={setExcalidrawApi}

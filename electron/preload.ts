@@ -178,6 +178,9 @@ contextBridge.exposeInMainWorld("desktop", {
     readDroppedImage(path: string): Promise<StorageDroppedImage> {
       return invokeFilesystem("storage:read-dropped-image", path);
     },
+    readRemoteImage(url: string): Promise<StorageDroppedImage> {
+      return invokeFilesystem("storage:read-remote-image", url);
+    },
     writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array): Promise<string> {
       return invokeFilesystem("storage:write-board-image", boardId, fileId, mimeType, data);
     },
