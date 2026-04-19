@@ -4,7 +4,6 @@ import {
   dialog,
   ipcMain,
   Menu,
-  MenuItem,
   type MenuItemConstructorOptions,
   type WebContents,
 } from "electron";
