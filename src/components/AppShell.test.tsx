@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResolvedTheme, ThemePreference } from "../lib/theme-settings";
 
 const {
+  loadActiveWorkspaceIdMock,
+  saveActiveWorkspaceIdMock,
   getDbMock,
   ensureStorageDirectoriesMock,
   keyboardProviderMock,
@@ -17,6 +19,8 @@ const {
   tabBarMock,
   workspaceContainerMock,
 } = vi.hoisted(() => ({
+  loadActiveWorkspaceIdMock: vi.fn(),
+  saveActiveWorkspaceIdMock: vi.fn(),
   getDbMock: vi.fn(),
   ensureStorageDirectoriesMock: vi.fn(),
   keyboardProviderMock: vi.fn(),
@@ -36,6 +40,11 @@ const {
 
 vi.mock("../lib/database", () => ({
   getDb: getDbMock,
+}));
+
+vi.mock("../lib/active-workspace-setting", () => ({
+  loadActiveWorkspaceId: loadActiveWorkspaceIdMock,
+  saveActiveWorkspaceId: saveActiveWorkspaceIdMock,
 }));
 
 vi.mock("../lib/file-storage", () => ({
@@ -83,6 +92,8 @@ vi.mock("./workspace/WorkspaceContainer", () => ({
 describe("AppShell", () => {
   beforeEach(async () => {
     getDbMock.mockReset();
+    loadActiveWorkspaceIdMock.mockReset();
+    saveActiveWorkspaceIdMock.mockReset();
     ensureStorageDirectoriesMock.mockReset();
     keyboardProviderMock.mockReset();
     runDailyBackupMock.mockReset();
@@ -98,6 +109,8 @@ describe("AppShell", () => {
       resolvedTheme: "light",
       updateThemePreference: vi.fn(),
     });
+    loadActiveWorkspaceIdMock.mockResolvedValue(null);
+    saveActiveWorkspaceIdMock.mockResolvedValue(undefined);
 
     const { clearSharedErrors } = await import("../hooks/shared-error-store");
     clearSharedErrors();
@@ -146,8 +159,29 @@ describe("AppShell", () => {
       { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
     ]);
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-1");
+    expect(loadActiveWorkspaceIdMock).toHaveBeenCalledTimes(1);
+    expect(saveActiveWorkspaceIdMock).toHaveBeenCalledWith("workspace-1");
     expect(tabBarMock).toHaveBeenCalledTimes(1);
     expect(workspaceContainerMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores a persisted active workspace when it still exists", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
+      { id: "workspace-2", name: "Workspace 2", icon: "✨", position: 1 },
+    ]);
+    getDbMock.mockResolvedValue({});
+    runDailyBackupMock.mockResolvedValue(undefined);
+    loadActiveWorkspaceIdMock.mockResolvedValue("workspace-2");
+
+    const { AppShell } = await import("./AppShell");
+    render(<AppShell />);
+
+    await screen.findByTestId("workspace-tab-bar");
+
+    const { useAppStore } = await import("../stores/app-store");
+    expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
+    expect(saveActiveWorkspaceIdMock).toHaveBeenCalledWith("workspace-2");
   });
 
   it("applies the resolved theme class after persisted theme data loads", async () => {

@@ -342,6 +342,29 @@ describe("WorkspaceContainer", () => {
     }
   });
 
+  it("hides outgoing workspace pages from the accessibility tree during exit transitions", () => {
+    vi.useFakeTimers();
+
+    try {
+      render(<WorkspaceContainer />);
+
+      act(() => {
+        useAppStore.setState({ activeWorkspaceId: "workspace-5" });
+      });
+
+      expect(screen.getByTestId("workspace-page-motion-workspace-3")).toHaveAttribute(
+        "aria-hidden",
+        "true",
+      );
+      expect(screen.getByTestId("workspace-page-motion-workspace-5")).toHaveAttribute(
+        "aria-hidden",
+        "false",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("lazy-mounts distant workspaces on first activation and keeps them mounted afterwards", () => {
     vi.useFakeTimers();
 

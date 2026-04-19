@@ -55,6 +55,7 @@ export function WorkspaceContainer() {
         const isActive = workspace.id === renderedActiveWorkspaceId;
         const isExiting = workspace.id === exitingWorkspaceId;
         const isVisible = isActive || isExiting;
+        const isInteractive = isActive;
         const workspaceIndex = workspaces.findIndex((item) => item.id === workspace.id);
         const hasMountedWorkspace = mountedWorkspaceIds.includes(workspace.id);
 
@@ -74,13 +75,17 @@ export function WorkspaceContainer() {
               activeWorkspaceIndex: renderedActiveWorkspaceIndex,
               isActive,
             })}
+            aria-hidden={!isInteractive}
             onAnimationComplete={() => {
               if (isActive) {
                 notifyWorkspaceActivationLayoutChange();
               }
             }}
             transition={slideTransition}
-            style={{ zIndex: isActive ? 2 : isExiting ? 1 : 0 }}
+            style={{
+              zIndex: isActive ? 2 : isExiting ? 1 : 0,
+              pointerEvents: isInteractive ? "auto" : "none",
+            }}
           >
             <WorkspacePage workspaceId={workspace.id} isActive={isActive} isExiting={isExiting} />
           </motion.div>
