@@ -131,7 +131,7 @@ describe("useWorkspaceMounting", () => {
     expect(result.current.direction).toBe(0);
   });
 
-  it("keeps previously mounted workspaces sticky after they fall out of range", () => {
+  it("keeps only the active neighborhood mounted as the active workspace changes", () => {
     const initialProps: HookProps = {
       currentWorkspaces: workspaces,
       currentActiveWorkspaceId: "workspace-3",
@@ -151,14 +151,10 @@ describe("useWorkspaceMounting", () => {
     });
 
     expect(result.current.mountedWorkspaceIds).toEqual([
-      "workspace-3",
-      "workspace-2",
-      "workspace-4",
       "workspace-5",
+      "workspace-4",
     ]);
     expect(result.current.mountedWorkspaces.map((workspace) => workspace.id)).toEqual([
-      "workspace-2",
-      "workspace-3",
       "workspace-4",
       "workspace-5",
     ]);
@@ -171,18 +167,14 @@ describe("useWorkspaceMounting", () => {
     });
 
     expect(result.current.mountedWorkspaceIds).toEqual([
-      "workspace-3",
       "workspace-2",
-      "workspace-4",
-      "workspace-5",
       "workspace-1",
+      "workspace-3",
     ]);
     expect(result.current.mountedWorkspaces.map((workspace) => workspace.id)).toEqual([
       "workspace-1",
       "workspace-2",
       "workspace-3",
-      "workspace-4",
-      "workspace-5",
     ]);
   });
 

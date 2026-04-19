@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 export function useWorkspaceMounting(
   workspaces: Array<{ id: string }>,
@@ -30,22 +30,33 @@ export function useWorkspaceMounting(
     [renderedActiveWorkspaceId, workspaces],
   );
 
-  const eagerWorkspaceIds = useMemo(
-    () =>
-      getEagerWorkspaceIds({
+  const mountedWorkspaceIds = useMemo(() => {
+    if (activeWorkspaceId && activeWorkspaceIndex >= 0) {
+      return getEagerWorkspaceIds({
         workspaces,
         activeWorkspaceId,
         activeWorkspaceIndex,
-      }),
-    [activeWorkspaceId, activeWorkspaceIndex, workspaces],
-  );
+      });
+    }
 
-  const [mountedWorkspaceIds, setMountedWorkspaceIds] = useState<string[]>(eagerWorkspaceIds);
+    if (activeWorkspaceId && previousActiveWorkspaceIdRef.current) {
+      const previousActiveWorkspaceIndex = workspaces.findIndex(
+        (workspace) => workspace.id === previousActiveWorkspaceIdRef.current,
+      );
 
-  const mountedWorkspaceIdSet = useMemo(
-    () => new Set([...mountedWorkspaceIds, ...eagerWorkspaceIds]),
-    [eagerWorkspaceIds, mountedWorkspaceIds],
-  );
+      if (previousActiveWorkspaceIndex >= 0) {
+        return getEagerWorkspaceIds({
+          workspaces,
+          activeWorkspaceId: previousActiveWorkspaceIdRef.current,
+          activeWorkspaceIndex: previousActiveWorkspaceIndex,
+        });
+      }
+    }
+
+    return [];
+  }, [activeWorkspaceId, activeWorkspaceIndex, workspaces]);
+
+  const mountedWorkspaceIdSet = useMemo(() => new Set(mountedWorkspaceIds), [mountedWorkspaceIds]);
 
   const mountedWorkspaces = useMemo(
     () => workspaces.filter((workspace) => mountedWorkspaceIdSet.has(workspace.id)),
@@ -68,15 +79,6 @@ export function useWorkspaceMounting(
 
     return nextIndex > previousIndex ? 1 : -1;
   }, [activeWorkspaceId, workspaces]);
-
-  useEffect(() => {
-    if (activeWorkspaceId === null) {
-      setMountedWorkspaceIds([]);
-      return;
-    }
-
-    setMountedWorkspaceIds((current) => mergeWorkspaceIds(current, eagerWorkspaceIds));
-  }, [activeWorkspaceId, eagerWorkspaceIds]);
 
   useEffect(() => {
     if (activeWorkspaceIndex < 0) {
@@ -127,18 +129,4 @@ function getEagerWorkspaceIds({
   }
 
   return [...eagerWorkspaceIds];
-}
-
-function mergeWorkspaceIds(currentIds: string[], nextIds: string[]) {
-  const mergedIds = [...currentIds];
-  let changed = false;
-
-  for (const id of nextIds) {
-    if (!mergedIds.includes(id)) {
-      mergedIds.push(id);
-      changed = true;
-    }
-  }
-
-  return changed ? mergedIds : currentIds;
 }
