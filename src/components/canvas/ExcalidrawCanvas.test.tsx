@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const excalidrawMock = vi.fn();
 const excalidrawApiMountMock = vi.fn();
+const excalidrawDropMock = vi.fn();
+const setToastMock = vi.fn();
 const claimFocusMock = vi.fn();
 const updateSceneMock = vi.fn();
 const refreshMock = vi.fn();
@@ -20,17 +22,33 @@ vi.mock("@excalidraw/excalidraw", () => ({
   Excalidraw: (props: Record<string, unknown>) => {
     latestExcalidrawProps = props;
     excalidrawMock(props);
+    const rootRef = useRef<HTMLDivElement | null>(null);
     const excalidrawAPIRef = useRef(props.excalidrawAPI as ((api: object) => void) | undefined);
     const onChangeRef = useRef(props.onChange as ((...args: unknown[]) => void) | undefined);
     useLayoutEffect(() => {
       excalidrawApiMountMock();
+      const rootElement = rootRef.current;
+
+      if (!rootElement) {
+        return;
+      }
+
+      const handleDrop = (event: Event) => {
+        excalidrawDropMock(event);
+      };
+
+      rootElement.addEventListener("drop", handleDrop);
       excalidrawAPIRef.current?.({
         refresh: refreshMock,
+        setToast: setToastMock,
         updateScene: updateSceneMock,
       });
       onChangeRef.current?.([], {}, {});
+      return () => {
+        rootElement.removeEventListener("drop", handleDrop);
+      };
     }, []);
-    return <div data-testid="mock-excalidraw" />;
+    return <div data-testid="mock-excalidraw" ref={rootRef} />;
   },
 }));
 
@@ -47,11 +65,57 @@ vi.mock("../../contexts/KeyboardContext", () => ({
 import { ExcalidrawCanvas } from "./ExcalidrawCanvas";
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 
+function createDataTransfer(types: string[], getData: (type: string) => string, files?: FileList) {
+  return {
+    files: files ?? createFileList([]),
+    types,
+    getData,
+  } satisfies Pick<DataTransfer, "files" | "types" | "getData">;
+}
+
+function createFileList(files: File[]): FileList {
+  const fileList = {
+    length: files.length,
+    item: (index: number) => files[index] ?? null,
+    [Symbol.iterator]: function* () {
+      yield* files;
+    },
+  } as FileList;
+
+  files.forEach((file, index) => {
+    Object.defineProperty(fileList, index, {
+      configurable: true,
+      enumerable: true,
+      value: file,
+      writable: false,
+    });
+  });
+
+  return fileList;
+}
+
+function dispatchDrop(target: Element, dataTransfer: Pick<DataTransfer, "files" | "types" | "getData">) {
+  const event = new Event("drop", {
+    bubbles: true,
+    cancelable: true,
+  });
+
+  Object.defineProperty(event, "dataTransfer", {
+    configurable: true,
+    enumerable: true,
+    value: dataTransfer,
+  });
+
+  target.dispatchEvent(event);
+}
+
 describe("ExcalidrawCanvas", () => {
   beforeEach(() => {
     latestExcalidrawProps = null;
     excalidrawMock.mockClear();
     excalidrawApiMountMock.mockReset();
+    excalidrawDropMock.mockReset();
+    setToastMock.mockReset();
     claimFocusMock.mockReset();
     refreshMock.mockReset();
     updateSceneMock.mockReset();
@@ -365,5 +429,120 @@ describe("ExcalidrawCanvas", () => {
     });
 
     expect(claimFocusMock).not.toHaveBeenCalled();
+  });
+
+  it("translates browser image drops into synthetic file drops", async () => {
+    const onChange = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("png-bytes", {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { container } = render(
+      <ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />,
+    );
+
+    const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
+    expect(dropTarget).toBeTruthy();
+
+    dispatchDrop(dropTarget as Element, createDataTransfer(["text/uri-list"], (type) =>
+      type === "text/uri-list" ? "https://example.com/photo.png" : "",
+    ));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/photo.png");
+    expect(excalidrawDropMock).toHaveBeenCalledTimes(1);
+    const translatedEvent = excalidrawDropMock.mock.calls[0]?.[0] as DragEvent | undefined;
+    expect(translatedEvent?.dataTransfer?.files.length).toBe(1);
+    expect(translatedEvent?.dataTransfer?.files[0]?.name).toBe("photo.png");
+    expect(translatedEvent?.dataTransfer?.files[0]?.type).toBe("image/png");
+  });
+
+  it("does not intercept an existing filesystem drop", async () => {
+    const onChange = vi.fn();
+    const file = new File(["png-bytes"], "finder.png", { type: "image/png" });
+
+    const { container } = render(
+      <ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />,
+    );
+
+    const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
+    expect(dropTarget).toBeTruthy();
+
+    dispatchDrop(
+      dropTarget as Element,
+      createDataTransfer(["Files"], vi.fn(), createFileList([file])),
+    );
+
+    expect(excalidrawDropMock).toHaveBeenCalledTimes(1);
+    const receivedEvent = excalidrawDropMock.mock.calls[0]?.[0] as DragEvent | undefined;
+    expect(receivedEvent?.dataTransfer?.files[0]).toBe(file);
+  });
+
+  it("does nothing when non-interactive", async () => {
+    const onChange = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("png-bytes", {
+        headers: { "content-type": "image/png" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { container } = render(
+      <ExcalidrawCanvas
+        boardId="board-1"
+        initialData={null}
+        onChange={onChange}
+        isInteractive={false}
+      />,
+    );
+
+    const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
+    expect(dropTarget).toBeTruthy();
+
+    dispatchDrop(dropTarget as Element, createDataTransfer(["text/uri-list"], (type) =>
+      type === "text/uri-list" ? "https://example.com/photo.png" : "",
+    ));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(excalidrawDropMock).toHaveBeenCalledTimes(1);
+    const receivedEvent = excalidrawDropMock.mock.calls[0]?.[0] as DragEvent | undefined;
+    expect(receivedEvent?.dataTransfer?.files.length).toBe(0);
+  });
+
+  it("shows a toast when browser image import fails", async () => {
+    const onChange = vi.fn();
+    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { container } = render(
+      <ExcalidrawCanvas boardId="board-1" initialData={null} onChange={onChange} />,
+    );
+
+    const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
+    expect(dropTarget).toBeTruthy();
+
+    dispatchDrop(dropTarget as Element, createDataTransfer(["text/plain"], (type) =>
+      type === "text/plain" ? "https://example.com/photo.png" : "",
+    ));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/photo.png");
+    expect(setToastMock).toHaveBeenCalledWith({
+      message: "Failed to import dropped image.",
+    });
+    expect(excalidrawDropMock).not.toHaveBeenCalled();
   });
 });
