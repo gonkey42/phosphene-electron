@@ -94,7 +94,11 @@ function createFileList(files: File[]): FileList {
   return fileList;
 }
 
-function dispatchDrop(target: Element, dataTransfer: Pick<DataTransfer, "files" | "types" | "getData">) {
+function dispatchDrop(
+  target: Element,
+  dataTransfer: Pick<DataTransfer, "files" | "types" | "getData">,
+  coords: { clientX: number; clientY: number } = { clientX: 0, clientY: 0 },
+) {
   const event = new Event("drop", {
     bubbles: true,
     cancelable: true,
@@ -104,6 +108,16 @@ function dispatchDrop(target: Element, dataTransfer: Pick<DataTransfer, "files" 
     configurable: true,
     enumerable: true,
     value: dataTransfer,
+  });
+  Object.defineProperty(event, "clientX", {
+    configurable: true,
+    enumerable: true,
+    value: coords.clientX,
+  });
+  Object.defineProperty(event, "clientY", {
+    configurable: true,
+    enumerable: true,
+    value: coords.clientY,
   });
 
   target.dispatchEvent(event);
@@ -447,9 +461,11 @@ describe("ExcalidrawCanvas", () => {
     const dropTarget = container.querySelector("[data-testid='mock-excalidraw']");
     expect(dropTarget).toBeTruthy();
 
-    dispatchDrop(dropTarget as Element, createDataTransfer(["text/uri-list"], (type) =>
-      type === "text/uri-list" ? "https://example.com/photo.png" : "",
-    ));
+    dispatchDrop(
+      dropTarget as Element,
+      createDataTransfer(["text/uri-list"], (type) => (type === "text/uri-list" ? "https://example.com/photo.png" : "")),
+      { clientX: 123, clientY: 456 },
+    );
 
     await act(async () => {
       await Promise.resolve();
@@ -461,6 +477,8 @@ describe("ExcalidrawCanvas", () => {
     expect(translatedEvent?.dataTransfer?.files.length).toBe(1);
     expect(translatedEvent?.dataTransfer?.files[0]?.name).toBe("photo.png");
     expect(translatedEvent?.dataTransfer?.files[0]?.type).toBe("image/png");
+    expect(translatedEvent?.clientX).toBe(123);
+    expect(translatedEvent?.clientY).toBe(456);
   });
 
   it("does not intercept an existing filesystem drop", async () => {

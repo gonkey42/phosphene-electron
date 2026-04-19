@@ -123,18 +123,9 @@ export function ExcalidrawCanvas({
           return;
         }
 
-        const syntheticDropEvent = new Event("drop", {
-          bubbles: true,
-          cancelable: true,
-        });
-
-        Object.defineProperty(syntheticDropEvent, "dataTransfer", {
-          configurable: true,
-          enumerable: true,
-          value: syntheticTransfer,
-        });
-
-        target.dispatchEvent(syntheticDropEvent);
+        target.dispatchEvent(
+          createSyntheticDropEvent(event, syntheticTransfer),
+        );
       } catch (error) {
         const message = "Failed to import dropped image.";
 
@@ -173,6 +164,34 @@ export function ExcalidrawCanvas({
     },
     [isInteractive],
   );
+
+  function createSyntheticDropEvent(
+    sourceEvent: DragEvent<HTMLDivElement>,
+    dataTransfer: DataTransfer,
+  ): Event {
+    const syntheticEvent = new Event("drop", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    Object.defineProperty(syntheticEvent, "dataTransfer", {
+      configurable: true,
+      enumerable: true,
+      value: dataTransfer,
+    });
+    Object.defineProperty(syntheticEvent, "clientX", {
+      configurable: true,
+      enumerable: true,
+      value: sourceEvent.clientX,
+    });
+    Object.defineProperty(syntheticEvent, "clientY", {
+      configurable: true,
+      enumerable: true,
+      value: sourceEvent.clientY,
+    });
+
+    return syntheticEvent;
+  }
 
   return (
     <div
