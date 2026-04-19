@@ -33,6 +33,23 @@ describe("web image drop utilities", () => {
     expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/first.png");
   });
 
+  it("prefers html over plain text when both are present", async () => {
+    const { extractWebImageUrl } = await import("./web-image-drop");
+    const dataTransfer: Pick<DataTransfer, "files" | "types" | "getData"> = {
+      files: [],
+      types: ["text/html", "text/plain"],
+      getData: (type: string) => {
+        if (type === "text/html") {
+          return '<img src="https://example.com/from-html.png">';
+        }
+
+        return "https://example.com/from-plain.png";
+      },
+    };
+
+    expect(extractWebImageUrl(dataTransfer)).toBe("https://example.com/from-html.png");
+  });
+
   it("returns null when the drop already contains files", async () => {
     const { extractWebImageUrl } = await import("./web-image-drop");
     const dataTransfer: Pick<DataTransfer, "files" | "types" | "getData"> = {
@@ -70,6 +87,20 @@ describe("web image drop utilities", () => {
 
     await expect(readImageUrlAsFile("https://example.com/readme.txt", fetchMock)).rejects.toThrow(
       "Unsupported remote image type: text/plain",
+    );
+  });
+
+  it("rejects unsuccessful fetch responses before mime validation", async () => {
+    const { readImageUrlAsFile } = await import("./web-image-drop");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("missing", {
+        status: 404,
+        headers: { "content-type": "image/png" },
+      }),
+    );
+
+    await expect(readImageUrlAsFile("https://example.com/missing.png", fetchMock)).rejects.toThrow(
+      "Request failed with status 404",
     );
   });
 

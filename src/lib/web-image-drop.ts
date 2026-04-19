@@ -17,17 +17,17 @@ export function extractWebImageUrl(
     }
   }
 
-  if (types.has("text/plain")) {
-    const plainText = dataTransfer.getData("text/plain");
-    const candidate = firstHttpUrl(plainText);
+  if (types.has("text/html")) {
+    const html = dataTransfer.getData("text/html");
+    const candidate = firstHttpUrlFromHtml(html);
     if (candidate) {
       return candidate;
     }
   }
 
-  if (types.has("text/html")) {
-    const html = dataTransfer.getData("text/html");
-    const candidate = firstHttpUrlFromHtml(html);
+  if (types.has("text/plain")) {
+    const plainText = dataTransfer.getData("text/plain");
+    const candidate = firstHttpUrl(plainText);
     if (candidate) {
       return candidate;
     }
@@ -47,6 +47,10 @@ export async function readImageUrlAsFile(
   }
 
   const response = await fetchImpl(url);
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
   const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
 
   if (!isSupportedImageFile(new File([], "remote-image", { type: contentType }))) {
@@ -60,12 +64,17 @@ export async function readImageUrlAsFile(
 }
 
 export function createSyntheticDropTransfer(file: File): DataTransfer {
-  const fileList = createFileList([file]);
+  const nativeTransfer = createNativeDataTransfer();
+
+  if (nativeTransfer) {
+    nativeTransfer.items.add(file);
+    return nativeTransfer;
+  }
 
   return {
     dropEffect: "none",
     effectAllowed: "all",
-    files: fileList,
+    files: createFileList([file]),
     items: createDataTransferItemList(file),
     types: ["Files"],
     getData: () => "",
@@ -73,6 +82,18 @@ export function createSyntheticDropTransfer(file: File): DataTransfer {
     clearData: () => undefined,
     setDragImage: () => undefined,
   } as DataTransfer;
+}
+
+function createNativeDataTransfer(): DataTransfer | null {
+  if (typeof DataTransfer !== "function") {
+    return null;
+  }
+
+  try {
+    return new DataTransfer();
+  } catch {
+    return null;
+  }
 }
 
 function createFileList(files: File[]): FileList {
