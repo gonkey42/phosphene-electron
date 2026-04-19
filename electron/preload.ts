@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 import { contextBridge, ipcRenderer } from "electron";
+import type { DatabaseBackupResult } from "./ipc/database";
 
 const LIFECYCLE_FLUSH_REQUEST_EVENT = "phosphene:lifecycle:flush-request";
 const LIFECYCLE_FLUSH_COMPLETE_EVENT = "phosphene:lifecycle:flush-complete";
@@ -29,6 +30,12 @@ type FilesystemResult<T> =
 
 type MutationResult = {
   rowsAffected: number;
+};
+
+type StorageDroppedImage = {
+  name: string;
+  mimeType: string;
+  data: Uint8Array;
 };
 
 type BrowserBounds = {
@@ -177,6 +184,23 @@ contextBridge.exposeInMainWorld("desktop", {
     },
     backup(destinationPath: string) {
       return ipcRenderer.invoke("db:backup", destinationPath);
+    },
+  },
+  storage: {
+    ensureDirectories(): Promise<void> {
+      return invokeFilesystem("storage:ensure-directories");
+    },
+    runDailyBackup(): Promise<DatabaseBackupResult> {
+      return invokeFilesystem("storage:run-daily-backup");
+    },
+    readDroppedImage(path: string): Promise<StorageDroppedImage> {
+      return invokeFilesystem("storage:read-dropped-image", path);
+    },
+    writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array): Promise<string> {
+      return invokeFilesystem("storage:write-board-image", boardId, fileId, mimeType, data);
+    },
+    readBoardImage(path: string): Promise<Uint8Array | null> {
+      return invokeFilesystem("storage:read-board-image", path);
     },
   },
   boards: {

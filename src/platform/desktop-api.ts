@@ -270,6 +270,24 @@ export const fs = {
   },
 };
 
+export const storage = {
+  ensureDirectories() {
+    return getDesktop().storage.ensureDirectories();
+  },
+  runDailyBackup() {
+    return getDesktop().storage.runDailyBackup();
+  },
+  readDroppedImage(path: string) {
+    return getDesktop().storage.readDroppedImage(path);
+  },
+  writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array) {
+    return getDesktop().storage.writeBoardImage(boardId, fileId, mimeType, data);
+  },
+  readBoardImage(path: string) {
+    return getDesktop().storage.readBoardImage(path);
+  },
+};
+
 export const paths = {
   appDataDir() {
     return getDesktop().paths.appDataDir();

@@ -103,6 +103,34 @@ interface DesktopFilesystem {
   remove(path: string): Promise<void>;
 }
 
+interface DesktopStorageAPI {
+  ensureDirectories(): Promise<void>;
+  runDailyBackup(): Promise<
+    | {
+        status: "created";
+        destinationPath: string;
+      }
+    | {
+        status: "skipped";
+        reason: "already-exists";
+        destinationPath: string;
+      }
+    | {
+        status: "failed";
+        reason: "permission-denied" | "destination-missing" | "backup-failed";
+        destinationPath: string;
+        message: string;
+      }
+  >;
+  readDroppedImage(path: string): Promise<{
+    name: string;
+    mimeType: string;
+    data: Uint8Array;
+  }>;
+  writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array): Promise<string>;
+  readBoardImage(path: string): Promise<Uint8Array | null>;
+}
+
 interface DesktopPaths {
   appDataDir(): Promise<string>;
   join(...parts: string[]): Promise<string>;
@@ -156,6 +184,7 @@ interface DesktopAPI {
   boards: DesktopBoardsAPI;
   workspaces: DesktopWorkspacesAPI;
   fs: DesktopFilesystem;
+  storage: DesktopStorageAPI;
   paths: DesktopPaths;
   lifecycle: DesktopLifecycle;
   browser: DesktopBrowserAPI;

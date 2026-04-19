@@ -68,6 +68,13 @@ type ExposedDesktop = {
     readDir(path: string): Promise<Array<{ name: string }>>;
     remove(path: string): Promise<void>;
   };
+  storage: {
+    ensureDirectories(): Promise<void>;
+    runDailyBackup(): Promise<unknown>;
+    readDroppedImage(path: string): Promise<{ name: string; mimeType: string; data: Uint8Array }>;
+    writeBoardImage(boardId: string, fileId: string, mimeType: string, data: Uint8Array): Promise<string>;
+    readBoardImage(path: string): Promise<Uint8Array | null>;
+  };
   paths: {
     appDataDir(): Promise<string>;
     join(...parts: string[]): Promise<string>;
@@ -264,6 +271,61 @@ describe("preload filesystem IPC", () => {
       ["fs:remove", "/app/data/images/thumb.png"],
       ["paths:appDataDir"],
       ["paths:join", "/app/data", "images", "board-1"],
+    ]);
+  });
+
+  it("exposes additive storage helpers for directory setup, backups, and board image IO", async () => {
+    const imageBytes = Uint8Array.from([9, 8, 7]);
+
+    invokeMock
+      .mockResolvedValueOnce({ ok: true, value: undefined })
+      .mockResolvedValueOnce({ ok: true, value: { status: "created", destinationPath: "/app/data/backups/phosphene-2026-04-19.db" } })
+      .mockResolvedValueOnce({ ok: true, value: { name: "dropped.PNG", mimeType: "image/png", data: imageBytes } })
+      .mockResolvedValueOnce({ ok: true, value: "images/board-1_file-1.png" })
+      .mockResolvedValueOnce({ ok: true, value: imageBytes })
+      .mockResolvedValueOnce({ ok: true, value: null });
+
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+
+    expect(desktop).toEqual(
+      expect.objectContaining({
+        storage: expect.objectContaining({
+          ensureDirectories: expect.any(Function),
+          runDailyBackup: expect.any(Function),
+          readDroppedImage: expect.any(Function),
+          writeBoardImage: expect.any(Function),
+          readBoardImage: expect.any(Function),
+        }),
+      }),
+    );
+
+    await expect(desktop.storage.ensureDirectories()).resolves.toBeUndefined();
+    await expect(desktop.storage.runDailyBackup()).resolves.toEqual({
+      status: "created",
+      destinationPath: "/app/data/backups/phosphene-2026-04-19.db",
+    });
+    await expect(desktop.storage.readDroppedImage("/tmp/dropped.png")).resolves.toEqual({
+      name: "dropped.PNG",
+      mimeType: "image/png",
+      data: imageBytes,
+    });
+    await expect(
+      desktop.storage.writeBoardImage("board-1", "file-1", "image/png", imageBytes),
+    ).resolves.toBe("images/board-1_file-1.png");
+    await expect(desktop.storage.readBoardImage("images/board-1_file-1.png")).resolves.toEqual(
+      imageBytes,
+    );
+    await expect(desktop.storage.readBoardImage("images/missing.png")).resolves.toBeNull();
+
+    expect(invokeMock.mock.calls).toEqual([
+      ["storage:ensure-directories"],
+      ["storage:run-daily-backup"],
+      ["storage:read-dropped-image", "/tmp/dropped.png"],
+      ["storage:write-board-image", "board-1", "file-1", "image/png", imageBytes],
+      ["storage:read-board-image", "images/board-1_file-1.png"],
+      ["storage:read-board-image", "images/missing.png"],
     ]);
   });
 
