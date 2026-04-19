@@ -8,7 +8,7 @@ macOS application data directory used during the migration to Electron.
 
 - Multiple workspaces with independent board state
 - Excalidraw canvas persistence across restarts
-- Finder image drag-and-drop with filesystem-backed image storage
+- Finder image drag-and-drop and direct browser-pane image drag-and-drop with filesystem-backed image storage
 - Daily SQLite backups
 - Packaged macOS app output via `electron-builder`
 
