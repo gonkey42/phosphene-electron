@@ -87,6 +87,24 @@ type ExposedDesktop = {
   contextMenu: {
     showAddressInputMenu(): Promise<void>;
   };
+  boardPacks: {
+    importFolder(packDir: string): Promise<{
+      workspaceId: string;
+      importedBoards: Array<{
+        sourceId: string;
+        boardId: string;
+        name: string;
+      }>;
+    }>;
+    onImported(callback: (result: {
+      workspaceId: string;
+      importedBoards: Array<{
+        sourceId: string;
+        boardId: string;
+        name: string;
+      }>;
+    }) => void): () => void;
+  };
   theme: {
     getPreference(): Promise<"system" | "light" | "dark">;
     setPreference(preference: "system" | "light" | "dark"): Promise<void>;
@@ -478,6 +496,65 @@ describe("preload filesystem IPC", () => {
       }),
     );
     expect(invokeMock).toHaveBeenCalledWith("browser:show-address-input-menu");
+  });
+
+  it("exposes board pack folder import through the desktop API", async () => {
+    const importResult = {
+      workspaceId: "workspace-1",
+      importedBoards: [
+        {
+          sourceId: "source-board-1",
+          boardId: "board-1",
+          name: "Starter Board",
+        },
+      ],
+    };
+    invokeMock.mockResolvedValueOnce(importResult);
+
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+
+    await expect(desktop.boardPacks.importFolder("/packs/starter")).resolves.toBe(importResult);
+    expect(exposeInMainWorldMock).toHaveBeenCalledWith(
+      "desktop",
+      expect.objectContaining({
+        boardPacks: expect.objectContaining({
+          importFolder: expect.any(Function),
+        }),
+      }),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("board-packs:import-folder", "/packs/starter");
+  });
+
+  it("subscribes and unsubscribes board pack import notifications through ipcRenderer", async () => {
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+    const handleImported = vi.fn();
+    const importResult = {
+      workspaceId: "workspace-1",
+      importedBoards: [
+        {
+          sourceId: "source-board-1",
+          boardId: "board-1",
+          name: "Starter Board",
+        },
+      ],
+    };
+
+    const unsubscribe = desktop.boardPacks.onImported(handleImported);
+
+    expect(onMock).toHaveBeenCalledWith("board-packs:imported", expect.any(Function));
+
+    const listener = onMock.mock.calls.find(([channel]) => channel === "board-packs:imported")?.[1];
+    listener?.({}, importResult);
+
+    expect(handleImported).toHaveBeenCalledWith(importResult);
+
+    unsubscribe();
+
+    expect(offMock).toHaveBeenCalledWith("board-packs:imported", listener);
   });
 
   it("exposes a theme bridge for native menu synchronization", async () => {

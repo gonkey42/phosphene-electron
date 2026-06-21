@@ -50,6 +50,15 @@ type BrowserState = {
   lastError: string | null;
 };
 
+type BoardPackImportResult = {
+  workspaceId: string;
+  importedBoards: Array<{
+    sourceId: string;
+    boardId: string;
+    name: string;
+  }>;
+};
+
 let lifecycleRequestSequence = 0;
 let lifecycleReady =
   (window as Window & { [LIFECYCLE_READY_FLAG]?: boolean })[LIFECYCLE_READY_FLAG] === true;
@@ -288,6 +297,22 @@ contextBridge.exposeInMainWorld("desktop", {
   contextMenu: {
     showAddressInputMenu() {
       return ipcRenderer.invoke("browser:show-address-input-menu");
+    },
+  },
+  boardPacks: {
+    importFolder(packDir: string) {
+      return ipcRenderer.invoke("board-packs:import-folder", packDir);
+    },
+    onImported(callback: (result: BoardPackImportResult) => void) {
+      const listener = (_event: unknown, result: BoardPackImportResult) => {
+        callback(result);
+      };
+
+      ipcRenderer.on("board-packs:imported", listener);
+
+      return () => {
+        ipcRenderer.off("board-packs:imported", listener);
+      };
     },
   },
   theme: {

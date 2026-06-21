@@ -4,14 +4,17 @@ import {
   dialog,
   ipcMain,
   Menu,
+  MenuItem,
   type MenuItemConstructorOptions,
   type WebContents,
 } from "electron";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import { importBoardPack, type ImportBoardPackResult } from "./board-pack/importer";
 import { registerDatabaseIPC, closeDatabase } from "./ipc/database";
 import { registerFilesystemIPC } from "./ipc/filesystem";
 import { registerBrowserIPC } from "./ipc/browser";
+import { registerBoardPackIPC } from "./ipc/board-pack";
 import {
   loadPersistedThemePreference,
   persistThemePreference,
@@ -32,6 +35,7 @@ const closeFlushInProgressWindowIds = new Set<number>();
 const THEME_PREFERENCE_SELECTED_CHANNEL = "theme:preference-selected";
 const THEME_GET_PREFERENCE_CHANNEL = "theme:get-preference";
 const THEME_SET_PREFERENCE_CHANNEL = "theme:set-preference";
+const BOARD_PACK_IMPORTED_CHANNEL = "board-packs:imported";
 
 type ThemePreference = "system" | "light" | "dark";
 
@@ -260,6 +264,81 @@ function notifyRendererThemePreferenceSelected(preference: ThemePreference) {
   });
 }
 
+function sendBoardPackImportedToWindow(window: BrowserWindow, result: ImportBoardPackResult) {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) {
+    return;
+  }
+
+  window.webContents.send(BOARD_PACK_IMPORTED_CHANNEL, result);
+}
+
+function notifyBoardPackImported(result: ImportBoardPackResult) {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    sendBoardPackImportedToWindow(window, result);
+  });
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function importBoardPackFromDialog(): Promise<void> {
+  let packDir: string | null = null;
+
+  try {
+    const dialogResult = await dialog.showOpenDialog({
+      title: "Import Board Pack",
+      buttonLabel: "Import",
+      properties: ["openDirectory"],
+    });
+
+    if (dialogResult.canceled || dialogResult.filePaths.length === 0) {
+      return;
+    }
+
+    packDir = dialogResult.filePaths[0];
+
+    const result = await importBoardPack({
+      packDir,
+      userDataPath: app.getPath("userData"),
+    });
+
+    notifyBoardPackImported(result);
+  } catch (error) {
+    const message = getErrorMessage(error);
+
+    console.error("[board-pack:import-failed]", {
+      packDir,
+      error: message,
+    });
+    dialog.showErrorBox(
+      "Board pack import failed",
+      `Phosphene could not import the selected board pack.\n\n${message}`,
+    );
+  }
+}
+
+function installBoardPackImportMenuItem(menu: Electron.Menu) {
+  const fileMenuItem = menu.items.find(
+    (item) => item.role === "fileMenu" || item.label === "File",
+  );
+
+  if (!fileMenuItem?.submenu) {
+    return;
+  }
+
+  fileMenuItem.submenu.insert(
+    0,
+    new MenuItem({
+      label: "Import Board Pack...",
+      click: () => {
+        void importBoardPackFromDialog();
+      },
+    }),
+  );
+  fileMenuItem.submenu.insert(1, new MenuItem({ type: "separator" }));
+}
+
 function buildApplicationMenuTemplate(): MenuItemConstructorOptions[] {
   return [
     ...(process.platform === "darwin"
@@ -317,6 +396,7 @@ function buildThemeSubmenuTemplate(): MenuItemConstructorOptions[] {
 
 function installApplicationMenu() {
   const menu = Menu.buildFromTemplate(buildApplicationMenuTemplate());
+  installBoardPackImportMenuItem(menu);
   Menu.setApplicationMenu(menu);
 }
 
@@ -453,6 +533,9 @@ async function bootstrap() {
   });
   await runBootstrapPhase("filesystem-ipc", () => {
     registerFilesystemIPC(userDataPath);
+  });
+  await runBootstrapPhase("board-pack-ipc", () => {
+    registerBoardPackIPC(userDataPath);
   });
   await runBootstrapPhase("browser-ipc", () => {
     registerBrowserIPC();
