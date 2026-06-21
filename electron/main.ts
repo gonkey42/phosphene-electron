@@ -22,6 +22,23 @@ import {
 
 const isDev = !app.isPackaged && process.env.NODE_ENV !== "test";
 
+function configureRemoteDebugging(): void {
+  const debugPort = process.env.PHOSPHENE_DEBUG_PORT;
+
+  if (!debugPort || app.isPackaged) {
+    return;
+  }
+
+  if (!/^[0-9]+$/.test(debugPort)) {
+    throw new Error("PHOSPHENE_DEBUG_PORT must be numeric");
+  }
+
+  app.commandLine.appendSwitch("remote-debugging-port", debugPort);
+  app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
+}
+
+configureRemoteDebugging();
+
 const userDataArg = process.argv.find((arg) => arg.startsWith("--user-data-dir="));
 const userDataOverride = userDataArg
   ? userDataArg.slice("--user-data-dir=".length)

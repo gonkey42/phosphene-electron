@@ -6,6 +6,7 @@ const appQuitMock = vi.fn();
 const appWhenReadyMock = vi.fn();
 const appGetPathMock = vi.fn();
 const appSetPathMock = vi.fn();
+const appendSwitchMock = vi.fn();
 const ipcMainHandleMock = vi.fn();
 const ipcMainOnMock = vi.fn();
 const ipcMainOffMock = vi.fn();
@@ -26,6 +27,18 @@ const loadPersistedThemePreferenceMock = vi.fn();
 const persistThemePreferenceMock = vi.fn();
 const registerBoardPackIPCMock = vi.fn();
 const importBoardPackMock = vi.fn();
+
+const appMock = {
+  isPackaged: true,
+  whenReady: appWhenReadyMock,
+  on: appOnMock,
+  quit: appQuitMock,
+  getPath: appGetPathMock,
+  setPath: appSetPathMock,
+  commandLine: {
+    appendSwitch: appendSwitchMock,
+  },
+};
 
 type MockMenuItem = {
   role?: string;
@@ -214,14 +227,7 @@ async function withPlatform<T>(platform: NodeJS.Platform, run: () => Promise<T>)
 }
 
 vi.mock("electron", () => ({
-  app: {
-    isPackaged: true,
-    whenReady: appWhenReadyMock,
-    on: appOnMock,
-    quit: appQuitMock,
-    getPath: appGetPathMock,
-    setPath: appSetPathMock,
-  },
+  app: appMock,
   BrowserWindow: BrowserWindowMock,
   BrowserView: BrowserViewMock,
   dialog: {
@@ -269,6 +275,7 @@ describe("electron main close flushing", () => {
     appWhenReadyMock.mockReset();
     appGetPathMock.mockReset();
     appSetPathMock.mockReset();
+    appendSwitchMock.mockReset();
     ipcMainHandleMock.mockClear();
     ipcMainOnMock.mockClear();
     ipcMainOffMock.mockClear();
@@ -294,6 +301,8 @@ describe("electron main close flushing", () => {
       createRoleMenuTemplate(template),
     );
     appWhenReadyMock.mockResolvedValue(undefined);
+    appMock.isPackaged = true;
+    delete process.env.PHOSPHENE_DEBUG_PORT;
     loadPersistedThemePreferenceMock.mockReturnValue("system");
     appGetPathMock.mockImplementation((name: string) => {
       if (name === "appData") {
@@ -307,6 +316,35 @@ describe("electron main close flushing", () => {
       return `/mock/${name}`;
     });
     vi.resetModules();
+  });
+
+  it("enables remote debugging on localhost when PHOSPHENE_DEBUG_PORT is set in dev", async () => {
+    appWhenReadyMock.mockReturnValue(new Promise(() => {}));
+    process.env.PHOSPHENE_DEBUG_PORT = "9222";
+    appMock.isPackaged = false;
+
+    await import("./main");
+
+    expect(appendSwitchMock).toHaveBeenCalledWith("remote-debugging-port", "9222");
+    expect(appendSwitchMock).toHaveBeenCalledWith("remote-debugging-address", "127.0.0.1");
+  });
+
+  it("does not enable remote debugging in packaged builds", async () => {
+    appWhenReadyMock.mockReturnValue(new Promise(() => {}));
+    process.env.PHOSPHENE_DEBUG_PORT = "9222";
+    appMock.isPackaged = true;
+
+    await import("./main");
+
+    expect(appendSwitchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-numeric remote debugging ports", async () => {
+    appWhenReadyMock.mockReturnValue(new Promise(() => {}));
+    process.env.PHOSPHENE_DEBUG_PORT = "devtools";
+    appMock.isPackaged = false;
+
+    await expect(import("./main")).rejects.toThrow("PHOSPHENE_DEBUG_PORT must be numeric");
   });
 
   it("waits for renderer flush before allowing a window close to continue", async () => {
