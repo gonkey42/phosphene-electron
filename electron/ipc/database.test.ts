@@ -485,6 +485,149 @@ describe("registerDatabaseIPC", () => {
     ]);
   });
 
+  it("saves board canvas data through the direct database helper", async () => {
+    const state = {
+      boards: [] as Array<{
+        id: string;
+        workspace_id: string | null;
+        name: string;
+        position: number;
+        canvas_data: string | null;
+      }>,
+    };
+
+    const database = {
+      prepare(sql: string) {
+        if (
+          sql ===
+          "SELECT COALESCE(MAX(position), -1) + 1 as position FROM boards WHERE deleted_at IS NULL AND workspace_id IS NULL"
+        ) {
+          return {
+            get() {
+              return { position: state.boards.length };
+            },
+          };
+        }
+
+        if (sql === "INSERT INTO boards (id, workspace_id, name, position) VALUES (?, ?, ?, ?)") {
+          return {
+            run(id: string, workspaceId: string | null, name: string, position: number) {
+              state.boards.push({
+                id,
+                workspace_id: workspaceId,
+                name,
+                position,
+                canvas_data: null,
+              });
+              return { changes: 1 };
+            },
+          };
+        }
+
+        if (sql === "UPDATE boards SET canvas_data = ? WHERE id = ? AND deleted_at IS NULL") {
+          return {
+            run(canvasData: string, id: string) {
+              const board = state.boards.find((entry) => entry.id === id);
+              if (!board) {
+                return { changes: 0 };
+              }
+
+              board.canvas_data = canvasData;
+              return { changes: 1 };
+            },
+          };
+        }
+
+        if (sql === "SELECT canvas_data FROM boards WHERE id = ?") {
+          return {
+            get(id: string) {
+              const board = state.boards.find((entry) => entry.id === id);
+              return board ? { canvas_data: board.canvas_data } : undefined;
+            },
+          };
+        }
+
+        throw new Error(`Unexpected SQL: ${sql}`);
+      },
+      transaction(callback: (...args: any[]) => unknown) {
+        return (...args: any[]) => callback(...args);
+      },
+    };
+
+    const { createBoard, saveBoardCanvasDataDirect } = await import("./database");
+    const boardId = createBoard(database as never, "Imported board", null);
+
+    saveBoardCanvasDataDirect(database as never, boardId, JSON.stringify({ elements: [] }));
+
+    const row = database.prepare("SELECT canvas_data FROM boards WHERE id = ?").get(boardId) as {
+      canvas_data: string;
+    };
+    expect(JSON.parse(row.canvas_data)).toEqual({ elements: [] });
+  });
+
+  it.each([0, 2])(
+    "throws when the direct board canvas-data helper affects %i rows",
+    async (changes) => {
+      const database = {
+        prepare(sql: string) {
+          expect(sql).toBe("UPDATE boards SET canvas_data = ? WHERE id = ? AND deleted_at IS NULL");
+          return {
+            run(canvasData: string, boardId: string) {
+              expect(canvasData).toBe(JSON.stringify({ elements: [] }));
+              expect(boardId).toBe("board-imported");
+              return { changes };
+            },
+          };
+        },
+      };
+
+      const { saveBoardCanvasDataDirect } = await import("./database");
+
+      expect(() =>
+        saveBoardCanvasDataDirect(database as never, "board-imported", JSON.stringify({ elements: [] })),
+      ).toThrow(`Board canvas-data save affected ${changes} rows`);
+    },
+  );
+
+  it("sets the active workspace through the direct database helper", async () => {
+    const settings = new Map<string, string>();
+    const database = {
+      prepare(sql: string) {
+        if (sql === "SELECT value FROM settings WHERE key = ? LIMIT 1") {
+          return {
+            get(key: string) {
+              const value = settings.get(key);
+              return value === undefined ? undefined : { value };
+            },
+          };
+        }
+
+        if (
+          sql.includes("INSERT INTO settings (key, value, updated_at)") &&
+          sql.includes("ON CONFLICT(key) DO UPDATE SET")
+        ) {
+          return {
+            run(key: string, value: string) {
+              settings.set(key, value);
+              return { changes: 1 };
+            },
+          };
+        }
+
+        throw new Error(`Unexpected SQL: ${sql}`);
+      },
+    };
+
+    const { setActiveWorkspaceIdDirect } = await import("./database");
+
+    setActiveWorkspaceIdDirect(database as never, "workspace-imported");
+
+    const row = database.prepare("SELECT value FROM settings WHERE key = ? LIMIT 1").get(
+      "active_workspace_id",
+    ) as { value: string };
+    expect(row.value).toBe("workspace-imported");
+  });
+
   it("creates a workspace within a single transaction so the computed position and insert stay coupled", async () => {
     const state = {
       workspaces: [

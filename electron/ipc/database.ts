@@ -378,6 +378,20 @@ export function createBoard(
   return runCreateBoard(name, workspaceId);
 }
 
+export function saveBoardCanvasDataDirect(
+  database: Database.Database,
+  boardId: string,
+  canvasData: string,
+): void {
+  const result = database.prepare(SAVE_BOARD_CANVAS_DATA_SQL).run(canvasData, boardId) as {
+    changes: number;
+  };
+
+  if (result.changes !== 1) {
+    throw new Error(`Board canvas-data save affected ${result.changes} rows`);
+  }
+}
+
 export function createWorkspace(
   database: Database.Database,
   name: string,
@@ -425,6 +439,10 @@ function getActiveWorkspaceId(database: Database.Database): string | null {
 
 function setActiveWorkspaceId(database: Database.Database, workspaceId: string): void {
   database.prepare(UPSERT_ACTIVE_WORKSPACE_ID_SQL).run("active_workspace_id", workspaceId);
+}
+
+export function setActiveWorkspaceIdDirect(database: Database.Database, workspaceId: string): void {
+  setActiveWorkspaceId(database, workspaceId);
 }
 
 export async function backupDatabase(
@@ -546,13 +564,7 @@ export function registerDatabaseIPC(userDataPath: string): void {
   ipcMain.handle("boards:save-canvas-data", async (_event, boardId: unknown, canvasData: unknown) => {
     const validatedBoardId = assertStringPayload("boards:save-canvas-data", boardId, "boardId");
     const validatedCanvasData = assertStringPayload("boards:save-canvas-data", canvasData, "canvasData");
-    const result = database.prepare(SAVE_BOARD_CANVAS_DATA_SQL).run(validatedCanvasData, validatedBoardId) as {
-      changes: number;
-    };
-
-    if (result.changes !== 1) {
-      throw new Error(`Board canvas-data save affected ${result.changes} rows`);
-    }
+    saveBoardCanvasDataDirect(database, validatedBoardId, validatedCanvasData);
   });
 
   ipcMain.handle("boards:save-thumbnail", async (_event, boardId: unknown, thumbnail: unknown) => {
@@ -660,7 +672,7 @@ export function registerDatabaseIPC(userDataPath: string): void {
       workspaceId,
       "workspaceId",
     );
-    setActiveWorkspaceId(database, validatedWorkspaceId);
+    setActiveWorkspaceIdDirect(database, validatedWorkspaceId);
   });
 }
 
