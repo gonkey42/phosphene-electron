@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import { initializeSchema, resetSchemaBootstrapForTests } from "./schema";
 
 let db: Database.Database | null = null;
+let dbUserDataPath: string | null = null;
 
 type BackupFailureReason = "permission-denied" | "destination-missing" | "backup-failed";
 
@@ -249,15 +250,27 @@ function assertWorkspaceReorderPermutation(database: Database.Database, orderedI
 }
 
 export function getDatabase(userDataPath: string): Database.Database {
-  if (db) return db;
+  const resolvedUserDataPath = path.resolve(userDataPath);
 
-  const dbPath = path.join(userDataPath, "phosphene.db");
+  if (db) {
+    if (dbUserDataPath !== resolvedUserDataPath) {
+      throw new Error(
+        `Database already opened for ${dbUserDataPath}; cannot reuse it for ${resolvedUserDataPath}`,
+      );
+    }
+
+    return db;
+  }
+
+  const dbPath = path.join(resolvedUserDataPath, "phosphene.db");
   db = new Database(dbPath);
+  dbUserDataPath = resolvedUserDataPath;
   try {
     initializeSchema(db);
   } catch (error) {
     db.close();
     db = null;
+    dbUserDataPath = null;
     resetSchemaBootstrapForTests();
     throw error;
   }
@@ -679,5 +692,6 @@ export function registerDatabaseIPC(userDataPath: string): void {
 export function closeDatabase(): void {
   db?.close();
   db = null;
+  dbUserDataPath = null;
   resetSchemaBootstrapForTests();
 }

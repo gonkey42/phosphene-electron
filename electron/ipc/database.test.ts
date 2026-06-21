@@ -1,3 +1,4 @@
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const handleMock = vi.fn();
@@ -69,6 +70,23 @@ describe("registerDatabaseIPC", () => {
     transactionMock.mockImplementation((callback: (...args: any[]) => unknown) => {
       return (...args: any[]) => callback(...args);
     });
+  });
+
+  it("rejects getDatabase calls for a different resolved user data path while the singleton is open", async () => {
+    const { closeDatabase, getDatabase } = await import("./database");
+    const firstUserDataPath = path.resolve("/app/data");
+    const equivalentUserDataPath = path.resolve("/app/./data");
+    const differentUserDataPath = path.resolve("/other/data");
+
+    const database = getDatabase(firstUserDataPath);
+
+    expect(getDatabase(equivalentUserDataPath)).toBe(database);
+    expect(() => getDatabase(differentUserDataPath)).toThrow(
+      `Database already opened for ${firstUserDataPath}; cannot reuse it for ${differentUserDataPath}`,
+    );
+    expect(databaseConstructorMock).toHaveBeenCalledTimes(1);
+
+    closeDatabase();
   });
 
   it("reorders positional parameters to match placeholder order for execute handlers", async () => {
