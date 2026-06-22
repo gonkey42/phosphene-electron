@@ -39,6 +39,10 @@ Run the app in development mode:
 npm run dev
 ```
 
+## Board Packs
+
+Phosphene can import generated board packs for agent-created workspaces and boards. See [docs/board-packs.md](docs/board-packs.md).
+
 ## Verification
 
 Run the test suite:
