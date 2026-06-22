@@ -30,6 +30,7 @@
     "dev:electron": "npm run rebuild:electron && npm run build:main && wait-on http://localhost:5173 file:dist-electron/main.js file:dist-electron/preload.js && electron dist-electron/main.js",
     "build": "tsc && vite build",
     "build:main": "tsc -p electron/tsconfig.json && cp electron/package.json dist-electron/package.json",
+    "board-pack:import": "npm run rebuild:node && npm run build:main && node dist-electron/board-pack/import-cli.js",
     "rebuild:electron": "rimraf node_modules/better-sqlite3/build && electron-rebuild -f -w better-sqlite3",
     "rebuild:node": "rimraf node_modules/better-sqlite3/build && npm rebuild better-sqlite3",
     "build:electron": "npm run rebuild:electron && npm run build && npm run build:main && electron-builder && npm run verify:package",

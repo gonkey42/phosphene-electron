@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const handleMock = vi.fn();
 const accessMock = vi.fn();
@@ -51,6 +51,10 @@ describe("registerFilesystemIPC", () => {
     backupDatabaseMock.mockReset();
     getDatabaseMock.mockReset();
     vi.unstubAllGlobals();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("registers the paths handlers with validated joins for preload callers", async () => {
@@ -299,6 +303,9 @@ describe("registerFilesystemIPC", () => {
   });
 
   it("creates backups, skips cleanup on skipped backup, and surfaces failure results", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-19T12:00:00.000Z"));
+
     const { registerFilesystemIPC } = await import("./filesystem");
 
     registerFilesystemIPC("/app/data");

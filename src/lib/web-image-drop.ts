@@ -72,10 +72,10 @@ export async function readImageUrlAsFile(
     throw new Error(`Unsupported remote image type: ${contentType || "unknown"}`);
   }
 
-  const blob = await response.blob();
+  const data = await response.arrayBuffer();
   const name = getFileNameFromUrl(parsedUrl, contentType);
 
-  return new File([blob], name, { type: contentType });
+  return new File([data], name, { type: contentType });
 }
 
 export function createSyntheticDropTransfer(file: File): DataTransfer {

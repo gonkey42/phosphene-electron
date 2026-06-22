@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import { initializeSchema, resetSchemaBootstrapForTests } from "./schema";
 
 let db: Database.Database | null = null;
+let dbUserDataPath: string | null = null;
 
 type BackupFailureReason = "permission-denied" | "destination-missing" | "backup-failed";
 
@@ -249,15 +250,27 @@ function assertWorkspaceReorderPermutation(database: Database.Database, orderedI
 }
 
 export function getDatabase(userDataPath: string): Database.Database {
-  if (db) return db;
+  const resolvedUserDataPath = path.resolve(userDataPath);
 
-  const dbPath = path.join(userDataPath, "phosphene.db");
+  if (db) {
+    if (dbUserDataPath !== resolvedUserDataPath) {
+      throw new Error(
+        `Database already opened for ${dbUserDataPath}; cannot reuse it for ${resolvedUserDataPath}`,
+      );
+    }
+
+    return db;
+  }
+
+  const dbPath = path.join(resolvedUserDataPath, "phosphene.db");
   db = new Database(dbPath);
+  dbUserDataPath = resolvedUserDataPath;
   try {
     initializeSchema(db);
   } catch (error) {
     db.close();
     db = null;
+    dbUserDataPath = null;
     resetSchemaBootstrapForTests();
     throw error;
   }
@@ -378,6 +391,20 @@ export function createBoard(
   return runCreateBoard(name, workspaceId);
 }
 
+export function saveBoardCanvasDataDirect(
+  database: Database.Database,
+  boardId: string,
+  canvasData: string,
+): void {
+  const result = database.prepare(SAVE_BOARD_CANVAS_DATA_SQL).run(canvasData, boardId) as {
+    changes: number;
+  };
+
+  if (result.changes !== 1) {
+    throw new Error(`Board canvas-data save affected ${result.changes} rows`);
+  }
+}
+
 export function createWorkspace(
   database: Database.Database,
   name: string,
@@ -425,6 +452,10 @@ function getActiveWorkspaceId(database: Database.Database): string | null {
 
 function setActiveWorkspaceId(database: Database.Database, workspaceId: string): void {
   database.prepare(UPSERT_ACTIVE_WORKSPACE_ID_SQL).run("active_workspace_id", workspaceId);
+}
+
+export function setActiveWorkspaceIdDirect(database: Database.Database, workspaceId: string): void {
+  setActiveWorkspaceId(database, workspaceId);
 }
 
 export async function backupDatabase(
@@ -546,13 +577,7 @@ export function registerDatabaseIPC(userDataPath: string): void {
   ipcMain.handle("boards:save-canvas-data", async (_event, boardId: unknown, canvasData: unknown) => {
     const validatedBoardId = assertStringPayload("boards:save-canvas-data", boardId, "boardId");
     const validatedCanvasData = assertStringPayload("boards:save-canvas-data", canvasData, "canvasData");
-    const result = database.prepare(SAVE_BOARD_CANVAS_DATA_SQL).run(validatedCanvasData, validatedBoardId) as {
-      changes: number;
-    };
-
-    if (result.changes !== 1) {
-      throw new Error(`Board canvas-data save affected ${result.changes} rows`);
-    }
+    saveBoardCanvasDataDirect(database, validatedBoardId, validatedCanvasData);
   });
 
   ipcMain.handle("boards:save-thumbnail", async (_event, boardId: unknown, thumbnail: unknown) => {
@@ -660,12 +685,13 @@ export function registerDatabaseIPC(userDataPath: string): void {
       workspaceId,
       "workspaceId",
     );
-    setActiveWorkspaceId(database, validatedWorkspaceId);
+    setActiveWorkspaceIdDirect(database, validatedWorkspaceId);
   });
 }
 
 export function closeDatabase(): void {
   db?.close();
   db = null;
+  dbUserDataPath = null;
   resetSchemaBootstrapForTests();
 }

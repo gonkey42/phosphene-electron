@@ -297,6 +297,15 @@ export const contextMenu = {
   },
 };
 
+export const boardPacks = {
+  importFolder(packDir: string) {
+    return getDesktop().boardPacks.importFolder(packDir);
+  },
+  onImported(callback: (result: DesktopBoardPackImportResult) => void) {
+    return getDesktop().boardPacks.onImported(callback);
+  },
+};
+
 export const theme = {
   getPreference() {
     return getDesktop().theme.getPreference();

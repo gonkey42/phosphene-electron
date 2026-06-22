@@ -132,6 +132,20 @@ interface DesktopContextMenuAPI {
   showAddressInputMenu(): Promise<void>;
 }
 
+interface DesktopBoardPackImportResult {
+  workspaceId: string;
+  importedBoards: Array<{
+    sourceId: string;
+    boardId: string;
+    name: string;
+  }>;
+}
+
+interface DesktopBoardPacksAPI {
+  importFolder(packDir: string): Promise<DesktopBoardPackImportResult>;
+  onImported(callback: (result: DesktopBoardPackImportResult) => void): () => void;
+}
+
 type DesktopThemePreference = "system" | "light" | "dark";
 
 interface DesktopThemeAPI {
@@ -147,6 +161,7 @@ interface DesktopAPI {
   lifecycle: DesktopLifecycle;
   browser: DesktopBrowserAPI;
   contextMenu: DesktopContextMenuAPI;
+  boardPacks: DesktopBoardPacksAPI;
   settings: DesktopSettingsAPI;
   theme: DesktopThemeAPI;
 }

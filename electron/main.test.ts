@@ -6,10 +6,12 @@ const appQuitMock = vi.fn();
 const appWhenReadyMock = vi.fn();
 const appGetPathMock = vi.fn();
 const appSetPathMock = vi.fn();
+const appendSwitchMock = vi.fn();
 const ipcMainHandleMock = vi.fn();
 const ipcMainOnMock = vi.fn();
 const ipcMainOffMock = vi.fn();
 const showErrorBoxMock = vi.fn();
+const showOpenDialogMock = vi.fn();
 const browserWindowConstructorMock = vi.fn();
 const browserWindowGetAllWindowsMock = vi.fn();
 const browserWindowFromWebContentsMock = vi.fn();
@@ -23,6 +25,20 @@ const menuSetApplicationMenuMock = vi.fn();
 const menuPopupMock = vi.fn();
 const loadPersistedThemePreferenceMock = vi.fn();
 const persistThemePreferenceMock = vi.fn();
+const registerBoardPackIPCMock = vi.fn();
+const importBoardPackMock = vi.fn();
+
+const appMock = {
+  isPackaged: true,
+  whenReady: appWhenReadyMock,
+  on: appOnMock,
+  quit: appQuitMock,
+  getPath: appGetPathMock,
+  setPath: appSetPathMock,
+  commandLine: {
+    appendSwitch: appendSwitchMock,
+  },
+};
 
 type MockMenuItem = {
   role?: string;
@@ -69,6 +85,14 @@ function createMockMenu(items: MockMenuItem[]): MockMenu {
 
 function createRoleMenuTemplate(template: Array<{ role?: string; label?: string }>): MockMenu {
   const items = template.map((entry) => {
+    if (entry.role === "fileMenu") {
+      return {
+        role: "fileMenu",
+        label: "File",
+        submenu: createMockMenu([{ role: "close" }]),
+      };
+    }
+
     if (entry.role === "viewMenu") {
       return {
         role: "viewMenu",
@@ -90,6 +114,31 @@ function createRoleMenuTemplate(template: Array<{ role?: string; label?: string 
   });
 
   return createMockMenu(items);
+}
+
+function findMenuItemByLabel(menu: MockMenu, label: string): MockMenuItem | undefined {
+  for (const item of menu.items) {
+    if (item.label === label) {
+      return item;
+    }
+
+    if (item.submenu) {
+      const nestedItem = findMenuItemByLabel(item.submenu, label);
+      if (nestedItem) {
+        return nestedItem;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function countMenuItemsByLabel(menu: MockMenu, label: string): number {
+  return menu.items.reduce((count, item) => {
+    const nestedCount = item.submenu ? countMenuItemsByLabel(item.submenu, label) : 0;
+
+    return count + (item.label === label ? 1 : 0) + nestedCount;
+  }, 0);
 }
 
 class BrowserViewMock {
@@ -178,18 +227,12 @@ async function withPlatform<T>(platform: NodeJS.Platform, run: () => Promise<T>)
 }
 
 vi.mock("electron", () => ({
-  app: {
-    isPackaged: true,
-    whenReady: appWhenReadyMock,
-    on: appOnMock,
-    quit: appQuitMock,
-    getPath: appGetPathMock,
-    setPath: appSetPathMock,
-  },
+  app: appMock,
   BrowserWindow: BrowserWindowMock,
   BrowserView: BrowserViewMock,
   dialog: {
     showErrorBox: showErrorBoxMock,
+    showOpenDialog: showOpenDialogMock,
   },
   Menu: {
     buildFromTemplate: menuBuildFromTemplateMock,
@@ -212,6 +255,14 @@ vi.mock("./ipc/filesystem", () => ({
   registerFilesystemIPC: vi.fn(),
 }));
 
+vi.mock("./ipc/board-pack", () => ({
+  registerBoardPackIPC: registerBoardPackIPCMock,
+}));
+
+vi.mock("./board-pack/importer", () => ({
+  importBoardPack: importBoardPackMock,
+}));
+
 vi.mock("./theme-preferences", () => ({
   loadPersistedThemePreference: loadPersistedThemePreferenceMock,
   persistThemePreference: persistThemePreferenceMock,
@@ -224,10 +275,12 @@ describe("electron main close flushing", () => {
     appWhenReadyMock.mockReset();
     appGetPathMock.mockReset();
     appSetPathMock.mockReset();
+    appendSwitchMock.mockReset();
     ipcMainHandleMock.mockClear();
     ipcMainOnMock.mockClear();
     ipcMainOffMock.mockClear();
     showErrorBoxMock.mockReset();
+    showOpenDialogMock.mockReset();
     browserWindowConstructorMock.mockReset();
     browserWindowGetAllWindowsMock.mockReset();
     browserWindowFromWebContentsMock.mockReset();
@@ -241,11 +294,15 @@ describe("electron main close flushing", () => {
     menuPopupMock.mockReset();
     loadPersistedThemePreferenceMock.mockReset();
     persistThemePreferenceMock.mockReset();
+    registerBoardPackIPCMock.mockReset();
+    importBoardPackMock.mockReset();
     BrowserWindowMock.lastCreatedInstance = null;
     menuBuildFromTemplateMock.mockImplementation((template: Array<{ role?: string; label?: string }>) =>
       createRoleMenuTemplate(template),
     );
     appWhenReadyMock.mockResolvedValue(undefined);
+    appMock.isPackaged = true;
+    delete process.env.PHOSPHENE_DEBUG_PORT;
     loadPersistedThemePreferenceMock.mockReturnValue("system");
     appGetPathMock.mockImplementation((name: string) => {
       if (name === "appData") {
@@ -259,6 +316,35 @@ describe("electron main close flushing", () => {
       return `/mock/${name}`;
     });
     vi.resetModules();
+  });
+
+  it("enables remote debugging on localhost when PHOSPHENE_DEBUG_PORT is set in dev", async () => {
+    appWhenReadyMock.mockReturnValue(new Promise(() => {}));
+    process.env.PHOSPHENE_DEBUG_PORT = "9222";
+    appMock.isPackaged = false;
+
+    await import("./main");
+
+    expect(appendSwitchMock).toHaveBeenCalledWith("remote-debugging-port", "9222");
+    expect(appendSwitchMock).toHaveBeenCalledWith("remote-debugging-address", "127.0.0.1");
+  });
+
+  it("does not enable remote debugging in packaged builds", async () => {
+    appWhenReadyMock.mockReturnValue(new Promise(() => {}));
+    process.env.PHOSPHENE_DEBUG_PORT = "9222";
+    appMock.isPackaged = true;
+
+    await import("./main");
+
+    expect(appendSwitchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-numeric remote debugging ports", async () => {
+    appWhenReadyMock.mockReturnValue(new Promise(() => {}));
+    process.env.PHOSPHENE_DEBUG_PORT = "devtools";
+    appMock.isPackaged = false;
+
+    await expect(import("./main")).rejects.toThrow("PHOSPHENE_DEBUG_PORT must be numeric");
   });
 
   it("waits for renderer flush before allowing a window close to continue", async () => {
@@ -348,6 +434,16 @@ describe("electron main close flushing", () => {
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:forward", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:reload", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:destroy", expect.any(Function));
+  });
+
+  it("registers board pack IPC during bootstrap", async () => {
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(registerBoardPackIPCMock).toHaveBeenCalledWith(
+      "/tmp/phosphene-test-app-data/app.phosphene.desktop",
+    );
   });
 
   it("registers a browser webpage context menu", async () => {
@@ -483,6 +579,156 @@ describe("electron main close flushing", () => {
       "theme:preference-selected",
       "dark",
     );
+  });
+
+  it("imports a board pack from the File menu and notifies open windows", async () => {
+    const importResult = {
+      workspaceId: "workspace-1",
+      importedBoards: [
+        {
+          sourceId: "source-board-1",
+          boardId: "board-1",
+          name: "Starter Board",
+        },
+      ],
+    };
+    const firstWindow = new BrowserWindowMock();
+    const secondWindow = new BrowserWindowMock();
+    browserWindowGetAllWindowsMock.mockReturnValue([firstWindow as never, secondWindow as never]);
+    showOpenDialogMock.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: ["/packs/starter"],
+    });
+    importBoardPackMock.mockResolvedValueOnce(importResult);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const menu = menuSetApplicationMenuMock.mock.calls.at(-1)?.[0] as MockMenu;
+    const importItem = findMenuItemByLabel(menu, "Import Board Pack...");
+
+    expect(importItem).toEqual(expect.objectContaining({ click: expect.any(Function) }));
+
+    importItem?.click?.();
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(showOpenDialogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        properties: ["openDirectory"],
+      }),
+    );
+    expect(importBoardPackMock).toHaveBeenCalledWith({
+      packDir: "/packs/starter",
+      userDataPath: "/tmp/phosphene-test-app-data/app.phosphene.desktop",
+    });
+    expect(firstWindow.webContents.send).toHaveBeenCalledWith(
+      "board-packs:imported",
+      importResult,
+    );
+    expect(secondWindow.webContents.send).toHaveBeenCalledWith(
+      "board-packs:imported",
+      importResult,
+    );
+  });
+
+  it("does not import a board pack when the File menu picker is canceled", async () => {
+    showOpenDialogMock.mockResolvedValueOnce({
+      canceled: true,
+      filePaths: [],
+    });
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const menu = menuSetApplicationMenuMock.mock.calls.at(-1)?.[0] as MockMenu;
+    const importItem = findMenuItemByLabel(menu, "Import Board Pack...");
+
+    importItem?.click?.();
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(importBoardPackMock).not.toHaveBeenCalled();
+  });
+
+  it("reports board pack import failures from the File menu", async () => {
+    const consoleErrorSpy = suppressExpectedConsoleError();
+    showOpenDialogMock.mockResolvedValueOnce({
+      canceled: false,
+      filePaths: ["/packs/broken"],
+    });
+    importBoardPackMock.mockRejectedValueOnce(new Error("manifest.json is missing"));
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const menu = menuSetApplicationMenuMock.mock.calls.at(-1)?.[0] as MockMenu;
+    const importItem = findMenuItemByLabel(menu, "Import Board Pack...");
+
+    importItem?.click?.();
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith("[board-pack:import-failed]", {
+      packDir: "/packs/broken",
+      error: "manifest.json is missing",
+    });
+    expect(showErrorBoxMock).toHaveBeenCalledWith(
+      "Board pack import failed",
+      expect.stringContaining("manifest.json is missing"),
+    );
+  });
+
+  it("reports board pack folder picker failures from the File menu", async () => {
+    const consoleErrorSpy = suppressExpectedConsoleError();
+    consoleErrorSpy.mockClear();
+    showOpenDialogMock.mockRejectedValueOnce(new Error("native picker unavailable"));
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const menu = menuSetApplicationMenuMock.mock.calls.at(-1)?.[0] as MockMenu;
+    const importItem = findMenuItemByLabel(menu, "Import Board Pack...");
+
+    importItem?.click?.();
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    expect(importBoardPackMock).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith("[board-pack:import-failed]", {
+      packDir: null,
+      error: "native picker unavailable",
+    });
+    expect(showErrorBoxMock).toHaveBeenCalledWith(
+      "Board pack import failed",
+      expect.stringContaining("native picker unavailable"),
+    );
+  });
+
+  it("keeps a single File menu board pack import item after menu rebuilds", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowGetAllWindowsMock.mockReturnValue([windowInstance as never]);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const themePreferenceHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "theme:set-preference",
+    )?.[1];
+
+    await themePreferenceHandler?.(
+      { sender: BrowserWindowMock.lastCreatedInstance?.webContents } as never,
+      "light",
+    );
+
+    const menu = menuSetApplicationMenuMock.mock.calls.at(-1)?.[0] as MockMenu;
+
+    expect(countMenuItemsByLabel(menu, "Import Board Pack...")).toBe(1);
   });
 
   it("replays a menu-selected theme preference to a later-created window", async () => {
