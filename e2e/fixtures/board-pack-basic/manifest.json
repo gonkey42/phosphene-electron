@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "workspace": {
+    "name": "Imported Example Workspace"
+  },
+  "assets": [],
+  "boards": [
+    {
+      "id": "board-01",
+      "name": "Imported Board 01",
+      "description": "Generic board pack fixture",
+      "path": "boards/board-01.json"
+    }
+  ]
+}
