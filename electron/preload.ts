@@ -59,6 +59,13 @@ type BoardPackImportResult = {
   }>;
 };
 
+// Permissive bridge payload type only. The exact public renderer contract lives
+// in src/types/desktop.d.ts, and main IPC validates untrusted payloads.
+type BoardPackImportOptionsPayload =
+  | { targetWorkspaceId: string }
+  | { targetWorkspaceName: string }
+  | { targetActiveWorkspace: true };
+
 let lifecycleRequestSequence = 0;
 let lifecycleReady =
   (window as Window & { [LIFECYCLE_READY_FLAG]?: boolean })[LIFECYCLE_READY_FLAG] === true;
@@ -300,8 +307,12 @@ contextBridge.exposeInMainWorld("desktop", {
     },
   },
   boardPacks: {
-    importFolder(packDir: string) {
-      return ipcRenderer.invoke("board-packs:import-folder", packDir);
+    importFolder(packDir: string, options?: BoardPackImportOptionsPayload) {
+      if (options === undefined) {
+        return ipcRenderer.invoke("board-packs:import-folder", packDir);
+      }
+
+      return ipcRenderer.invoke("board-packs:import-folder", packDir, options);
     },
     onImported(callback: (result: BoardPackImportResult) => void) {
       const listener = (_event: unknown, result: BoardPackImportResult) => {

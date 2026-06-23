@@ -141,8 +141,79 @@ interface DesktopBoardPackImportResult {
   }>;
 }
 
+type DesktopBoardPackImportSelectorKey =
+  | "targetWorkspaceId"
+  | "targetWorkspaceName"
+  | "targetActiveWorkspace";
+
+type DesktopTargetWorkspaceIdImportOption = {
+  targetWorkspaceId: string;
+};
+
+type DesktopTargetWorkspaceNameImportOption = {
+  targetWorkspaceName: string;
+};
+
+type DesktopTargetActiveWorkspaceImportOption = {
+  targetActiveWorkspace: true;
+};
+
+type DesktopBoardPackImportOption =
+  | DesktopTargetWorkspaceIdImportOption
+  | DesktopTargetWorkspaceNameImportOption
+  | DesktopTargetActiveWorkspaceImportOption;
+
+type DesktopBoardPackImportSelectorKeys<T> = Extract<
+  keyof T,
+  DesktopBoardPackImportSelectorKey
+>;
+
+type DesktopBoardPackImportIsUnion<T, U = T> = [T] extends [never]
+  ? false
+  : T extends unknown
+    ? [U] extends [T]
+      ? false
+      : true
+    : false;
+
+type DesktopBoardPackImportKnownOptionKeysOnly<T> =
+  Exclude<keyof T, DesktopBoardPackImportSelectorKey> extends never ? T : never;
+
+type DesktopExactBoardPackImportOptions<T> =
+  DesktopBoardPackImportIsUnion<T> extends true
+    ? never
+    : T extends DesktopTargetWorkspaceIdImportOption
+      ? DesktopBoardPackImportSelectorKeys<T> extends "targetWorkspaceId"
+        ? DesktopBoardPackImportKnownOptionKeysOnly<T>
+        : never
+      : T extends DesktopTargetWorkspaceNameImportOption
+        ? DesktopBoardPackImportSelectorKeys<T> extends "targetWorkspaceName"
+          ? DesktopBoardPackImportKnownOptionKeysOnly<T>
+          : never
+        : T extends DesktopTargetActiveWorkspaceImportOption
+          ? DesktopBoardPackImportSelectorKeys<T> extends "targetActiveWorkspace"
+            ? DesktopBoardPackImportKnownOptionKeysOnly<T>
+            : never
+          : never;
+
+type DesktopBoardPackImportOptions<
+  T extends DesktopBoardPackImportOption,
+> = T & DesktopExactBoardPackImportOptions<T>;
+
+type DesktopBoardPackImportIdOptions =
+  DesktopBoardPackImportOptions<DesktopTargetWorkspaceIdImportOption>;
+
+type DesktopBoardPackImportNameOptions =
+  DesktopBoardPackImportOptions<DesktopTargetWorkspaceNameImportOption>;
+
+type DesktopBoardPackImportActiveOptions =
+  DesktopBoardPackImportOptions<DesktopTargetActiveWorkspaceImportOption>;
+
 interface DesktopBoardPacksAPI {
-  importFolder(packDir: string): Promise<DesktopBoardPackImportResult>;
+  importFolder<const T extends DesktopBoardPackImportOption>(
+    packDir: string,
+    options?: DesktopBoardPackImportOptions<T>,
+  ): Promise<DesktopBoardPackImportResult>;
   onImported(callback: (result: DesktopBoardPackImportResult) => void): () => void;
 }
 

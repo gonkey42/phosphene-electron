@@ -77,6 +77,16 @@ export type BrowserState = {
   lastError: string | null;
 };
 
+type BoardPackImportOption = DesktopBoardPackImportOption;
+
+export type BoardPackImportOptions<
+  T extends BoardPackImportOption,
+> = DesktopBoardPackImportOptions<T>;
+
+export type BoardPackImportIdOptions = DesktopBoardPackImportIdOptions;
+export type BoardPackImportNameOptions = DesktopBoardPackImportNameOptions;
+export type BoardPackImportActiveOptions = DesktopBoardPackImportActiveOptions;
+
 type PendingWorkHandler = () => Promise<void> | void;
 type FlushCompletionDetail = {
   requestId: string;
@@ -298,8 +308,15 @@ export const contextMenu = {
 };
 
 export const boardPacks = {
-  importFolder(packDir: string) {
-    return getDesktop().boardPacks.importFolder(packDir);
+  importFolder<const T extends BoardPackImportOption>(
+    packDir: string,
+    options?: BoardPackImportOptions<T>,
+  ) {
+    if (options === undefined) {
+      return getDesktop().boardPacks.importFolder(packDir);
+    }
+
+    return getDesktop().boardPacks.importFolder<T>(packDir, options);
   },
   onImported(callback: (result: DesktopBoardPackImportResult) => void) {
     return getDesktop().boardPacks.onImported(callback);
