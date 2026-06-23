@@ -88,7 +88,10 @@ type ExposedDesktop = {
     showAddressInputMenu(): Promise<void>;
   };
   boardPacks: {
-    importFolder(packDir: string): Promise<{
+    importFolder(
+      packDir: string,
+      options?: unknown,
+    ): Promise<{
       workspaceId: string;
       importedBoards: Array<{
         sourceId: string;
@@ -515,7 +518,9 @@ describe("preload filesystem IPC", () => {
 
     const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
 
-    await expect(desktop.boardPacks.importFolder("/packs/starter")).resolves.toBe(importResult);
+    await expect(
+      desktop.boardPacks.importFolder("/packs/starter", { targetWorkspaceName: "Vacation Plan" }),
+    ).resolves.toBe(importResult);
     expect(exposeInMainWorldMock).toHaveBeenCalledWith(
       "desktop",
       expect.objectContaining({
@@ -524,6 +529,23 @@ describe("preload filesystem IPC", () => {
         }),
       }),
     );
+    expect(invokeMock).toHaveBeenCalledWith("board-packs:import-folder", "/packs/starter", {
+      targetWorkspaceName: "Vacation Plan",
+    });
+  });
+
+  it("imports a board pack folder without options by omitting the IPC options argument", async () => {
+    const importResult = {
+      workspaceId: "workspace-1",
+      importedBoards: [],
+    };
+    invokeMock.mockResolvedValueOnce(importResult);
+
+    await import("./preload");
+
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+
+    await expect(desktop.boardPacks.importFolder("/packs/starter")).resolves.toBe(importResult);
     expect(invokeMock).toHaveBeenCalledWith("board-packs:import-folder", "/packs/starter");
   });
 
