@@ -100,13 +100,23 @@ describe("resolveBoardPackWorkspaceTarget", () => {
     );
   });
 
-  it("trims target names before resolution", async () => {
+  it("resolves workspace names with exact leading and trailing whitespace", async () => {
     const database = await createTestDatabase();
-    const workspaceId = createWorkspace(database, "Vacation Plan", null);
+    createWorkspace(database, "Vacation Plan", null);
+    const workspaceId = createWorkspace(database, " Vacation Plan ", null);
 
     expect(
-      resolveBoardPackWorkspaceTarget(database, { type: "name", name: "\tVacation Plan  " }),
+      resolveBoardPackWorkspaceTarget(database, { type: "name", name: " Vacation Plan " }),
     ).toBe(workspaceId);
+  });
+
+  it("does not trim whitespace-padded target names into a trimmed workspace name", async () => {
+    const database = await createTestDatabase();
+    createWorkspace(database, "Vacation Plan", null);
+
+    expect(() =>
+      resolveBoardPackWorkspaceTarget(database, { type: "name", name: " Vacation Plan " }),
+    ).toThrow('Target workspace name " Vacation Plan " does not exist');
   });
 
   it("does not trim stored workspace names during resolution", async () => {
@@ -191,6 +201,15 @@ describe("resolveBoardPackWorkspaceTarget", () => {
 
     expect(() => resolveBoardPackWorkspaceTarget(database, { type: "active" })).toThrow(
       `Target workspace ${workspaceId} does not exist or has been deleted`,
+    );
+  });
+
+  it("rejects unknown runtime target selector types", async () => {
+    const { database } = await resolve();
+    const target = { type: "bogus" } as unknown as BoardPackWorkspaceTarget;
+
+    expect(() => resolveBoardPackWorkspaceTarget(database, target)).toThrow(
+      "Unknown target workspace selector",
     );
   });
 });

@@ -16,14 +16,20 @@ const LIST_WORKSPACES_BY_NAME_SQL =
   "SELECT id FROM workspaces WHERE name = ? AND deleted_at IS NULL ORDER BY position";
 const GET_ACTIVE_WORKSPACE_ID_SQL = "SELECT value FROM settings WHERE key = ? LIMIT 1";
 
-function normalizeTargetValue(value: string, label: string): string {
-  const normalized = value.trim();
-
-  if (normalized === "") {
+function assertNonBlankTargetValue(value: string, label: string): void {
+  if (value.trim() === "") {
     throw new Error(`Target workspace ${label} must be a non-empty string`);
   }
+}
 
-  return normalized;
+function normalizeTargetId(value: string): string {
+  assertNonBlankTargetValue(value, "id");
+  return value.trim();
+}
+
+function validateTargetName(value: string): string {
+  assertNonBlankTargetValue(value, "name");
+  return value;
 }
 
 function getWorkspaceById(database: Database.Database, workspaceId: string): string | null {
@@ -35,7 +41,7 @@ function getWorkspaceById(database: Database.Database, workspaceId: string): str
 }
 
 function resolveWorkspaceById(database: Database.Database, workspaceId: string): string {
-  const normalizedWorkspaceId = normalizeTargetValue(workspaceId, "id");
+  const normalizedWorkspaceId = normalizeTargetId(workspaceId);
   const resolvedWorkspaceId = getWorkspaceById(database, normalizedWorkspaceId);
 
   if (!resolvedWorkspaceId) {
@@ -48,18 +54,18 @@ function resolveWorkspaceById(database: Database.Database, workspaceId: string):
 }
 
 function resolveWorkspaceByName(database: Database.Database, workspaceName: string): string {
-  const normalizedWorkspaceName = normalizeTargetValue(workspaceName, "name");
-  const rows = database.prepare(LIST_WORKSPACES_BY_NAME_SQL).all(normalizedWorkspaceName) as
+  const targetWorkspaceName = validateTargetName(workspaceName);
+  const rows = database.prepare(LIST_WORKSPACES_BY_NAME_SQL).all(targetWorkspaceName) as
     | WorkspaceIdRow[]
     | [];
 
   if (rows.length === 0) {
-    throw new Error(`Target workspace name "${normalizedWorkspaceName}" does not exist`);
+    throw new Error(`Target workspace name "${targetWorkspaceName}" does not exist`);
   }
 
   if (rows.length > 1) {
     throw new Error(
-      `Target workspace name "${normalizedWorkspaceName}" is ambiguous; use --target-workspace-id`,
+      `Target workspace name "${targetWorkspaceName}" is ambiguous; use --target-workspace-id`,
     );
   }
 
@@ -92,5 +98,7 @@ export function resolveBoardPackWorkspaceTarget(
       return resolveWorkspaceByName(database, targetWorkspace.name);
     case "active":
       return resolveActiveWorkspace(database);
+    default:
+      throw new Error("Unknown target workspace selector");
   }
 }

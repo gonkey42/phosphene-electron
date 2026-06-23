@@ -290,6 +290,51 @@ describe("importBoardPack", () => {
     expect(importedBoardCount).toBe(2);
   });
 
+  it("appends boards when importing repeatedly into the same target workspace", async () => {
+    const userDataPath = await createTempDir("phosphene-user-data-");
+    const { packDir } = await createGenericPack();
+    const database = getDatabase(userDataPath);
+    const targetWorkspace = database
+      .prepare("SELECT id FROM workspaces WHERE name = ? AND deleted_at IS NULL LIMIT 1")
+      .get("Home") as { id: string };
+
+    const firstResult = await importBoardPack({
+      packDir,
+      userDataPath,
+      targetWorkspace: { type: "id", id: targetWorkspace.id },
+    });
+    const secondResult = await importBoardPack({
+      packDir,
+      userDataPath,
+      targetWorkspace: { type: "id", id: targetWorkspace.id },
+    });
+
+    const activeWorkspaceCount = (
+      database
+        .prepare("SELECT count(*) as count FROM workspaces WHERE deleted_at IS NULL")
+        .get() as { count: number }
+    ).count;
+    const boards = database
+      .prepare(
+        "SELECT name FROM boards WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY position",
+      )
+      .all(targetWorkspace.id) as Array<{ name: string }>;
+    const activeWorkspace = database
+      .prepare("SELECT value FROM settings WHERE key = ? LIMIT 1")
+      .get("active_workspace_id") as { value: string } | undefined;
+
+    expect(firstResult.workspaceId).toBe(targetWorkspace.id);
+    expect(secondResult.workspaceId).toBe(targetWorkspace.id);
+    expect(activeWorkspaceCount).toBe(1);
+    expect(boards.map((board) => board.name)).toEqual([
+      "Board 01",
+      "Board 02",
+      "Board 01",
+      "Board 02",
+    ]);
+    expect(activeWorkspace?.value).toBe(targetWorkspace.id);
+  });
+
   it("imports boards into a target workspace selected by exact name", async () => {
     const userDataPath = await createTempDir("phosphene-user-data-");
     const { packDir } = await createGenericPack();
@@ -557,6 +602,40 @@ describe("importBoardPack", () => {
     expect(thrown).toBeInstanceOf(Error);
     expect((thrown as Error).message).toBe("copy failed after partial write");
     expect(getDatabaseCounts(userDataPath)).toEqual(countsBefore);
+    await expect(fs.readdir(path.join(userDataPath, "images"))).resolves.toEqual([]);
+  });
+
+  it("keeps an existing target workspace when cleaning up a failed targeted import", async () => {
+    const userDataPath = await createTempDir("phosphene-user-data-");
+    const { packDir } = await createGenericPack();
+    const database = getDatabase(userDataPath);
+    const targetWorkspaceId = createWorkspace(database, "Existing Workspace", null);
+    vi.spyOn(fs, "copyFile").mockImplementationOnce(async (_source, destination) => {
+      await fs.writeFile(destination, SAMPLE_IMAGE_BYTES);
+      throw Object.assign(new Error("copy failed after targeted write"), { code: "EIO" });
+    });
+
+    await expect(
+      importBoardPack({
+        packDir,
+        userDataPath,
+        targetWorkspace: { type: "id", id: targetWorkspaceId },
+      }),
+    ).rejects.toThrow("copy failed after targeted write");
+
+    const targetWorkspace = database
+      .prepare("SELECT deleted_at FROM workspaces WHERE id = ?")
+      .get(targetWorkspaceId) as { deleted_at: string | null };
+    const activeBoardCount = (
+      database
+        .prepare(
+          "SELECT count(*) as count FROM boards WHERE workspace_id = ? AND deleted_at IS NULL",
+        )
+        .get(targetWorkspaceId) as { count: number }
+    ).count;
+
+    expect(targetWorkspace.deleted_at).toBeNull();
+    expect(activeBoardCount).toBe(0);
     await expect(fs.readdir(path.join(userDataPath, "images"))).resolves.toEqual([]);
   });
 

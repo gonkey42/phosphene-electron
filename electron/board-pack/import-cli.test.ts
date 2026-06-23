@@ -51,6 +51,52 @@ describe("parseImportCliArgs", () => {
     });
   });
 
+  it("preserves non-blank target workspace name whitespace", () => {
+    expect(
+      parseImportCliArgs([
+        "--pack",
+        "/tmp/example-pack",
+        "--user-data-dir",
+        "/tmp/phosphene-user-data",
+        "--target-workspace-name",
+        " Vacation Plan ",
+      ]),
+    ).toEqual({
+      packDir: "/tmp/example-pack",
+      userDataPath: "/tmp/phosphene-user-data",
+      targetWorkspace: { type: "name", name: " Vacation Plan " },
+    });
+  });
+
+  it("accepts an inline target workspace name that starts with flag syntax", () => {
+    expect(
+      parseImportCliArgs([
+        "--pack",
+        "/tmp/example-pack",
+        "--user-data-dir",
+        "/tmp/phosphene-user-data",
+        "--target-workspace-name=--flag-like-workspace",
+      ]),
+    ).toEqual({
+      packDir: "/tmp/example-pack",
+      userDataPath: "/tmp/phosphene-user-data",
+      targetWorkspace: { type: "name", name: "--flag-like-workspace" },
+    });
+  });
+
+  it("rejects adjacent target workspace names that look like flags", () => {
+    expect(() =>
+      parseImportCliArgs([
+        "--pack",
+        "/tmp/example-pack",
+        "--user-data-dir",
+        "/tmp/phosphene-user-data",
+        "--target-workspace-name",
+        "--flag-like-workspace",
+      ]),
+    ).toThrow("Missing required --target-workspace-name <name>");
+  });
+
   it("accepts the active workspace target", () => {
     expect(
       parseImportCliArgs([
@@ -157,6 +203,58 @@ describe("parseImportCliArgs", () => {
         "Vacation Plan",
       ]),
     ).toThrow("Unknown board pack import flag --target-workspace-nam");
+  });
+
+  it.each([
+    {
+      name: "duplicate --pack",
+      argv: [
+        "--pack",
+        "/tmp/example-pack",
+        "--pack",
+        "/tmp/other-pack",
+        "--user-data-dir",
+        "/tmp/phosphene-user-data",
+      ],
+      message: "Duplicate board pack import flag --pack",
+    },
+    {
+      name: "duplicate --user-data-dir",
+      argv: [
+        "--pack",
+        "/tmp/example-pack",
+        "--user-data-dir",
+        "/tmp/phosphene-user-data",
+        "--user-data-dir",
+        "/tmp/other-user-data",
+      ],
+      message: "Duplicate board pack import flag --user-data-dir",
+    },
+    {
+      name: "unexpected positional argument",
+      argv: [
+        "--pack",
+        "/tmp/example-pack",
+        "--user-data-dir",
+        "/tmp/phosphene-user-data",
+        "/tmp/stray",
+      ],
+      message: "Unexpected board pack import argument /tmp/stray",
+    },
+    {
+      name: "value after active workspace selector",
+      argv: [
+        "--pack",
+        "/tmp/example-pack",
+        "--user-data-dir",
+        "/tmp/phosphene-user-data",
+        "--target-active-workspace",
+        "false",
+      ],
+      message: "Unexpected board pack import argument false",
+    },
+  ])("rejects malformed argv shapes: $name", ({ argv, message }) => {
+    expect(() => parseImportCliArgs(argv)).toThrow(message);
   });
 
   it("rejects missing pack argument", () => {

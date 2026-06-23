@@ -66,7 +66,7 @@ By default, each import creates a new workspace from `manifest.workspace`.
 npm run board-pack:import -- --pack /path/to/MyBoardPack --user-data-dir "$HOME/Library/Application Support/app.phosphene.desktop"
 ```
 
-To append boards to an existing workspace, pass exactly one target selector. Targeted imports append boards to the selected workspace without creating a new workspace or updating workspace metadata from `manifest.workspace`.
+To append boards to an existing workspace, pass exactly one target selector. Targeted imports append boards to the selected workspace without creating a new workspace or updating workspace metadata from `manifest.workspace`. Repeated targeted imports keep appending to the selected workspace and make it active.
 
 ```bash
 npm run board-pack:import -- --pack /path/to/Day2Pack --user-data-dir "$HOME/Library/Application Support/app.phosphene.desktop" --target-workspace-id 4fd7f4a7d0a741efb47a7c1ab8f0ad42
@@ -74,7 +74,7 @@ npm run board-pack:import -- --pack /path/to/Day2Pack --user-data-dir "$HOME/Lib
 npm run board-pack:import -- --pack /path/to/Day2Pack --user-data-dir "$HOME/Library/Application Support/app.phosphene.desktop" --target-active-workspace
 ```
 
-Name targeting uses exact, case-sensitive matches and requires exactly one non-deleted workspace with that name. If multiple workspaces share a name, use `--target-workspace-id`.
+Name targeting uses exact, case-sensitive matches, including leading and trailing whitespace, and requires exactly one non-deleted workspace with that name. If a workspace name begins with `--`, pass it as `--target-workspace-name=--name`. If multiple workspaces share a name, use `--target-workspace-id`.
 
 ## Production Safety
 

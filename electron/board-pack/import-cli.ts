@@ -7,17 +7,6 @@ export type ImportCliArgs = {
   targetWorkspace: BoardPackWorkspaceTarget;
 };
 
-function getRequiredFlagValue(argv: string[], flag: string, errorMessage: string): string {
-  const flagIndex = argv.indexOf(flag);
-  const value = argv[flagIndex + 1];
-
-  if (flagIndex < 0 || !value || value.startsWith("--") || value.trim() === "") {
-    throw new Error(errorMessage);
-  }
-
-  return value.trim();
-}
-
 const KNOWN_FLAGS = new Set([
   "--pack",
   "--user-data-dir",
@@ -25,54 +14,167 @@ const KNOWN_FLAGS = new Set([
   "--target-workspace-name",
   "--target-active-workspace",
 ]);
+const VALUE_FLAGS = new Set([
+  "--pack",
+  "--user-data-dir",
+  "--target-workspace-id",
+  "--target-workspace-name",
+]);
+const TARGET_SELECTOR_FLAGS = new Set([
+  "--target-workspace-id",
+  "--target-workspace-name",
+  "--target-active-workspace",
+]);
+const INLINE_VALUE_FLAGS = new Set(["--target-workspace-name"]);
 
-function assertKnownFlags(argv: string[]): void {
-  for (const arg of argv) {
-    if (arg.startsWith("--") && !KNOWN_FLAGS.has(arg)) {
+type ParsedImportFlags = {
+  packDir: string | null;
+  userDataPath: string | null;
+  targetWorkspaceId: string | null;
+  targetWorkspaceName: string | null;
+  targetActiveWorkspace: boolean;
+};
+
+type ParsedFlagArgument = {
+  flag: string;
+  inlineValue: string | null;
+};
+
+function parseFlagArgument(arg: string): ParsedFlagArgument {
+  const separatorIndex = arg.indexOf("=");
+
+  if (separatorIndex < 0) {
+    return { flag: arg, inlineValue: null };
+  }
+
+  const flag = arg.slice(0, separatorIndex);
+
+  if (!INLINE_VALUE_FLAGS.has(flag)) {
+    return { flag: arg, inlineValue: null };
+  }
+
+  return {
+    flag,
+    inlineValue: arg.slice(separatorIndex + 1),
+  };
+}
+
+function getMissingValueMessage(flag: string): string {
+  switch (flag) {
+    case "--pack":
+      return "Missing required --pack <path>";
+    case "--user-data-dir":
+      return "Missing required --user-data-dir <path>";
+    case "--target-workspace-id":
+      return "Missing required --target-workspace-id <id>";
+    case "--target-workspace-name":
+      return "Missing required --target-workspace-name <name>";
+    default:
+      return `Missing required value for ${flag}`;
+  }
+}
+
+function normalizeFlagValue(flag: string, value: string): string {
+  if (value.trim() === "") {
+    throw new Error(getMissingValueMessage(flag));
+  }
+
+  return flag === "--target-workspace-name" ? value : value.trim();
+}
+
+function setParsedFlagValue(
+  parsedFlags: ParsedImportFlags,
+  flag: string,
+  value: string,
+): void {
+  switch (flag) {
+    case "--pack":
+      parsedFlags.packDir = value;
+      return;
+    case "--user-data-dir":
+      parsedFlags.userDataPath = value;
+      return;
+    case "--target-workspace-id":
+      parsedFlags.targetWorkspaceId = value;
+      return;
+    case "--target-workspace-name":
+      parsedFlags.targetWorkspaceName = value;
+      return;
+    default:
+      throw new Error(`Unknown board pack import flag ${flag}`);
+  }
+}
+
+function parseFlags(argv: string[]): ParsedImportFlags {
+  const parsedFlags: ParsedImportFlags = {
+    packDir: null,
+    userDataPath: null,
+    targetWorkspaceId: null,
+    targetWorkspaceName: null,
+    targetActiveWorkspace: false,
+  };
+  const seenFlags = new Set<string>();
+  let targetSelectorCount = 0;
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    const { flag, inlineValue } = parseFlagArgument(arg);
+
+    if (!arg.startsWith("--")) {
+      throw new Error(`Unexpected board pack import argument ${arg}`);
+    }
+
+    if (!KNOWN_FLAGS.has(flag)) {
       throw new Error(`Unknown board pack import flag ${arg}`);
     }
+
+    if (TARGET_SELECTOR_FLAGS.has(flag)) {
+      targetSelectorCount += 1;
+      if (targetSelectorCount > 1) {
+        throw new Error("Use only one target workspace selector");
+      }
+    } else if (seenFlags.has(flag)) {
+      throw new Error(`Duplicate board pack import flag ${flag}`);
+    }
+
+    if (TARGET_SELECTOR_FLAGS.has(flag) && seenFlags.has(flag)) {
+      throw new Error("Use only one target workspace selector");
+    }
+
+    seenFlags.add(flag);
+
+    if (!VALUE_FLAGS.has(flag)) {
+      parsedFlags.targetActiveWorkspace = true;
+      continue;
+    }
+
+    if (inlineValue !== null) {
+      setParsedFlagValue(parsedFlags, flag, normalizeFlagValue(flag, inlineValue));
+      continue;
+    }
+
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) {
+      throw new Error(getMissingValueMessage(flag));
+    }
+
+    setParsedFlagValue(parsedFlags, flag, normalizeFlagValue(flag, value));
+    index += 1;
   }
+
+  return parsedFlags;
 }
 
-function countFlagOccurrences(argv: string[], flag: string): number {
-  return argv.filter((arg) => arg === flag).length;
-}
-
-function parseTargetWorkspace(argv: string[]): BoardPackWorkspaceTarget {
-  const targetWorkspaceIdCount = countFlagOccurrences(argv, "--target-workspace-id");
-  const targetWorkspaceNameCount = countFlagOccurrences(argv, "--target-workspace-name");
-  const targetActiveWorkspaceCount = countFlagOccurrences(argv, "--target-active-workspace");
-  const targetSelectorCount =
-    targetWorkspaceIdCount + targetWorkspaceNameCount + targetActiveWorkspaceCount;
-
-  if (targetSelectorCount > 1) {
-    throw new Error("Use only one target workspace selector");
+function parseTargetWorkspace(parsedFlags: ParsedImportFlags): BoardPackWorkspaceTarget {
+  if (parsedFlags.targetWorkspaceId !== null) {
+    return { type: "id", id: parsedFlags.targetWorkspaceId };
   }
 
-  const targetWorkspaceId = targetWorkspaceIdCount === 1
-    ? getRequiredFlagValue(
-        argv,
-        "--target-workspace-id",
-        "Missing required --target-workspace-id <id>",
-      )
-    : null;
-  const targetWorkspaceName = targetWorkspaceNameCount === 1
-    ? getRequiredFlagValue(
-        argv,
-        "--target-workspace-name",
-        "Missing required --target-workspace-name <name>",
-      )
-    : null;
-
-  if (targetWorkspaceId !== null) {
-    return { type: "id", id: targetWorkspaceId };
+  if (parsedFlags.targetWorkspaceName !== null) {
+    return { type: "name", name: parsedFlags.targetWorkspaceName };
   }
 
-  if (targetWorkspaceName !== null) {
-    return { type: "name", name: targetWorkspaceName };
-  }
-
-  if (targetActiveWorkspaceCount === 1) {
+  if (parsedFlags.targetActiveWorkspace) {
     return { type: "active" };
   }
 
@@ -80,19 +182,21 @@ function parseTargetWorkspace(argv: string[]): BoardPackWorkspaceTarget {
 }
 
 export function parseImportCliArgs(argv: string[]): ImportCliArgs {
-  const packDir = getRequiredFlagValue(argv, "--pack", "Missing required --pack <path>");
-  const userDataPath = getRequiredFlagValue(
-    argv,
-    "--user-data-dir",
-    "Missing required --user-data-dir <path>",
-  );
+  const parsedFlags = parseFlags(argv);
+  const { packDir, userDataPath } = parsedFlags;
 
-  assertKnownFlags(argv);
+  if (packDir === null) {
+    throw new Error("Missing required --pack <path>");
+  }
+
+  if (userDataPath === null) {
+    throw new Error("Missing required --user-data-dir <path>");
+  }
 
   return {
     packDir,
     userDataPath,
-    targetWorkspace: parseTargetWorkspace(argv),
+    targetWorkspace: parseTargetWorkspace(parsedFlags),
   };
 }
 

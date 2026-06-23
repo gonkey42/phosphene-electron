@@ -218,6 +218,21 @@ describe("registerBoardPackIPC", () => {
     });
   });
 
+  it("preserves non-blank target workspace name whitespace from options", async () => {
+    const importResult = { workspaceId: "workspace-1", importedBoards: [] };
+    importBoardPackMock.mockResolvedValueOnce(importResult);
+    const importFolderHandler = await registerAndGetImportFolderHandler();
+
+    await expect(
+      importFolderHandler({}, "/packs/starter", { targetWorkspaceName: " Vacation Plan " }),
+    ).resolves.toBe(importResult);
+    expect(importBoardPackMock).toHaveBeenCalledWith({
+      packDir: "/packs/starter",
+      userDataPath: "/app/data",
+      targetWorkspace: { type: "name", name: " Vacation Plan " },
+    });
+  });
+
   it("imports a folder into the active workspace from options", async () => {
     const importResult = { workspaceId: "workspace-1", importedBoards: [] };
     importBoardPackMock.mockResolvedValueOnce(importResult);

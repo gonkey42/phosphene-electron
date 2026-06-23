@@ -38,7 +38,7 @@ function assertOptionalStringPayload(
     return null;
   }
 
-  return assertStringPayload(channel, options[name], name).trim();
+  return assertStringPayload(channel, options[name], name);
 }
 
 function assertKnownOptionKeys(channel: string, options: Record<string, unknown>): void {
@@ -115,7 +115,7 @@ function parseTargetWorkspacePayload(
   }
 
   if (targetWorkspaceId !== null) {
-    return { type: "id", id: targetWorkspaceId };
+    return { type: "id", id: targetWorkspaceId.trim() };
   }
 
   if (targetWorkspaceName !== null) {
