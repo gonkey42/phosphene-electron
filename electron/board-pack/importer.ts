@@ -8,6 +8,10 @@ import {
   type BoardPackBoardFile,
 } from "./format";
 import {
+  resolveBoardPackWorkspaceTarget,
+  type BoardPackWorkspaceTarget,
+} from "./workspace-target";
+import {
   createBoard,
   createWorkspace,
   getDatabase,
@@ -18,7 +22,7 @@ import {
 export type ImportBoardPackOptions = {
   packDir: string;
   userDataPath: string;
-  targetWorkspaceId?: string | null;
+  targetWorkspace?: BoardPackWorkspaceTarget;
 };
 
 export type ImportBoardPackResult = {
@@ -301,19 +305,6 @@ async function readAndValidateBoards(
   return validatedBoards;
 }
 
-function assertTargetWorkspaceExists(
-  database: ReturnType<typeof getDatabase>,
-  workspaceId: string,
-): void {
-  const row = database
-    .prepare("SELECT id FROM workspaces WHERE id = ? AND deleted_at IS NULL LIMIT 1")
-    .get(workspaceId) as { id: string } | undefined;
-
-  if (!row) {
-    throw new Error(`Target workspace ${workspaceId} does not exist or has been deleted`);
-  }
-}
-
 async function cleanupPartialImport(
   database: ReturnType<typeof getDatabase>,
   createdWorkspaceId: string | null,
@@ -394,20 +385,17 @@ export async function importBoardPack(
   const assetsById = new Map(resolvedAssets.map((asset) => [asset.id, asset]));
   const validatedBoards = await readAndValidateBoards(resolvedBoards, assetsById);
   const database = getDatabase(options.userDataPath);
-
-  if (options.targetWorkspaceId != null) {
-    assertTargetWorkspaceExists(database, options.targetWorkspaceId);
-  }
+  const targetWorkspaceId = resolveBoardPackWorkspaceTarget(database, options.targetWorkspace);
 
   const imagesDir = path.join(options.userDataPath, "images");
   const realImagesRoot = hasPackAssetReferences(validatedBoards)
     ? await prepareImagesDirectory(imagesDir)
     : null;
   const workspaceId =
-    options.targetWorkspaceId ??
+    targetWorkspaceId ??
     createWorkspace(database, manifest.workspace.name, manifest.workspace.icon ?? null);
   const importedBoards: ImportBoardPackResult["importedBoards"] = [];
-  const createdWorkspaceId = options.targetWorkspaceId == null ? workspaceId : null;
+  const createdWorkspaceId = targetWorkspaceId === null ? workspaceId : null;
   const createdBoardIds: string[] = [];
   const copiedImagePaths: string[] = [];
 
