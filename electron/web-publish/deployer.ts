@@ -6,7 +6,15 @@ export type CommandResult = {
   stderr: string;
 };
 
-export type RunCommand = (command: string, args: string[]) => Promise<CommandResult>;
+export type CommandOptions = {
+  cwd?: string;
+};
+
+export type RunCommand = (
+  command: string,
+  args: string[],
+  options?: CommandOptions,
+) => Promise<CommandResult>;
 
 export type DeployWebPublishSiteOptions = {
   outputDir: string;
@@ -25,9 +33,14 @@ export function createWebPublishCommandEnv(
   return { ...baseEnv, PATH };
 }
 
-function defaultRunCommand(command: string, args: string[]): Promise<CommandResult> {
+function defaultRunCommand(
+  command: string,
+  args: string[],
+  options: CommandOptions = {},
+): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
+      cwd: options.cwd,
       env: createWebPublishCommandEnv(),
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -68,7 +81,9 @@ export async function deployWebPublishSite({
     projectName,
     "--branch",
     "main",
-  ]);
+  ], {
+    cwd: path.dirname(outputDir),
+  });
   const deploymentUrl = result.stdout.match(/https:\/\/\S+/)?.[0] ?? null;
 
   return { deploymentUrl };
