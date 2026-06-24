@@ -51,13 +51,56 @@ describe("exportWorkspaceBoardSnapshot", () => {
     expect(exportToBlob).toHaveBeenCalledWith(
       expect.objectContaining({
         mimeType: "image/png",
-        appState: expect.objectContaining({ exportBackground: true }),
+        appState: expect.objectContaining({
+          exportBackground: true,
+          theme: "dark",
+          viewBackgroundColor: "#ffffff",
+        }),
         files: expect.objectContaining({
           image1: files.image1,
           hydrated: expect.objectContaining({
             id: "hydrated",
             dataURL: "data:image/png;base64,AAAA",
           }),
+        }),
+      }),
+    );
+  });
+
+  it("uses the app dark background when a board has no explicit background", async () => {
+    exportToBlob.mockResolvedValue(new Blob([new Uint8Array([4, 5, 6])], { type: "image/png" }));
+
+    await exportWorkspaceBoardSnapshot({
+      elements: [],
+      appState: {},
+      files: {},
+    });
+
+    expect(exportToBlob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appState: expect.objectContaining({
+          exportBackground: true,
+          theme: "dark",
+          viewBackgroundColor: "#08111f",
+        }),
+      }),
+    );
+  });
+
+  it("preserves an explicit board background color", async () => {
+    exportToBlob.mockResolvedValue(new Blob([new Uint8Array([7, 8, 9])], { type: "image/png" }));
+
+    await exportWorkspaceBoardSnapshot({
+      elements: [],
+      appState: { viewBackgroundColor: "#123456" },
+      files: {},
+    });
+
+    expect(exportToBlob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appState: expect.objectContaining({
+          theme: "dark",
+          viewBackgroundColor: "#123456",
         }),
       }),
     );
