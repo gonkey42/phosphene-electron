@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 export type CommandResult = {
   stdout: string;
@@ -13,9 +14,23 @@ export type DeployWebPublishSiteOptions = {
   runCommand?: RunCommand;
 };
 
+const GUI_APP_COMMAND_PATHS = ["/opt/homebrew/bin", "/usr/local/bin"];
+
+export function createWebPublishCommandEnv(
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const pathParts = (baseEnv.PATH ?? "").split(path.delimiter).filter(Boolean);
+  const PATH = [...new Set([...GUI_APP_COMMAND_PATHS, ...pathParts])].join(path.delimiter);
+
+  return { ...baseEnv, PATH };
+}
+
 function defaultRunCommand(command: string, args: string[]): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      env: createWebPublishCommandEnv(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { deployWebPublishSite } from "./deployer";
+import { createWebPublishCommandEnv, deployWebPublishSite } from "./deployer";
 
 describe("deployWebPublishSite", () => {
   it("runs wrangler pages deploy for the phosphene project", async () => {
@@ -25,6 +25,18 @@ describe("deployWebPublishSite", () => {
       "phosphene",
       "--branch",
       "main",
+    ]);
+  });
+});
+
+describe("createWebPublishCommandEnv", () => {
+  it("adds common Node binary locations for GUI-launched macOS apps", () => {
+    const env = createWebPublishCommandEnv({ PATH: "/usr/bin:/bin" });
+
+    expect(env.PATH?.split(":").slice(0, 3)).toEqual([
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      "/usr/bin",
     ]);
   });
 });
