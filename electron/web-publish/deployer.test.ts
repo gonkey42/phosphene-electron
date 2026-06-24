@@ -25,7 +25,9 @@ describe("deployWebPublishSite", () => {
       "phosphene",
       "--branch",
       "main",
-    ]);
+    ], {
+      cwd: "/tmp",
+    });
   });
 });
 
