@@ -221,6 +221,7 @@ type DesktopWebPublishState = "not-online" | "online" | "changed-since-publish" 
 
 interface DesktopWebPublishWorkspaceState {
   state: DesktopWebPublishState;
+  hasPublishedSnapshot: boolean;
   lastError: string | null;
   lastDeploymentUrl: string | null;
 }

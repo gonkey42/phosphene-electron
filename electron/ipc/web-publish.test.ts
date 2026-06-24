@@ -254,6 +254,7 @@ describe("registerWebPublishIPC", () => {
     await expect(listStates({})).resolves.toMatchObject({
       "workspace-1": {
         state: "publish-failed",
+        hasPublishedSnapshot: false,
         lastError: "Wrangler is not authenticated",
       },
     });
@@ -352,6 +353,7 @@ describe("registerWebPublishIPC", () => {
     await expect(listStates({})).resolves.toMatchObject({
       "workspace-1": {
         state: "publish-failed",
+        hasPublishedSnapshot: false,
         lastError: "Wrangler deploy failed",
       },
     });

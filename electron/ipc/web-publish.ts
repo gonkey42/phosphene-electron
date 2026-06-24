@@ -571,6 +571,7 @@ async function listStates(userDataPath: string, database: Database.Database) {
     string,
     {
       state: "not-online" | "online" | "changed-since-publish" | "publish-failed";
+      hasPublishedSnapshot: boolean;
       lastError: string | null;
       lastDeploymentUrl: string | null;
     }
@@ -585,6 +586,7 @@ async function listStates(userDataPath: string, database: Database.Database) {
       if (failedEntry) {
         states[workspace.id] = {
           state: "publish-failed",
+          hasPublishedSnapshot: false,
           lastError: failedEntry.lastError,
           lastDeploymentUrl: failedEntry.lastDeploymentUrl,
         };
@@ -593,6 +595,7 @@ async function listStates(userDataPath: string, database: Database.Database) {
 
       states[workspace.id] = {
         state: "not-online",
+        hasPublishedSnapshot: false,
         lastError: null,
         lastDeploymentUrl: null,
       };
@@ -606,6 +609,7 @@ async function listStates(userDataPath: string, database: Database.Database) {
         : prepared.sourceFingerprint === entry.sourceFingerprint
           ? "online"
           : "changed-since-publish",
+      hasPublishedSnapshot: true,
       lastError: entry.lastError,
       lastDeploymentUrl: entry.lastDeploymentUrl,
     };
@@ -618,6 +622,7 @@ async function listStates(userDataPath: string, database: Database.Database) {
 
     states[entry.workspaceId] = {
       state: entry.lastError ? "publish-failed" : "online",
+      hasPublishedSnapshot: true,
       lastError: entry.lastError,
       lastDeploymentUrl: entry.lastDeploymentUrl,
     };
@@ -630,6 +635,7 @@ async function listStates(userDataPath: string, database: Database.Database) {
 
     states[entry.workspaceId] = {
       state: "publish-failed",
+      hasPublishedSnapshot: false,
       lastError: entry.lastError,
       lastDeploymentUrl: entry.lastDeploymentUrl,
     };
