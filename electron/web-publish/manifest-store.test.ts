@@ -50,6 +50,26 @@ describe("web publish manifest store", () => {
     expect(secondManifest.workspaces).toEqual({});
   });
 
+  it("returns fresh default failed workspace state when none exists", async () => {
+    const firstUserDataPath = await createTempUserDataPath();
+    const secondUserDataPath = await createTempUserDataPath();
+    const firstManifest = await readWebPublishManifest(firstUserDataPath);
+
+    firstManifest.failedWorkspaces!.workspace_1 = {
+      workspaceId: "workspace_1",
+      slug: "trip",
+      name: "Trip",
+      sourceFingerprint: "fingerprint-1",
+      publishedAt: "2026-06-24T01:00:00.000Z",
+      lastDeploymentUrl: null,
+      lastError: "Wrangler deploy failed",
+    };
+
+    const secondManifest = await readWebPublishManifest(secondUserDataPath);
+
+    expect(secondManifest.failedWorkspaces).toEqual({});
+  });
+
   it("round-trips published workspace state", async () => {
     const userDataPath = await createTempUserDataPath();
     const manifest = {

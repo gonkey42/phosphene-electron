@@ -16,12 +16,14 @@ export type WebPublishManifest = {
   projectName: string;
   hostname: string;
   workspaces: Record<string, WebPublishWorkspaceManifestEntry>;
+  failedWorkspaces?: Record<string, WebPublishWorkspaceManifestEntry>;
 };
 
 export type WebPublishBoardSource = {
   id: string;
   name: string;
   position: number;
+  canvasData: string | null;
   updatedAt: string;
 };
 

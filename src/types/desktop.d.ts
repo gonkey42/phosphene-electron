@@ -217,6 +217,49 @@ interface DesktopBoardPacksAPI {
   onImported(callback: (result: DesktopBoardPackImportResult) => void): () => void;
 }
 
+type DesktopWebPublishState = "not-online" | "online" | "changed-since-publish" | "publish-failed";
+
+interface DesktopWebPublishWorkspaceState {
+  state: DesktopWebPublishState;
+  lastError: string | null;
+  lastDeploymentUrl: string | null;
+}
+
+interface DesktopWebPublishPreparedWorkspace {
+  workspace: {
+    id: string;
+    name: string;
+    updatedAt: string;
+  };
+  boards: Array<{
+    id: string;
+    name: string;
+    position: number;
+    updatedAt: string;
+    canvasData: string | null;
+  }>;
+  sourceFingerprint: string;
+}
+
+interface DesktopWebPublishCommitPayload {
+  workspaceId: string;
+  sourceFingerprint: string;
+  boardImages: Record<string, Uint8Array>;
+}
+
+interface DesktopWebPublishDeploymentResult {
+  deploymentUrl: string | null;
+}
+
+interface DesktopWebPublishAPI {
+  listStates(): Promise<Record<string, DesktopWebPublishWorkspaceState>>;
+  prepareWorkspace(workspaceId: string): Promise<DesktopWebPublishPreparedWorkspace>;
+  commitWorkspace(
+    payload: DesktopWebPublishCommitPayload,
+  ): Promise<DesktopWebPublishDeploymentResult>;
+  unpublishWorkspace(workspaceId: string): Promise<DesktopWebPublishDeploymentResult>;
+}
+
 type DesktopThemePreference = "system" | "light" | "dark";
 
 interface DesktopThemeAPI {
@@ -233,6 +276,7 @@ interface DesktopAPI {
   browser: DesktopBrowserAPI;
   contextMenu: DesktopContextMenuAPI;
   boardPacks: DesktopBoardPacksAPI;
+  webPublish: DesktopWebPublishAPI;
   settings: DesktopSettingsAPI;
   theme: DesktopThemeAPI;
 }

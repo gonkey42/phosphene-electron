@@ -87,6 +87,12 @@ export type BoardPackImportIdOptions = DesktopBoardPackImportIdOptions;
 export type BoardPackImportNameOptions = DesktopBoardPackImportNameOptions;
 export type BoardPackImportActiveOptions = DesktopBoardPackImportActiveOptions;
 
+export type WebPublishState = DesktopWebPublishState;
+export type WebPublishWorkspaceState = DesktopWebPublishWorkspaceState;
+export type WebPublishPreparedWorkspace = DesktopWebPublishPreparedWorkspace;
+export type WebPublishCommitPayload = DesktopWebPublishCommitPayload;
+export type WebPublishDeploymentResult = DesktopWebPublishDeploymentResult;
+
 type PendingWorkHandler = () => Promise<void> | void;
 type FlushCompletionDetail = {
   requestId: string;
@@ -320,6 +326,21 @@ export const boardPacks = {
   },
   onImported(callback: (result: DesktopBoardPackImportResult) => void) {
     return getDesktop().boardPacks.onImported(callback);
+  },
+};
+
+export const webPublish = {
+  listStates() {
+    return getDesktop().webPublish.listStates();
+  },
+  prepareWorkspace(workspaceId: string) {
+    return getDesktop().webPublish.prepareWorkspace(workspaceId);
+  },
+  commitWorkspace(payload: WebPublishCommitPayload) {
+    return getDesktop().webPublish.commitWorkspace(payload);
+  },
+  unpublishWorkspace(workspaceId: string) {
+    return getDesktop().webPublish.unpublishWorkspace(workspaceId);
   },
 };
 

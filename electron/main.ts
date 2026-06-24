@@ -15,6 +15,7 @@ import { registerDatabaseIPC, closeDatabase } from "./ipc/database";
 import { registerFilesystemIPC } from "./ipc/filesystem";
 import { registerBrowserIPC } from "./ipc/browser";
 import { registerBoardPackIPC } from "./ipc/board-pack";
+import { registerWebPublishIPC } from "./ipc/web-publish";
 import {
   loadPersistedThemePreference,
   persistThemePreference,
@@ -553,6 +554,9 @@ async function bootstrap() {
   });
   await runBootstrapPhase("board-pack-ipc", () => {
     registerBoardPackIPC(userDataPath);
+  });
+  await runBootstrapPhase("web-publish-ipc", () => {
+    registerWebPublishIPC(app.getPath("userData"));
   });
   await runBootstrapPhase("browser-ipc", () => {
     registerBrowserIPC();

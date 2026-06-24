@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { WebPublishManifest, WebPublishWorkspaceManifestEntry } from "./types";
+import { assertSafeWebPublishPathSegment, resolveInsideWebPublishRoot } from "./artifact-paths";
 
 type PublishedWorkspaceSnapshot = {
   workspace: { id: string; name: string; slug: string };
@@ -55,7 +56,7 @@ async function readSnapshot(
   snapshotRoot: string,
   workspaceId: string,
 ): Promise<PublishedWorkspaceSnapshot> {
-  const snapshotPath = path.join(snapshotRoot, workspaceId, "workspace.json");
+  const snapshotPath = resolveInsideWebPublishRoot(snapshotRoot, workspaceId, "workspace.json");
   return JSON.parse(await fs.readFile(snapshotPath, "utf8")) as PublishedWorkspaceSnapshot;
 }
 
@@ -86,14 +87,15 @@ async function writeWorkspacePage(
   assetRoot: string,
   { entry, snapshot }: PublishedWorkspaceSite,
 ): Promise<void> {
-  const workspaceDir = path.join(outputDir, "workspaces", entry.slug);
+  const workspaceDir = resolveInsideWebPublishRoot(outputDir, "workspaces", entry.slug);
   await fs.mkdir(workspaceDir, { recursive: true });
   const boards = [...snapshot.boards].sort((left, right) => left.position - right.position);
   const boardHtml = boards
     .map((board) => {
+      assertSafeWebPublishPathSegment(board.imageFile);
       const boardImagePath = relativeHtmlPath(
         workspaceDir,
-        path.join(assetRoot, entry.workspaceId, board.imageFile),
+        resolveInsideWebPublishRoot(assetRoot, entry.workspaceId, board.imageFile),
       );
       return `<article class="board"><h2>${escapeHtml(board.name)}</h2><a href="${escapeHtml(boardImagePath)}"><img src="${escapeHtml(boardImagePath)}" alt="${escapeHtml(board.name)}"></a></article>`;
     })
@@ -113,14 +115,15 @@ async function copyWorkspaceAssets(
   outputDir: string,
   { entry, snapshot }: PublishedWorkspaceSite,
 ): Promise<void> {
-  const sourceBoardDir = path.join(snapshotRoot, entry.workspaceId, "boards");
-  const outputAssetDir = path.join(outputDir, "assets", entry.workspaceId);
+  const sourceBoardDir = resolveInsideWebPublishRoot(snapshotRoot, entry.workspaceId, "boards");
+  const outputAssetDir = resolveInsideWebPublishRoot(outputDir, "assets", entry.workspaceId);
   await fs.mkdir(outputAssetDir, { recursive: true });
 
   for (const board of snapshot.boards) {
+    assertSafeWebPublishPathSegment(board.imageFile);
     await fs.copyFile(
-      path.join(sourceBoardDir, board.imageFile),
-      path.join(outputAssetDir, board.imageFile),
+      resolveInsideWebPublishRoot(sourceBoardDir, board.imageFile),
+      resolveInsideWebPublishRoot(outputAssetDir, board.imageFile),
     );
   }
 }

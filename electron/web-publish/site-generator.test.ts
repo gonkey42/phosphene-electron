@@ -113,4 +113,45 @@ describe("generateWebPublishSite", () => {
         .catch((error: unknown) => (error as NodeJS.ErrnoException).code),
     ).resolves.toBe("ENOENT");
   });
+
+  it("rejects traversal-shaped workspace and board artifact paths", async () => {
+    const root = await tempDir();
+    const snapshotRoot = path.join(root, "snapshots");
+    const outputDir = path.join(root, "site");
+    await fs.mkdir(path.join(snapshotRoot, "workspace_1", "boards"), { recursive: true });
+    await fs.writeFile(
+      path.join(snapshotRoot, "workspace_1", "workspace.json"),
+      JSON.stringify({
+        workspace: { id: "workspace_1", name: "Trip", slug: "trip" },
+        boards: [
+          { id: "../board-outside", name: "Board", position: 0, imageFile: "../outside.png" },
+        ],
+      }),
+    );
+    const manifest: WebPublishManifest = {
+      schemaVersion: 1,
+      projectName: "phosphene",
+      hostname: "phosphene.gonkey.org",
+      workspaces: {
+        "../workspace-outside": {
+          workspaceId: "../workspace-outside",
+          slug: "trip",
+          name: "Trip",
+          sourceFingerprint: "abc",
+          publishedAt: "2026-06-24T01:00:00.000Z",
+          lastDeploymentUrl: null,
+          lastError: null,
+        },
+      },
+    };
+
+    await expect(generateWebPublishSite({ manifest, snapshotRoot, outputDir })).rejects.toThrow(
+      "Unsafe web publish path segment",
+    );
+    await expect(
+      fs
+        .readFile(path.join(root, "outside.png"), "utf8")
+        .catch((error: unknown) => (error as NodeJS.ErrnoException).code),
+    ).resolves.toBe("ENOENT");
+  });
 });
