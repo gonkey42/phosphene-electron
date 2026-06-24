@@ -16,6 +16,7 @@ import {
 } from "../web-publish/manifest-store";
 import { createWorkspaceSlug, ensureUniqueWorkspaceSlug } from "../web-publish/slug";
 import { createWorkspaceSourceFingerprint } from "../web-publish/source-fingerprint";
+import { enqueueWebPublishMutation } from "../web-publish/mutation-queue";
 import {
   type WebPublishBoardSource,
   type WebPublishManifest,
@@ -64,6 +65,11 @@ type CommitWorkspacePayload = {
   workspaceId: string;
   sourceFingerprint: string;
   boardImages: Record<string, Uint8Array>;
+};
+
+type DirectoryPromotionOperation = {
+  sourceDir?: string;
+  targetDir: string;
 };
 
 const GET_WORKSPACE_SOURCE_SQL =
@@ -365,13 +371,10 @@ async function promoteSuccessfulPublishArtifacts(
     stagingSnapshotRoot,
     safeWorkspaceId,
   );
-  await fs.rm(canonicalWorkspaceSnapshotDir, { recursive: true, force: true });
-  await fs.mkdir(path.dirname(canonicalWorkspaceSnapshotDir), { recursive: true });
-  await fs.cp(stagedWorkspaceSnapshotDir, canonicalWorkspaceSnapshotDir, { recursive: true });
-
-  const canonicalSiteOutputDir = getSiteOutputDir(userDataPath);
-  await fs.rm(canonicalSiteOutputDir, { recursive: true, force: true });
-  await fs.cp(stagingSiteOutputDir, canonicalSiteOutputDir, { recursive: true });
+  await promoteDirectorySet([
+    { sourceDir: stagedWorkspaceSnapshotDir, targetDir: canonicalWorkspaceSnapshotDir },
+    { sourceDir: stagingSiteOutputDir, targetDir: getSiteOutputDir(userDataPath) },
+  ]);
 }
 
 async function promoteSuccessfulUnpublishArtifacts(
@@ -379,14 +382,80 @@ async function promoteSuccessfulUnpublishArtifacts(
   workspaceId: string,
   stagingSiteOutputDir: string,
 ): Promise<void> {
-  await fs.rm(resolveInsideWebPublishRoot(getSnapshotRoot(userDataPath), workspaceId), {
-    recursive: true,
-    force: true,
+  await promoteDirectorySet([
+    { targetDir: resolveInsideWebPublishRoot(getSnapshotRoot(userDataPath), workspaceId) },
+    { sourceDir: stagingSiteOutputDir, targetDir: getSiteOutputDir(userDataPath) },
+  ]);
+}
+
+async function promoteDirectorySet(operations: DirectoryPromotionOperation[]): Promise<void> {
+  const prepared = operations.map((operation) => {
+    const parentDir = path.dirname(operation.targetDir);
+    const baseName = path.basename(operation.targetDir);
+    const id = randomUUID();
+
+    return {
+      ...operation,
+      parentDir,
+      incomingDir: path.join(parentDir, `.${baseName}.incoming-${id}`),
+      backupDir: path.join(parentDir, `.${baseName}.backup-${id}`),
+      hadExistingTarget: false,
+      installedIncoming: false,
+    };
   });
 
-  const canonicalSiteOutputDir = getSiteOutputDir(userDataPath);
-  await fs.rm(canonicalSiteOutputDir, { recursive: true, force: true });
-  await fs.cp(stagingSiteOutputDir, canonicalSiteOutputDir, { recursive: true });
+  try {
+    for (const operation of prepared) {
+      await fs.mkdir(operation.parentDir, { recursive: true });
+      await fs.rm(operation.incomingDir, { recursive: true, force: true });
+      await fs.rm(operation.backupDir, { recursive: true, force: true });
+
+      if (operation.sourceDir) {
+        await fs.cp(operation.sourceDir, operation.incomingDir, { recursive: true });
+      }
+    }
+
+    for (const operation of prepared) {
+      try {
+        await fs.rename(operation.targetDir, operation.backupDir);
+        operation.hadExistingTarget = true;
+      } catch (error) {
+        if (
+          typeof error !== "object" ||
+          error === null ||
+          !("code" in error) ||
+          error.code !== "ENOENT"
+        ) {
+          throw error;
+        }
+      }
+    }
+
+    for (const operation of prepared) {
+      if (operation.sourceDir) {
+        await fs.rename(operation.incomingDir, operation.targetDir);
+        operation.installedIncoming = true;
+      }
+    }
+  } catch (error) {
+    await Promise.all(
+      prepared.map(async (operation) => {
+        await fs.rm(operation.incomingDir, { recursive: true, force: true });
+
+        if (operation.hadExistingTarget) {
+          await fs.rm(operation.targetDir, { recursive: true, force: true });
+          await fs.rename(operation.backupDir, operation.targetDir);
+        } else if (operation.installedIncoming) {
+          await fs.rm(operation.targetDir, { recursive: true, force: true });
+        }
+      }),
+    );
+    throw error;
+  }
+
+  await Promise.all(
+    prepared.map((operation) => fs.rm(operation.backupDir, { recursive: true, force: true })),
+  );
 }
 
 async function preserveFailedDeploymentSite(
@@ -662,10 +731,12 @@ export function registerWebPublishIPC(
   });
 
   ipcMain.handle(WEB_PUBLISH_CHANNELS.commitWorkspace, async (_event, payload: unknown) => {
-    return commitWorkspace(userDataPath, database, deploySite, payload);
+    return enqueueWebPublishMutation(() =>
+      commitWorkspace(userDataPath, database, deploySite, payload),
+    );
   });
 
   ipcMain.handle(WEB_PUBLISH_CHANNELS.unpublishWorkspace, async (_event, workspaceId: unknown) => {
-    return unpublishWorkspace(userDataPath, deploySite, workspaceId);
+    return enqueueWebPublishMutation(() => unpublishWorkspace(userDataPath, deploySite, workspaceId));
   });
 }

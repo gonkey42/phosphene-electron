@@ -25,6 +25,7 @@ const menuSetApplicationMenuMock = vi.fn();
 const menuPopupMock = vi.fn();
 const loadPersistedThemePreferenceMock = vi.fn();
 const persistThemePreferenceMock = vi.fn();
+const getDatabaseMock = vi.fn();
 const registerBoardPackIPCMock = vi.fn();
 const importBoardPackMock = vi.fn();
 
@@ -248,6 +249,7 @@ vi.mock("electron", () => ({
 
 vi.mock("./ipc/database", () => ({
   closeDatabase: vi.fn(),
+  getDatabase: getDatabaseMock,
   registerDatabaseIPC: vi.fn(),
 }));
 
@@ -294,6 +296,7 @@ describe("electron main close flushing", () => {
     menuPopupMock.mockReset();
     loadPersistedThemePreferenceMock.mockReset();
     persistThemePreferenceMock.mockReset();
+    getDatabaseMock.mockReset();
     registerBoardPackIPCMock.mockReset();
     importBoardPackMock.mockReset();
     BrowserWindowMock.lastCreatedInstance = null;
@@ -304,6 +307,7 @@ describe("electron main close flushing", () => {
     appMock.isPackaged = true;
     delete process.env.PHOSPHENE_DEBUG_PORT;
     loadPersistedThemePreferenceMock.mockReturnValue("system");
+    getDatabaseMock.mockReturnValue({});
     appGetPathMock.mockImplementation((name: string) => {
       if (name === "appData") {
         return "/tmp/phosphene-test-app-data";

@@ -33,6 +33,7 @@ playwright-report/
 docs/*
 !docs/adr/
 !docs/adr/*.md
+!docs/phosphene-web-publish.md
 !docs/release.md
 ERROR_HANDLING_REVIEW.md
 Electron Resilience Hardening Implementation Plan.md

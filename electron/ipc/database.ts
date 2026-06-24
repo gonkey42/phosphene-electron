@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { initializeSchema, resetSchemaBootstrapForTests } from "./schema";
+import { readWebPublishManifest } from "../web-publish/manifest-store";
+import { enqueueWebPublishMutation } from "../web-publish/mutation-queue";
 
 let db: Database.Database | null = null;
 let dbUserDataPath: string | null = null;
@@ -246,6 +248,14 @@ function assertWorkspaceReorderPermutation(database: Database.Database, orderedI
     }
 
     orderedWorkspaceIdSet.add(workspaceId);
+  }
+}
+
+async function assertWorkspaceCanBeDeleted(userDataPath: string, workspaceId: string): Promise<void> {
+  const manifest = await readWebPublishManifest(userDataPath);
+
+  if (manifest.workspaces[workspaceId]) {
+    throw new Error("Workspace is published to the web; unpublish it before deleting");
   }
 }
 
@@ -632,21 +642,25 @@ export function registerDatabaseIPC(userDataPath: string): void {
 
   ipcMain.handle("workspaces:delete", async (_event, workspaceId: unknown) => {
     const validatedWorkspaceId = assertStringPayload("workspaces:delete", workspaceId, "workspaceId");
-    const countRow = database.prepare(DELETE_WORKSPACE_COUNT_SQL).get() as { count?: number } | undefined;
+    return enqueueWebPublishMutation(async () => {
+      await assertWorkspaceCanBeDeleted(userDataPath, validatedWorkspaceId);
 
-    if ((countRow?.count ?? 0) <= 1) {
-      return false;
-    }
+      const countRow = database.prepare(DELETE_WORKSPACE_COUNT_SQL).get() as { count?: number } | undefined;
 
-    const result = database.prepare(DELETE_WORKSPACE_SQL).run(validatedWorkspaceId) as {
-      changes: number;
-    };
+      if ((countRow?.count ?? 0) <= 1) {
+        return false;
+      }
 
-    if (result.changes !== 1) {
-      throw new Error(`Workspace delete affected ${result.changes} rows`);
-    }
+      const result = database.prepare(DELETE_WORKSPACE_SQL).run(validatedWorkspaceId) as {
+        changes: number;
+      };
 
-    return true;
+      if (result.changes !== 1) {
+        throw new Error(`Workspace delete affected ${result.changes} rows`);
+      }
+
+      return true;
+    });
   });
 
   ipcMain.handle("workspaces:get-layout", async (_event, workspaceId: unknown) => {

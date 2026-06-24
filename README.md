@@ -43,6 +43,8 @@ npm run dev
 
 Phosphene can import generated board packs for agent-created workspaces and boards. See [docs/board-packs.md](docs/board-packs.md).
 
+Web workspace publishing is documented in [docs/phosphene-web-publish.md](docs/phosphene-web-publish.md).
+
 ## Verification
 
 Run the test suite:
