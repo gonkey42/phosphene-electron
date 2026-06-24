@@ -34,7 +34,16 @@ describe("exportWorkspaceBoardSnapshot", () => {
     injectImagesFromFilesystem.mockClear();
   });
 
-  it("hydrates stored image references and returns PNG bytes", async () => {
+  function exportedAppState(): NonNullable<ExcalidrawInitialDataState["appState"]> {
+    const call = exportToBlob.mock.calls[exportToBlob.mock.calls.length - 1];
+    if (!call) {
+      throw new Error("exportToBlob was not called");
+    }
+    return (call[0] as { appState: NonNullable<ExcalidrawInitialDataState["appState"]> })
+      .appState;
+  }
+
+  it("hydrates stored image references while forcing dark export for light backgrounds", async () => {
     exportToBlob.mockResolvedValue(new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }));
     const files = {
       image1: createFile("phosphene-file://images/image1.png"),
@@ -52,6 +61,7 @@ describe("exportWorkspaceBoardSnapshot", () => {
       expect.objectContaining({
         mimeType: "image/png",
         appState: expect.objectContaining({
+          exportWithDarkMode: true,
           exportBackground: true,
           theme: "dark",
           viewBackgroundColor: "#ffffff",
@@ -67,7 +77,26 @@ describe("exportWorkspaceBoardSnapshot", () => {
     );
   });
 
-  it("uses the app dark background when a board has no explicit background", async () => {
+  it("forces dark Excalidraw export for a saved light background", async () => {
+    exportToBlob.mockResolvedValue(new Blob([new Uint8Array([4, 5, 6])], { type: "image/png" }));
+
+    await exportWorkspaceBoardSnapshot({
+      elements: [],
+      appState: { viewBackgroundColor: "#ffffff" },
+      files: {},
+    });
+
+    expect(exportedAppState()).toEqual(
+      expect.objectContaining({
+        exportBackground: true,
+        exportWithDarkMode: true,
+        theme: "dark",
+        viewBackgroundColor: "#ffffff",
+      }),
+    );
+  });
+
+  it("forces dark Excalidraw export when a board has no explicit background", async () => {
     exportToBlob.mockResolvedValue(new Blob([new Uint8Array([4, 5, 6])], { type: "image/png" }));
 
     await exportWorkspaceBoardSnapshot({
@@ -76,32 +105,30 @@ describe("exportWorkspaceBoardSnapshot", () => {
       files: {},
     });
 
-    expect(exportToBlob).toHaveBeenCalledWith(
+    expect(exportedAppState()).toEqual(
       expect.objectContaining({
-        appState: expect.objectContaining({
-          exportBackground: true,
-          theme: "dark",
-          viewBackgroundColor: "#08111f",
-        }),
+        exportBackground: true,
+        exportWithDarkMode: true,
+        theme: "dark",
+        viewBackgroundColor: "#ffffff",
       }),
     );
   });
 
-  it("preserves an explicit board background color", async () => {
+  it("does not double-invert boards with an explicit dark background", async () => {
     exportToBlob.mockResolvedValue(new Blob([new Uint8Array([7, 8, 9])], { type: "image/png" }));
 
     await exportWorkspaceBoardSnapshot({
       elements: [],
-      appState: { viewBackgroundColor: "#123456" },
+      appState: { exportWithDarkMode: true, viewBackgroundColor: "#123456" },
       files: {},
     });
 
-    expect(exportToBlob).toHaveBeenCalledWith(
+    expect(exportedAppState()).toEqual(
       expect.objectContaining({
-        appState: expect.objectContaining({
-          theme: "dark",
-          viewBackgroundColor: "#123456",
-        }),
+        exportWithDarkMode: false,
+        theme: "dark",
+        viewBackgroundColor: "#123456",
       }),
     );
   });
