@@ -29,10 +29,20 @@ describe("generateWebPublishSite", () => {
       path.join(snapshotRoot, "workspace_1", "workspace.json"),
       JSON.stringify({
         workspace: { id: "workspace_1", name: "Trip <Fun>", slug: "trip" },
-        boards: [{ id: "board_1", name: "Day & Night", position: 0, imageFile: "board_1.png" }],
+        boards: [
+          {
+            id: "board_1",
+            name: "Day & Night",
+            position: 0,
+            imageFile: "board_1-abcdef123456.png",
+          },
+        ],
       }),
     );
-    await fs.writeFile(path.join(snapshotRoot, "workspace_1", "boards", "board_1.png"), "png");
+    await fs.writeFile(
+      path.join(snapshotRoot, "workspace_1", "boards", "board_1-abcdef123456.png"),
+      "png",
+    );
     const manifest: WebPublishManifest = {
       schemaVersion: 1,
       projectName: "phosphene",
@@ -73,11 +83,15 @@ describe("generateWebPublishSite", () => {
     expect(workspaceHtml).toContain('class="back-link"');
     expect(workspaceHtml).toContain('class="board"');
     expect(workspaceHtml).toContain('class="board-image-link"');
+    expect(workspaceHtml).toContain("board_1-abcdef123456.png");
     expect(workspaceHtml).not.toContain("prefers-color-scheme");
     expect(workspaceHtml).not.toContain("background: white");
     expect(workspaceHtml).not.toContain("#f7f8fb");
     await expect(
-      fs.readFile(path.join(outputDir, "assets", "workspace_1", "board_1.png"), "utf8"),
+      fs.readFile(
+        path.join(outputDir, "assets", "workspace_1", "board_1-abcdef123456.png"),
+        "utf8",
+      ),
     ).resolves.toBe("png");
   });
 

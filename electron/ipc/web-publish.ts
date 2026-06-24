@@ -1,5 +1,5 @@
 import { ipcMain } from "electron";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type Database from "better-sqlite3";
@@ -179,6 +179,11 @@ function assertCommitPayload(channel: string, value: unknown): CommitWorkspacePa
   };
 }
 
+function createBoardImageFilename(boardId: string, imageData: Uint8Array): string {
+  const hash = createHash("sha256").update(imageData).digest("hex").slice(0, 12);
+  return assertSafeWebPublishPathSegment(`${boardId}-${hash}.png`);
+}
+
 function getSnapshotRoot(userDataPath: string): string {
   return path.join(getWebPublishRoot(userDataPath), "snapshots");
 }
@@ -226,7 +231,7 @@ async function writeWorkspaceSnapshot(
       );
     }
 
-    const imageFile = assertSafeWebPublishPathSegment(`${boardId}.png`);
+    const imageFile = createBoardImageFilename(boardId, imageData);
     return {
       id: board.id,
       name: board.name,
