@@ -7,12 +7,12 @@ Status: Approved for planning
 
 Phosphene Web Publish v1 generates a private static site for selected workspaces at `https://phosphene.gonkey.org`. The current generated site uses a hardcoded light palette in `electron/web-publish/site-generator.ts`, and published board snapshots default missing canvas backgrounds to white in `src/lib/web-publish/export-board-snapshot.ts`.
 
-The local app already has a dark theme. The user normally selects it from the macOS menu at `View > Theme > Dark`, and wants the generated Web Publish index and workspace pages to visually match that app dark mode. The website should not follow the viewer's operating-system preference, should not default to `System`, and should not introduce a separate unrelated dark palette.
+The local app already has a dark theme. The user normally selects it from the macOS menu at `View > Theme > Dark`, and wants the generated Web Publish index and workspace pages to visually match that app dark mode. For this feature, generated Web Publish output is always dark regardless of whether the current app menu preference is `Light`, `System`, or `Dark` at publish time. The website should not follow the viewer's operating-system preference, should not default to `System`, and should not introduce a separate unrelated dark palette.
 
 ## Goals
 
 - Make generated Web Publish HTML use Phosphene's existing app dark-mode tokens as the visual source of truth.
-- Make the generated site dark by default and deterministic, independent of viewer OS `prefers-color-scheme`.
+- Make the generated site dark by default and deterministic, independent of viewer OS `prefers-color-scheme` and independent of the current app `Light` / `System` / `Dark` menu state.
 - Match the app's dark mode across page background, text, muted text, borders, cards, panels, workspace links, board cards, board image frames, and empty states.
 - Make uploaded board preview snapshots use the app's dark Excalidraw rendering path where possible.
 - Preserve explicit board canvas background colors chosen by the user, while giving boards without an explicit background a dark-mode default instead of white.
@@ -99,6 +99,7 @@ Every generated Web Publish page should render as dark Phosphene UI:
 - Page backgrounds use the app shell's dark background language, with `--app-background`, `--app-surface-muted`, and `--app-surface`.
 - Workspace links and board cards use `--app-surface`, `--app-border`, `--app-text`, `--app-text-muted`, and `--app-shadow`.
 - Empty-state and secondary text use `--app-text-muted`.
+- Zero-workspace index pages and zero-board workspace pages both render explicit dark empty states.
 - Links remain readable on dark backgrounds and should not rely on browser default blue.
 - The generated CSS must not use `prefers-color-scheme`; the private site should look dark for every viewer.
 
@@ -111,16 +112,16 @@ Published board snapshots should be generated for dark viewing:
 - Snapshot export should pass Excalidraw `theme: "dark"` into the export app state.
 - Snapshot export should continue to hydrate `phosphene-file://` image references before export.
 - Snapshot export should keep `exportBackground: true`.
-- If the stored board app state has an explicit `viewBackgroundColor`, preserve it.
+- If the stored board app state has an explicit `viewBackgroundColor`, preserve it. A present value of `"#ffffff"` is treated as an intentional user-authored white canvas, not as a missing/default background.
 - If `viewBackgroundColor` is missing, default it to the app dark background token rather than `#ffffff`.
 
 This keeps user-authored canvas backgrounds intact while avoiding white default board previews on the dark generated site.
 
 ### Publish Flow
 
-The publish flow remains manual:
+The publish flow remains manual and the generated output remains dark no matter which app theme preference is currently checked:
 
-1. The user selects `View > Theme > Dark` in the app.
+1. The user may have `View > Theme` set to `Light`, `System`, or `Dark`.
 2. The user clicks `Publish to Web` or `Republish`.
 3. The renderer exports board snapshots with dark publish rendering.
 4. The main process regenerates the static site with dark Web Publish CSS.
@@ -132,8 +133,9 @@ Implementation work and verification must not cut a release or deploy the site u
 
 - Add unit coverage that extracts `.theme-dark` variables from `src/App.css` and asserts Web Publish dark tokens match them.
 - Extend `electron/web-publish/site-generator.test.ts` to assert generated index and workspace pages contain dark theme variables/classes and do not contain the previous light-only styles.
-- Extend generated HTML assertions for published workspace cards, board cards, board image frames, and empty-state pages.
+- Extend generated HTML assertions for published workspace cards, board cards, board image frames, zero-workspace empty-state pages, and zero-board workspace empty-state pages.
 - Extend `src/lib/web-publish/export-board-snapshot.test.ts` to assert dark Excalidraw export state, dark default background, explicit background preservation, and image hydration.
+- Add snapshot token coverage that parses `src/App.css`, reads `.theme-dark --app-background`, and asserts the renderer Web Publish default board background constant matches that token exactly.
 - Extend `src/lib/web-publish/workspace-publish.test.ts` if publish orchestration starts passing an explicit publish theme through to snapshot export.
 - Keep IPC/deployer tests fake; no tests should hit Cloudflare.
 - Run targeted tests, full tests, lint, build, and a local generated-site/manual preview check before considering implementation complete.
@@ -143,9 +145,9 @@ Implementation work and verification must not cut a release or deploy the site u
 - Generated `index.html` and workspace pages use the app dark token values from `src/App.css`.
 - Generated pages do not rely on OS color-scheme media queries.
 - Generated pages no longer contain light-only `body`/card/board styles such as `background: white` or `#f7f8fb`.
-- Workspace cards, board cards, image frames, text, muted text, links, and empty states are readable and visually aligned with Phosphene dark mode.
+- Workspace cards, board cards, image frames, text, muted text, links, zero-workspace empty states, and zero-board workspace empty states are readable and visually aligned with Phosphene dark mode.
 - Published board snapshots are exported with Excalidraw dark theme state.
 - Boards without a stored background no longer export with a white default background.
-- Boards with explicit stored backgrounds keep those backgrounds.
+- Boards with explicit stored backgrounds keep those backgrounds, including explicit stored `"#ffffff"` canvases.
 - Existing Web Publish behavior still works: publish, republish, unpublish, manifest updates, slug stability, failure preservation, and fake deployer tests remain green.
 - No release is cut and no Cloudflare deployment is performed unless explicitly approved later.

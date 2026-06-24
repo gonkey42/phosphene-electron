@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` to implement this plan task-by-task. Inline execution is not allowed unless the user explicitly overrides this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the generated Phosphene Web Publish site and board snapshots match the app's selected dark-mode visual language.
+**Goal:** Make the generated Phosphene Web Publish site and board snapshots match the app dark-mode visual language.
 
-**Architecture:** Keep Web Publish static and manual. Mirror the existing `src/App.css` `.theme-dark` token values into small Web Publish theme modules on the Electron-main and renderer sides, guard those mirrors with tests that parse `src/App.css`, then use the mirrored variables in generated HTML and Excalidraw snapshot export. The generated website is always dark for this feature; it does not follow viewer OS settings.
+**Architecture:** Keep Web Publish static and manual. Mirror the existing `src/App.css` `.theme-dark` token values into small Web Publish theme modules on the Electron-main and renderer sides, guard those mirrors with tests that parse `src/App.css`, then use the mirrored variables in generated HTML and Excalidraw snapshot export. The generated website is always dark for this feature; it does not follow viewer OS settings or the current app `Light` / `System` / `Dark` menu state.
 
 **Tech Stack:** Electron 41, React 19, TypeScript, Vite, Vitest, Excalidraw export helpers, Node filesystem APIs, Cloudflare Pages static output.
 
@@ -24,6 +24,7 @@ Required controller behavior:
 - Fix every reviewer finding before moving on, including blocking, important, minor, nice-to-have, low-severity, and lower-severity comments.
 - Re-run the relevant reviewer after fixes. A finding is not closed until that reviewer approves it or the user explicitly rejects that finding.
 - Commit after each major task only after targeted tests pass and both reviewers are clean.
+- For this plan, override any generic implementer template that says to commit before review: implementer subagents must implement, run the task's targeted tests, self-review, and report back without committing. The controller commits only after fresh spec-review and code-quality-review subagents are clean and targeted tests have been re-run.
 - After each major task commit, close, clear, or forget all implementer and reviewer subagents before starting the next major task, because only 6 subagents can be open at once.
 - Do not dispatch implementation subagents in parallel.
 - Do not cut a release or deploy to Cloudflare unless the user explicitly approves that later.
@@ -40,7 +41,7 @@ Create:
 Modify:
 
 - `electron/web-publish/site-generator.ts` - replace hardcoded light page shell styles with app dark token CSS.
-- `electron/web-publish/site-generator.test.ts` - assert dark generated index/workspace/empty-state output.
+- `electron/web-publish/site-generator.test.ts` - assert dark generated index/workspace/zero-workspace empty-state/zero-board workspace empty-state output.
 - `src/lib/web-publish/export-board-snapshot.ts` - export snapshots with Excalidraw dark theme state and dark default board background.
 - `src/lib/web-publish/export-board-snapshot.test.ts` - cover dark snapshot state, dark defaults, explicit background preservation, and image hydration.
 - `docs/phosphene-web-publish.md` - document that generated Web Publish pages use Phosphene dark mode and do not follow viewer OS settings.
@@ -103,6 +104,8 @@ describe("web publish dark theme tokens", () => {
 ```
 
 - [ ] **Step 2: Write failing renderer snapshot token tests**
+
+This test must parse `src/App.css`, read the `.theme-dark` `--app-background` value, and compare `WEB_PUBLISH_DARK_BOARD_BACKGROUND` to that token. Do not only assert the literal `#08111f`; the point is to catch future drift from `src/App.css`.
 
 Create `src/lib/web-publish/publish-theme.test.ts`:
 
@@ -196,7 +199,19 @@ npm run test:node -- electron/web-publish/site-theme.test.ts src/lib/web-publish
 
 Expected: pass.
 
-- [ ] **Step 7: Commit Task 1**
+- [ ] **Step 7: Run task reviews, fix findings, then commit Task 1**
+
+Dispatch a fresh spec-review subagent for Task 1. Fix every finding, including minor or nice-to-have findings, and re-run spec review until it is clean. Then dispatch a fresh code-quality-review subagent for Task 1. Fix every finding, including minor or nice-to-have findings, and re-run code-quality review until it is clean.
+
+After both reviewers are clean, re-run:
+
+```bash
+npm run test:node -- electron/web-publish/site-theme.test.ts src/lib/web-publish/publish-theme.test.ts
+```
+
+Expected: pass.
+
+Then commit:
 
 Run:
 
@@ -205,7 +220,7 @@ git add electron/web-publish/site-theme.ts electron/web-publish/site-theme.test.
 git commit -m "feat: add web publish dark theme tokens"
 ```
 
-Then run fresh spec-review and code-quality-review subagents, fix every finding, re-run reviewers until clean, amend or add a follow-up commit for fixes, and close all subagents before Task 2.
+After the commit, close all Task 1 implementer and reviewer subagents before Task 2.
 
 ## Task 2: Apply Dark Theme To Generated Web Publish HTML
 
@@ -263,6 +278,53 @@ it("generates a dark empty-state landing page", async () => {
   expect(indexHtml).toContain("No workspaces are published yet.");
   expect(indexHtml).toContain("--app-text-muted: #94a3b8;");
   expect(indexHtml).not.toContain("background: white");
+});
+```
+
+Add a new zero-board workspace empty-state test:
+
+```ts
+it("generates a dark empty-state workspace page when a workspace has no boards", async () => {
+  const root = await tempDir();
+  const snapshotRoot = path.join(root, "snapshots");
+  const outputDir = path.join(root, "site");
+  await fs.mkdir(path.join(snapshotRoot, "workspace_1"), { recursive: true });
+  await fs.writeFile(
+    path.join(snapshotRoot, "workspace_1", "workspace.json"),
+    JSON.stringify({
+      workspace: { id: "workspace_1", name: "Empty Workspace", slug: "empty-workspace" },
+      boards: [],
+    }),
+  );
+  const manifest: WebPublishManifest = {
+    schemaVersion: 1,
+    projectName: "phosphene",
+    hostname: "phosphene.gonkey.org",
+    workspaces: {
+      workspace_1: {
+        workspaceId: "workspace_1",
+        slug: "empty-workspace",
+        name: "Empty Workspace",
+        sourceFingerprint: "abc",
+        publishedAt: "2026-06-24T01:00:00.000Z",
+        lastDeploymentUrl: null,
+        lastError: null,
+      },
+    },
+    failedWorkspaces: {},
+  };
+
+  await generateWebPublishSite({ manifest, snapshotRoot, outputDir });
+
+  const workspaceHtml = await fs.readFile(
+    path.join(outputDir, "workspaces", "empty-workspace", "index.html"),
+    "utf8",
+  );
+  expect(workspaceHtml).toContain('<body class="theme-dark">');
+  expect(workspaceHtml).toContain('class="empty-state"');
+  expect(workspaceHtml).toContain("No boards are published in this workspace yet.");
+  expect(workspaceHtml).toContain("--app-text-muted: #94a3b8;");
+  expect(workspaceHtml).not.toContain("background: white");
 });
 ```
 
@@ -370,8 +432,16 @@ Update `writeWorkspacePage()` body markup so the back link and image link have s
 return `<article class="board"><h2>${escapeHtml(board.name)}</h2><a class="board-image-link" href="${escapeHtml(boardImagePath)}"><img src="${escapeHtml(boardImagePath)}" alt="${escapeHtml(board.name)}"></a></article>`;
 ```
 
+Add a zero-board workspace empty state before writing the workspace page:
+
 ```ts
-`<p><a class="back-link" href="../../">Back to workspaces</a></p><h1>${escapeHtml(entry.name)}</h1><div class="board-list">${boardHtml}</div>`
+const boardList = boardHtml
+  ? `<div class="board-list">${boardHtml}</div>`
+  : '<p class="empty-state">No boards are published in this workspace yet.</p>';
+```
+
+```ts
+`<p><a class="back-link" href="../../">Back to workspaces</a></p><h1>${escapeHtml(entry.name)}</h1>${boardList}`
 ```
 
 - [ ] **Step 4: Run targeted generated-site tests**
@@ -384,7 +454,19 @@ npm run test:node -- electron/web-publish/site-theme.test.ts electron/web-publis
 
 Expected: pass.
 
-- [ ] **Step 5: Commit Task 2**
+- [ ] **Step 5: Run task reviews, fix findings, then commit Task 2**
+
+Dispatch a fresh spec-review subagent for Task 2. Fix every finding, including minor or nice-to-have findings, and re-run spec review until it is clean. Then dispatch a fresh code-quality-review subagent for Task 2. Fix every finding, including minor or nice-to-have findings, and re-run code-quality review until it is clean.
+
+After both reviewers are clean, re-run:
+
+```bash
+npm run test:node -- electron/web-publish/site-theme.test.ts electron/web-publish/site-generator.test.ts
+```
+
+Expected: pass.
+
+Then commit:
 
 Run:
 
@@ -393,7 +475,7 @@ git add electron/web-publish/site-generator.ts electron/web-publish/site-generat
 git commit -m "feat: theme web publish pages dark"
 ```
 
-Then run fresh spec-review and code-quality-review subagents, fix every finding, re-run reviewers until clean, amend or add a follow-up commit for fixes, and close all subagents before Task 3.
+After the commit, close all Task 2 implementer and reviewer subagents before Task 3.
 
 ## Task 3: Export Board Snapshots With Dark Publish Rendering
 
@@ -407,6 +489,8 @@ Then run fresh spec-review and code-quality-review subagents, fix every finding,
 Extend `src/lib/web-publish/export-board-snapshot.test.ts`.
 
 Update the first test's expectation:
+
+This first test intentionally passes `appState: { viewBackgroundColor: "#ffffff" }`; the assertion verifies that an explicit stored white canvas remains white in dark publish mode. Only a missing or undefined `viewBackgroundColor` should use the dark default.
 
 ```ts
 expect(exportToBlob).toHaveBeenCalledWith(
@@ -521,7 +605,19 @@ npm run test:node -- src/lib/web-publish/publish-theme.test.ts src/lib/web-publi
 
 Expected: pass.
 
-- [ ] **Step 5: Commit Task 3**
+- [ ] **Step 5: Run task reviews, fix findings, then commit Task 3**
+
+Dispatch a fresh spec-review subagent for Task 3. Fix every finding, including minor or nice-to-have findings, and re-run spec review until it is clean. Then dispatch a fresh code-quality-review subagent for Task 3. Fix every finding, including minor or nice-to-have findings, and re-run code-quality review until it is clean.
+
+After both reviewers are clean, re-run:
+
+```bash
+npm run test:node -- src/lib/web-publish/publish-theme.test.ts src/lib/web-publish/export-board-snapshot.test.ts src/lib/web-publish/workspace-publish.test.ts
+```
+
+Expected: pass.
+
+Then commit:
 
 Run:
 
@@ -530,7 +626,7 @@ git add src/lib/web-publish/export-board-snapshot.ts src/lib/web-publish/export-
 git commit -m "feat: export web publish snapshots dark"
 ```
 
-Then run fresh spec-review and code-quality-review subagents, fix every finding, re-run reviewers until clean, amend or add a follow-up commit for fixes, and close all subagents before Task 4.
+After the commit, close all Task 3 implementer and reviewer subagents before Task 4.
 
 ## Task 4: Document Dark Web Publish Behavior And Verify Preview
 
@@ -545,9 +641,9 @@ Add this section after `## Publish Behavior` in `docs/phosphene-web-publish.md`:
 ```md
 ## Generated Site Appearance
 
-Generated Web Publish pages use Phosphene's app dark-mode styling. They do not follow the viewer's operating-system appearance setting and do not expose a website theme toggle.
+Generated Web Publish pages always use Phosphene's app dark-mode styling, regardless of whether the app's current `View > Theme` setting is `Light`, `System`, or `Dark` when publishing. They do not follow the viewer's operating-system appearance setting and do not expose a website theme toggle.
 
-Board snapshots are exported for dark viewing. Boards with explicit canvas background colors keep those colors; boards without an explicit background use the app dark background.
+Board snapshots are exported for dark viewing. Boards with explicit canvas background colors keep those colors, including explicit white backgrounds; boards without an explicit background use the app dark background.
 ```
 
 - [ ] **Step 2: Run targeted documentation-adjacent tests**
@@ -631,9 +727,21 @@ NODE
 open "$PREVIEW_ROOT/site/index.html"
 ```
 
-Expected: the local browser opens a dark Web Publish index. Click `Dark Preview`; the workspace page should also be dark, with a dark board card and dark image frame. Do not run `wrangler`, `Publish to Web`, `Republish`, `npm run release`, or any deployment command during this check.
+Expected: the local browser opens a dark Web Publish index. Click `Dark Preview`; the workspace page should also be dark, with a dark board card and dark image frame. The generated CSS must be dark regardless of the local app theme menu state. Do not run `wrangler`, `Publish to Web`, `Republish`, `npm run release`, or any deployment command during this check.
 
-- [ ] **Step 5: Commit Task 4**
+- [ ] **Step 5: Run task reviews, fix findings, then commit Task 4**
+
+Dispatch a fresh spec-review subagent for Task 4. Fix every finding, including minor or nice-to-have findings, and re-run spec review until it is clean. Then dispatch a fresh code-quality-review subagent for Task 4. Fix every finding, including minor or nice-to-have findings, and re-run code-quality review until it is clean.
+
+After both reviewers are clean, re-run:
+
+```bash
+npm run test:node -- electron/web-publish/site-theme.test.ts electron/web-publish/site-generator.test.ts src/lib/web-publish/publish-theme.test.ts src/lib/web-publish/export-board-snapshot.test.ts src/lib/web-publish/workspace-publish.test.ts electron/ipc/web-publish.test.ts
+```
+
+Expected: pass.
+
+Then commit:
 
 Run:
 
@@ -642,7 +750,7 @@ git add docs/phosphene-web-publish.md
 git commit -m "docs: document dark web publish appearance"
 ```
 
-Then run fresh spec-review and code-quality-review subagents, fix every finding, re-run reviewers until clean, amend or add a follow-up commit for fixes, and close all subagents before final verification.
+After the commit, close all Task 4 implementer and reviewer subagents before final verification.
 
 ## Final Verification
 
@@ -660,7 +768,7 @@ Repeat the generated-site/manual preview check from Task 4 after the final build
 
 - the generated index page is dark
 - the generated workspace page is dark
-- workspace cards, board cards, image frames, text, links, and empty state are readable
+- workspace cards, board cards, image frames, text, links, zero-workspace empty states, and zero-board workspace empty states are readable
 - no generated page uses `prefers-color-scheme`
 - no generated page contains the previous light-only `background: white` or `#f7f8fb` styling
 - no release was cut
