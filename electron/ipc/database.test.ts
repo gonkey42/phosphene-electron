@@ -17,6 +17,11 @@ const transactionMock = vi.fn();
 vi.mock("node:fs/promises", () => ({
   default: {
     access: accessMock,
+    readFile: vi.fn(async () => {
+      const error = new Error("ENOENT") as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
+    }),
   },
 }));
 
@@ -211,6 +216,74 @@ describe("registerDatabaseIPC", () => {
         "settings:set-active-workspace-id",
       ]),
     );
+  });
+
+  it("blocks deleting a workspace that has a successful web publish snapshot", async () => {
+    const { registerDatabaseIPC } = await import("./database");
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.readFile).mockResolvedValueOnce(
+      JSON.stringify({
+        schemaVersion: 1,
+        projectName: "phosphene",
+        hostname: "phosphene.gonkey.org",
+        workspaces: {
+          "workspace-1": {
+            workspaceId: "workspace-1",
+            slug: "trip-plan",
+            name: "Trip Plan",
+            sourceFingerprint: "fingerprint",
+            publishedAt: "2026-06-24T01:00:00.000Z",
+            lastDeploymentUrl: "https://deploy.example",
+            lastError: null,
+          },
+        },
+        failedWorkspaces: {},
+      }),
+    );
+
+    registerDatabaseIPC("/app/data");
+    const runCallsBeforeDelete = runMock.mock.calls.length;
+    const deleteHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === "workspaces:delete",
+    )?.[1];
+
+    await expect(deleteHandler({}, "workspace-1")).rejects.toThrow(
+      "Workspace is published to the web; unpublish it before deleting",
+    );
+    expect(runMock.mock.calls).toHaveLength(runCallsBeforeDelete);
+  });
+
+  it("allows deleting a workspace that only has a failed first-time web publish", async () => {
+    const { registerDatabaseIPC } = await import("./database");
+    const fs = await import("node:fs/promises");
+    vi.mocked(fs.default.readFile).mockResolvedValueOnce(
+      JSON.stringify({
+        schemaVersion: 1,
+        projectName: "phosphene",
+        hostname: "phosphene.gonkey.org",
+        workspaces: {},
+        failedWorkspaces: {
+          "workspace-1": {
+            workspaceId: "workspace-1",
+            slug: "trip-plan",
+            name: "Trip Plan",
+            sourceFingerprint: "fingerprint",
+            publishedAt: "2026-06-24T01:00:00.000Z",
+            lastDeploymentUrl: null,
+            lastError: "Wrangler deploy failed",
+          },
+        },
+      }),
+    );
+    getMock.mockReturnValue({ count: 2 });
+
+    registerDatabaseIPC("/app/data");
+    const deleteHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === "workspaces:delete",
+    )?.[1];
+
+    await expect(deleteHandler({}, "workspace-1")).resolves.toBe(true);
+    expect(runMock).toHaveBeenCalledWith("workspace-1");
   });
 
   it("rejects duplicate workspace IDs before persisting reorder positions", async () => {

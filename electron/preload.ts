@@ -326,6 +326,20 @@ contextBridge.exposeInMainWorld("desktop", {
       };
     },
   },
+  webPublish: {
+    listStates() {
+      return ipcRenderer.invoke("web-publish:list-states");
+    },
+    prepareWorkspace(workspaceId: string) {
+      return ipcRenderer.invoke("web-publish:prepare-workspace", workspaceId);
+    },
+    commitWorkspace(payload: unknown) {
+      return ipcRenderer.invoke("web-publish:commit-workspace", payload);
+    },
+    unpublishWorkspace(workspaceId: string) {
+      return ipcRenderer.invoke("web-publish:unpublish-workspace", workspaceId);
+    },
+  },
   theme: {
     getPreference() {
       return ipcRenderer.invoke(THEME_GET_PREFERENCE_CHANNEL);

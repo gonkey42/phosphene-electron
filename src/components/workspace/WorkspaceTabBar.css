@@ -38,6 +38,7 @@
   align-items: center;
   display: flex;
   gap: 0.25rem;
+  min-width: 0;
   -webkit-app-region: no-drag;
 }
 
@@ -56,8 +57,9 @@
   color: var(--app-text-muted);
   cursor: pointer;
   display: flex;
+  flex: 1 1 auto;
   gap: 0.5rem;
-  max-width: 15rem;
+  max-width: 12rem;
   min-width: 0;
   padding: 0.45rem 0.75rem;
   transition:
@@ -97,6 +99,10 @@
   min-width: 0;
   padding: 0.45rem 0.75rem;
   width: 15rem;
+}
+
+.workspace-tab-bar__tab-row .workspace-publish-controls {
+  max-width: 17rem;
 }
 
 .workspace-tab-bar__close-button,

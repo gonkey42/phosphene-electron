@@ -13,6 +13,7 @@ import { useErrorReporter } from "../../hooks/use-error-reporter";
 import { useInlineRename } from "../../hooks/use-inline-rename";
 import { clearSharedErrorChannel } from "../../hooks/shared-error-store";
 import { useAppStore } from "../../stores/app-store";
+import { WorkspacePublishControls } from "../publish/WorkspacePublishControls";
 import "./WorkspaceTabBar.css";
 
 function isMacPlatform() {
@@ -286,25 +287,28 @@ export function WorkspaceTabBar() {
                     }}
                   />
                 ) : (
-                  <button
-                    type="button"
-                    className={`workspace-tab-bar__tab-button${isActive ? " workspace-tab-bar__tab-button--active" : ""}`}
-                    aria-label={workspace.name}
-                    aria-current={isActive ? "page" : undefined}
-                    onClick={() => {
-                      setActiveWorkspace(workspace.id);
-                    }}
-                    onDoubleClick={() => {
-                      startRename(workspace.id, workspace.name);
-                    }}
-                  >
-                    <span className="workspace-tab-bar__name">{workspace.name}</span>
-                    {shortcut ? (
-                      <span className="workspace-tab-bar__shortcut" aria-hidden="true">
-                        {shortcut}
-                      </span>
-                    ) : null}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className={`workspace-tab-bar__tab-button${isActive ? " workspace-tab-bar__tab-button--active" : ""}`}
+                      aria-label={workspace.name}
+                      aria-current={isActive ? "page" : undefined}
+                      onClick={() => {
+                        setActiveWorkspace(workspace.id);
+                      }}
+                      onDoubleClick={() => {
+                        startRename(workspace.id, workspace.name);
+                      }}
+                    >
+                      <span className="workspace-tab-bar__name">{workspace.name}</span>
+                      {shortcut ? (
+                        <span className="workspace-tab-bar__shortcut" aria-hidden="true">
+                          {shortcut}
+                        </span>
+                      ) : null}
+                    </button>
+                    <WorkspacePublishControls workspaceId={workspace.id} workspaceName={workspace.name} />
+                  </>
                 )}
 
                 {workspaces.length > 1 ? (

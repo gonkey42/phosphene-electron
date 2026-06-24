@@ -1,0 +1,77 @@
+.workspace-publish-controls {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 1 auto;
+  gap: 0.25rem;
+  min-width: 0;
+  -webkit-app-region: no-drag;
+}
+
+.workspace-publish-controls__status {
+  color: var(--app-text-muted);
+  flex: 0 1 5.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-publish-controls__status--online {
+  color: #147a3c;
+}
+
+.workspace-publish-controls__status--changed-since-publish {
+  color: #8a5a00;
+}
+
+.workspace-publish-controls__status--publish-failed {
+  color: #b42318;
+}
+
+.workspace-publish-controls__button {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 0.5rem;
+  color: var(--app-text);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 0.75rem;
+  height: 1.625rem;
+  line-height: 1;
+  max-width: 6.75rem;
+  min-width: 4.75rem;
+  overflow: hidden;
+  padding: 0 0.5rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-publish-controls__button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--app-surface) 82%, var(--app-background));
+  border-color: color-mix(in srgb, var(--app-border) 70%, var(--app-text-muted));
+}
+
+.workspace-publish-controls__button:disabled {
+  color: var(--app-text-muted);
+  cursor: default;
+  opacity: 0.7;
+}
+
+.workspace-publish-controls__button:focus-visible {
+  outline: 2px solid var(--app-text);
+  outline-offset: 2px;
+}
+
+.workspace-publish-controls__error {
+  color: #b42318;
+  flex: 0 1 7rem;
+  font-size: 0.75rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

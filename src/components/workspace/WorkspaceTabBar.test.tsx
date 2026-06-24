@@ -9,6 +9,7 @@ const {
   mapWorkspaceMock,
   listWorkspacesMock,
   renameWorkspaceMock,
+  workspacePublishControlsMock,
 } = vi.hoisted(() => ({
   createWorkspaceMock: vi.fn(),
   deleteWorkspaceMock: vi.fn(),
@@ -20,6 +21,7 @@ const {
   })),
   listWorkspacesMock: vi.fn(),
   renameWorkspaceMock: vi.fn(),
+  workspacePublishControlsMock: vi.fn(),
 }));
 
 vi.mock("../../lib/workspace-operations", () => ({
@@ -28,6 +30,19 @@ vi.mock("../../lib/workspace-operations", () => ({
   mapWorkspace: mapWorkspaceMock,
   listWorkspaces: listWorkspacesMock,
   renameWorkspace: renameWorkspaceMock,
+}));
+
+vi.mock("../publish/WorkspacePublishControls", () => ({
+  WorkspacePublishControls: ({
+    workspaceId,
+    workspaceName,
+  }: {
+    workspaceId: string;
+    workspaceName: string;
+  }) => {
+    workspacePublishControlsMock({ workspaceId, workspaceName });
+    return <div data-testid={`publish-controls-${workspaceId}`} />;
+  },
 }));
 
 import { useAppStore } from "../../stores/app-store";
@@ -66,6 +81,7 @@ describe("WorkspaceTabBar", () => {
     deleteWorkspaceMock.mockReset();
     listWorkspacesMock.mockReset();
     renameWorkspaceMock.mockReset();
+    workspacePublishControlsMock.mockReset();
     useAppStore.setState({
       workspaces: [],
       activeWorkspaceId: null,
@@ -132,6 +148,39 @@ describe("WorkspaceTabBar", () => {
     expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /system|light|dark/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/theme/i)).not.toBeInTheDocument();
+  });
+
+  it("renders publish controls for each workspace tab", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      createWorkspaceItem(),
+      createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
+    ]);
+
+    render(<WorkspaceTabBar />);
+
+    await screen.findByRole("button", { name: "Home" });
+
+    expect(screen.getByTestId("publish-controls-workspace-1")).toBeInTheDocument();
+    expect(screen.getByTestId("publish-controls-workspace-2")).toBeInTheDocument();
+    expect(workspacePublishControlsMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      workspaceName: "Home",
+    });
+    expect(workspacePublishControlsMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-2",
+      workspaceName: "Projects",
+    });
+  });
+
+  it("hides publish controls while a workspace is being renamed", async () => {
+    listWorkspacesMock.mockResolvedValue([createWorkspaceItem()]);
+
+    render(<WorkspaceTabBar />);
+
+    fireEvent.doubleClick(await screen.findByRole("button", { name: "Home" }));
+
+    expect(screen.getByRole("textbox", { name: "Workspace name" })).toBeInTheDocument();
+    expect(screen.queryByTestId("publish-controls-workspace-1")).not.toBeInTheDocument();
   });
 
   it("shows platform-aware shortcuts for the first nine workspaces", async () => {
