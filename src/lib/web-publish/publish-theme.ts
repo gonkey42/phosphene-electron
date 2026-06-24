@@ -1,0 +1,2 @@
+export const WEB_PUBLISH_SNAPSHOT_THEME = "dark";
+export const WEB_PUBLISH_DARK_BOARD_BACKGROUND = "#08111f";
