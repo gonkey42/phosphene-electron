@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import { initializeSchema } from "./schema";
@@ -59,6 +60,11 @@ function insertBoard(
       "INSERT INTO boards (id, workspace_id, name, position, canvas_data, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
     )
     .run(id, workspaceId, name, position, canvasData, "2026-06-24T01:00:00.000Z");
+}
+
+function expectedImageFile(boardId: string, imageBytes: Uint8Array): string {
+  const digest = createHash("sha256").update(imageBytes).digest("hex").slice(0, 12);
+  return `${boardId}-${digest}.png`;
 }
 
 async function registerHandlers(
@@ -363,16 +369,20 @@ describe("registerWebPublishIPC", () => {
       .mockRejectedValueOnce(new Error("Wrangler deploy failed"))
       .mockResolvedValueOnce({ deploymentUrl: "https://deploy.example/other" });
     const { prepare, commit } = await registerHandlers(userDataPath, deploySite);
+    const initialFirstImage = new Uint8Array([1, 1, 1]);
+    const initialSecondImage = new Uint8Array([2, 2, 2]);
+    const failedFirstImage = new Uint8Array([9, 9, 9]);
+    const failedSecondImage = new Uint8Array([8, 8, 8]);
 
     await publishWorkspace({ prepare, commit }, "workspace-1", {
-      "board-1": new Uint8Array([1, 1, 1]),
-      "board-2": new Uint8Array([2, 2, 2]),
+      "board-1": initialFirstImage,
+      "board-2": initialSecondImage,
     });
 
     await expect(
       publishWorkspace({ prepare, commit }, "workspace-1", {
-        "board-1": new Uint8Array([9, 9, 9]),
-        "board-2": new Uint8Array([8, 8, 8]),
+        "board-1": failedFirstImage,
+        "board-2": failedSecondImage,
       }),
     ).rejects.toThrow("Wrangler deploy failed");
 
@@ -382,14 +392,28 @@ describe("registerWebPublishIPC", () => {
 
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "snapshots", "workspace-1", "boards", "board-1.png"),
+        path.join(
+          userDataPath,
+          "web-publish",
+          "snapshots",
+          "workspace-1",
+          "boards",
+          expectedImageFile("board-1", initialFirstImage),
+        ),
       ),
-    ).resolves.toEqual(Buffer.from([1, 1, 1]));
+    ).resolves.toEqual(Buffer.from(initialFirstImage));
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "site", "assets", "workspace-1", "board-1.png"),
+        path.join(
+          userDataPath,
+          "web-publish",
+          "site",
+          "assets",
+          "workspace-1",
+          expectedImageFile("board-1", initialFirstImage),
+        ),
       ),
-    ).resolves.toEqual(Buffer.from([1, 1, 1]));
+    ).resolves.toEqual(Buffer.from(initialFirstImage));
     await expect(
       fs.readFile(
         path.join(
@@ -401,10 +425,10 @@ describe("registerWebPublishIPC", () => {
           "site",
           "assets",
           "workspace-1",
-          "board-1.png",
+          expectedImageFile("board-1", failedFirstImage),
         ),
       ),
-    ).resolves.toEqual(Buffer.from([9, 9, 9]));
+    ).resolves.toEqual(Buffer.from(failedFirstImage));
   });
 
   it("keeps first-time failed publishes out of later successful deployments", async () => {
@@ -455,9 +479,7 @@ describe("registerWebPublishIPC", () => {
     ).resolves.not.toContain("Trip Plan");
     await expect(
       fs
-        .readFile(
-          path.join(userDataPath, "web-publish", "site", "assets", "workspace-1", "board-1.png"),
-        )
+        .readdir(path.join(userDataPath, "web-publish", "site", "assets", "workspace-1"))
         .catch((error: unknown) => (error as NodeJS.ErrnoException).code),
     ).resolves.toBe("ENOENT");
   });
@@ -468,6 +490,10 @@ describe("registerWebPublishIPC", () => {
     const deploySite = vi.fn().mockResolvedValue({ deploymentUrl: "https://deploy.example" });
     const { prepare, commit } = await registerHandlers(userDataPath, deploySite);
     const prepared = (await prepare({}, "workspace-1")) as { sourceFingerprint: string };
+    const firstBoardImage = new Uint8Array([1, 2, 3]);
+    const secondBoardImage = new Uint8Array([4, 5, 6]);
+    const firstImageFile = expectedImageFile("board-1", firstBoardImage);
+    const secondImageFile = expectedImageFile("board-2", secondBoardImage);
 
     await commit(
       {},
@@ -475,8 +501,8 @@ describe("registerWebPublishIPC", () => {
         workspaceId: "workspace-1",
         sourceFingerprint: prepared.sourceFingerprint,
         boardImages: {
-          "board-1": new Uint8Array([1, 2, 3]),
-          "board-2": new Uint8Array([4, 5, 6]),
+          "board-1": firstBoardImage,
+          "board-2": secondBoardImage,
         },
       },
     );
@@ -491,30 +517,115 @@ describe("registerWebPublishIPC", () => {
       ),
     ) as { boards: Array<{ id: string; imageFile: string }> };
     expect(snapshot.boards.map((board) => board.id)).toEqual(["board-1", "board-2"]);
+    expect(snapshot.boards.map((board) => board.imageFile)).toEqual([
+      firstImageFile,
+      secondImageFile,
+    ]);
     await expect(
       fs.readFile(path.join(userDataPath, "web-publish", "site", "index.html"), "utf8"),
     ).resolves.toContain("Trip Plan");
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "snapshots", "workspace-1", "boards", "board-1.png"),
+        path.join(userDataPath, "web-publish", "snapshots", "workspace-1", "boards", firstImageFile),
       ),
-    ).resolves.toEqual(Buffer.from([1, 2, 3]));
+    ).resolves.toEqual(Buffer.from(firstBoardImage));
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "snapshots", "workspace-1", "boards", "board-2.png"),
+        path.join(
+          userDataPath,
+          "web-publish",
+          "snapshots",
+          "workspace-1",
+          "boards",
+          secondImageFile,
+        ),
       ),
-    ).resolves.toEqual(Buffer.from([4, 5, 6]));
+    ).resolves.toEqual(Buffer.from(secondBoardImage));
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "site", "assets", "workspace-1", "board-1.png"),
+        path.join(userDataPath, "web-publish", "site", "assets", "workspace-1", firstImageFile),
       ),
-    ).resolves.toEqual(Buffer.from([1, 2, 3]));
+    ).resolves.toEqual(Buffer.from(firstBoardImage));
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "site", "assets", "workspace-1", "board-2.png"),
+        path.join(userDataPath, "web-publish", "site", "assets", "workspace-1", secondImageFile),
       ),
-    ).resolves.toEqual(Buffer.from([4, 5, 6]));
+    ).resolves.toEqual(Buffer.from(secondBoardImage));
+    const workspaceHtml = await fs.readFile(
+      path.join(userDataPath, "web-publish", "site", "workspaces", "trip-plan", "index.html"),
+      "utf8",
+    );
+    expect(workspaceHtml).toContain(firstImageFile);
+    expect(workspaceHtml).toContain(secondImageFile);
+    expect(workspaceHtml).not.toContain("board-1.png");
+    expect(workspaceHtml).not.toContain("board-2.png");
     expect(deploySite).toHaveBeenCalledOnce();
+  });
+
+  it("changes board image URLs when republishing changed image bytes", async () => {
+    const userDataPath = await createTempUserDataPath();
+    await seedWorkspaceWithBoards(userDataPath);
+    const deploySite = vi.fn().mockResolvedValue({ deploymentUrl: "https://deploy.example" });
+    const { prepare, commit } = await registerHandlers(userDataPath, deploySite);
+    const initialFirstImage = new Uint8Array([1, 2, 3]);
+    const updatedFirstImage = new Uint8Array([9, 9, 9]);
+    const secondBoardImage = new Uint8Array([4, 5, 6]);
+    const initialFirstImageFile = expectedImageFile("board-1", initialFirstImage);
+    const updatedFirstImageFile = expectedImageFile("board-1", updatedFirstImage);
+    const secondImageFile = expectedImageFile("board-2", secondBoardImage);
+
+    await publishWorkspace({ prepare, commit }, "workspace-1", {
+      "board-1": initialFirstImage,
+      "board-2": secondBoardImage,
+    });
+    await publishWorkspace({ prepare, commit }, "workspace-1", {
+      "board-1": updatedFirstImage,
+      "board-2": secondBoardImage,
+    });
+
+    const snapshot = JSON.parse(
+      await fs.readFile(
+        path.join(userDataPath, "web-publish", "snapshots", "workspace-1", "workspace.json"),
+        "utf8",
+      ),
+    ) as { boards: Array<{ id: string; imageFile: string }> };
+    expect(snapshot.boards).toEqual([
+      expect.objectContaining({ id: "board-1", imageFile: updatedFirstImageFile }),
+      expect.objectContaining({ id: "board-2", imageFile: secondImageFile }),
+    ]);
+
+    const workspaceHtml = await fs.readFile(
+      path.join(userDataPath, "web-publish", "site", "workspaces", "trip-plan", "index.html"),
+      "utf8",
+    );
+    expect(workspaceHtml).toContain(updatedFirstImageFile);
+    expect(workspaceHtml).not.toContain(initialFirstImageFile);
+    await expect(
+      fs.readFile(
+        path.join(
+          userDataPath,
+          "web-publish",
+          "site",
+          "assets",
+          "workspace-1",
+          updatedFirstImageFile,
+        ),
+      ),
+    ).resolves.toEqual(Buffer.from(updatedFirstImage));
+    await expect(
+      fs
+        .readFile(
+          path.join(
+            userDataPath,
+            "web-publish",
+            "site",
+            "assets",
+            "workspace-1",
+            initialFirstImageFile,
+          ),
+        )
+        .catch((error: unknown) => (error as NodeJS.ErrnoException).code),
+    ).resolves.toBe("ENOENT");
   });
 
   it("serializes concurrent publish commits so manifest updates are not lost", async () => {
@@ -728,9 +839,10 @@ describe("registerWebPublishIPC", () => {
       .mockResolvedValueOnce({ deploymentUrl: "https://deploy.example/publish" })
       .mockRejectedValueOnce(new Error("Wrangler deploy failed"));
     const { prepare, commit, unpublish } = await registerHandlers(userDataPath, deploySite);
+    const firstImage = new Uint8Array([1, 2, 3]);
 
     await publishWorkspace({ prepare, commit }, "workspace-1", {
-      "board-1": new Uint8Array([1, 2, 3]),
+      "board-1": firstImage,
       "board-2": new Uint8Array([4, 5, 6]),
     });
 
@@ -759,9 +871,16 @@ describe("registerWebPublishIPC", () => {
     ).resolves.not.toContain("Trip Plan");
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "snapshots", "workspace-1", "boards", "board-1.png"),
+        path.join(
+          userDataPath,
+          "web-publish",
+          "snapshots",
+          "workspace-1",
+          "boards",
+          expectedImageFile("board-1", firstImage),
+        ),
       ),
-    ).resolves.toEqual(Buffer.from([1, 2, 3]));
+    ).resolves.toEqual(Buffer.from(firstImage));
   });
 
   it("keeps previous local artifacts when publish promotion fails after deployment", async () => {
@@ -772,9 +891,10 @@ describe("registerWebPublishIPC", () => {
       .mockResolvedValueOnce({ deploymentUrl: "https://deploy.example/initial" })
       .mockResolvedValueOnce({ deploymentUrl: "https://deploy.example/republish" });
     const { prepare, commit } = await registerHandlers(userDataPath, deploySite);
+    const initialFirstImage = new Uint8Array([1, 1, 1]);
 
     await publishWorkspace({ prepare, commit }, "workspace-1", {
-      "board-1": new Uint8Array([1, 1, 1]),
+      "board-1": initialFirstImage,
       "board-2": new Uint8Array([2, 2, 2]),
     });
 
@@ -805,14 +925,28 @@ describe("registerWebPublishIPC", () => {
 
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "snapshots", "workspace-1", "boards", "board-1.png"),
+        path.join(
+          userDataPath,
+          "web-publish",
+          "snapshots",
+          "workspace-1",
+          "boards",
+          expectedImageFile("board-1", initialFirstImage),
+        ),
       ),
-    ).resolves.toEqual(Buffer.from([1, 1, 1]));
+    ).resolves.toEqual(Buffer.from(initialFirstImage));
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "site", "assets", "workspace-1", "board-1.png"),
+        path.join(
+          userDataPath,
+          "web-publish",
+          "site",
+          "assets",
+          "workspace-1",
+          expectedImageFile("board-1", initialFirstImage),
+        ),
       ),
-    ).resolves.toEqual(Buffer.from([1, 1, 1]));
+    ).resolves.toEqual(Buffer.from(initialFirstImage));
   });
 
   it("keeps previous local artifacts when unpublish promotion fails after deployment", async () => {
@@ -823,9 +957,10 @@ describe("registerWebPublishIPC", () => {
       .mockResolvedValueOnce({ deploymentUrl: "https://deploy.example/publish" })
       .mockResolvedValueOnce({ deploymentUrl: "https://deploy.example/unpublish" });
     const { prepare, commit, unpublish } = await registerHandlers(userDataPath, deploySite);
+    const firstImage = new Uint8Array([1, 2, 3]);
 
     await publishWorkspace({ prepare, commit }, "workspace-1", {
-      "board-1": new Uint8Array([1, 2, 3]),
+      "board-1": firstImage,
       "board-2": new Uint8Array([4, 5, 6]),
     });
 
@@ -853,9 +988,16 @@ describe("registerWebPublishIPC", () => {
     ).resolves.toContain("Trip Plan");
     await expect(
       fs.readFile(
-        path.join(userDataPath, "web-publish", "snapshots", "workspace-1", "boards", "board-1.png"),
+        path.join(
+          userDataPath,
+          "web-publish",
+          "snapshots",
+          "workspace-1",
+          "boards",
+          expectedImageFile("board-1", firstImage),
+        ),
       ),
-    ).resolves.toEqual(Buffer.from([1, 2, 3]));
+    ).resolves.toEqual(Buffer.from(firstImage));
   });
 
   it("rejects board image payloads that are not Uint8Array values", async () => {
