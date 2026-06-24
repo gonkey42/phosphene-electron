@@ -1,6 +1,10 @@
 import { exportToBlob } from "@excalidraw/excalidraw";
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import { injectImagesFromFilesystem } from "../image-extraction";
+import {
+  WEB_PUBLISH_DARK_BOARD_BACKGROUND,
+  WEB_PUBLISH_SNAPSHOT_THEME,
+} from "./publish-theme";
 
 export type WorkspaceBoardSnapshotInput = {
   elements: ExcalidrawInitialDataState["elements"];
@@ -17,7 +21,9 @@ export async function exportWorkspaceBoardSnapshot(
     appState: {
       ...(input.appState ?? {}),
       exportBackground: true,
-      viewBackgroundColor: input.appState?.viewBackgroundColor ?? "#ffffff",
+      theme: WEB_PUBLISH_SNAPSHOT_THEME,
+      viewBackgroundColor:
+        input.appState?.viewBackgroundColor ?? WEB_PUBLISH_DARK_BOARD_BACKGROUND,
     },
     files: hydratedFiles,
     mimeType: "image/png",

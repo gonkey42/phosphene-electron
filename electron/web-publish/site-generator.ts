@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { WebPublishManifest, WebPublishWorkspaceManifestEntry } from "./types";
 import { assertSafeWebPublishPathSegment, resolveInsideWebPublishRoot } from "./artifact-paths";
+import { WEB_PUBLISH_THEME_CLASS, renderWebPublishDarkThemeCss } from "./site-theme";
 
 type PublishedWorkspaceSnapshot = {
   workspace: { id: string; name: string; slug: string };
@@ -35,17 +36,60 @@ function pageShell(title: string, body: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
   <style>
-    body { margin: 0; font-family: system-ui, sans-serif; color: #172033; background: #f7f8fb; }
+    ${renderWebPublishDarkThemeCss()}
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      color: var(--app-text);
+      background-color: var(--app-background);
+      background:
+        radial-gradient(circle at top, color-mix(in srgb, var(--app-surface) 88%, transparent), transparent 55%),
+        linear-gradient(180deg, var(--app-surface-muted), var(--app-background));
+      min-height: 100vh;
+    }
     main { max-width: 1080px; margin: 0 auto; padding: 32px 20px 56px; }
-    a { color: inherit; }
+    h1 { font-size: clamp(2rem, 5vw, 3.25rem); line-height: 1.05; margin: 0 0 24px; }
+    h2 { font-size: 1rem; line-height: 1.25; margin: 0 0 12px; }
+    a { color: var(--app-text); text-decoration-color: color-mix(in srgb, var(--app-text-muted) 75%, transparent); text-underline-offset: 0.18em; }
+    a:hover { color: color-mix(in srgb, var(--app-text) 88%, white); }
     .workspace-list { display: grid; gap: 12px; list-style: none; padding: 0; }
-    .workspace-link { display: block; padding: 16px; border: 1px solid #d7dce6; border-radius: 8px; background: white; text-decoration: none; }
+    .workspace-link {
+      display: block;
+      padding: 16px;
+      border: 1px solid var(--app-border);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--app-surface) 92%, transparent);
+      box-shadow: var(--app-shadow);
+      color: var(--app-text);
+      text-decoration: none;
+    }
+    .workspace-link:hover {
+      background: color-mix(in srgb, var(--app-surface) 82%, var(--app-background));
+      border-color: color-mix(in srgb, var(--app-border) 70%, var(--app-text-muted));
+    }
+    .empty-state { color: var(--app-text-muted); margin: 0; }
+    .back-link { color: var(--app-text-muted); display: inline-block; margin-bottom: 18px; }
     .board-list { display: grid; gap: 24px; }
-    .board { border: 1px solid #d7dce6; border-radius: 8px; background: white; padding: 16px; }
-    .board img { display: block; width: 100%; height: auto; border: 1px solid #e4e7ef; border-radius: 6px; background: white; }
+    .board {
+      border: 1px solid var(--app-border);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--app-surface) 94%, transparent);
+      box-shadow: var(--app-shadow);
+      padding: 16px;
+    }
+    .board-image-link { display: block; }
+    .board img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--app-border);
+      border-radius: 6px;
+      background: var(--app-background);
+    }
   </style>
 </head>
-<body>
+<body class="${WEB_PUBLISH_THEME_CLASS}">
   <main>${body}</main>
 </body>
 </html>
@@ -67,7 +111,7 @@ async function writeIndex(outputDir: string, workspaces: PublishedWorkspaceSite[
         `<li><a class="workspace-link" href="./workspaces/${escapeHtml(entry.slug)}/">${escapeHtml(entry.name)}</a></li>`,
     )
     .join("\n");
-  const emptyState = "<p>No workspaces are published yet.</p>";
+  const emptyState = '<p class="empty-state">No workspaces are published yet.</p>';
   await fs.writeFile(
     path.join(outputDir, "index.html"),
     pageShell(
@@ -97,14 +141,17 @@ async function writeWorkspacePage(
         workspaceDir,
         resolveInsideWebPublishRoot(assetRoot, entry.workspaceId, board.imageFile),
       );
-      return `<article class="board"><h2>${escapeHtml(board.name)}</h2><a href="${escapeHtml(boardImagePath)}"><img src="${escapeHtml(boardImagePath)}" alt="${escapeHtml(board.name)}"></a></article>`;
+      return `<article class="board"><h2>${escapeHtml(board.name)}</h2><a class="board-image-link" href="${escapeHtml(boardImagePath)}"><img src="${escapeHtml(boardImagePath)}" alt="${escapeHtml(board.name)}"></a></article>`;
     })
     .join("\n");
+  const boardList = boardHtml
+    ? `<div class="board-list">${boardHtml}</div>`
+    : '<p class="empty-state">No boards are published in this workspace yet.</p>';
   await fs.writeFile(
     path.join(workspaceDir, "index.html"),
     pageShell(
       entry.name,
-      `<p><a href="../../">Back to workspaces</a></p><h1>${escapeHtml(entry.name)}</h1><div class="board-list">${boardHtml}</div>`,
+      `<p><a class="back-link" href="../../">Back to workspaces</a></p><h1>${escapeHtml(entry.name)}</h1>${boardList}`,
     ),
     "utf8",
   );

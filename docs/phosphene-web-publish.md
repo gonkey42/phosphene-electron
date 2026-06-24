@@ -19,6 +19,12 @@ Cloudflare Access protects the whole site. Phosphene does not store viewer accou
 
 Local edits do not appear online until `Publish to Web` or `Republish` is clicked. Publishing a workspace includes every board in that workspace. Unpublishing removes that workspace from the next deployment. Published workspaces must be unpublished before they can be deleted locally.
 
+## Generated Site Appearance
+
+Generated Web Publish pages always use Phosphene's app dark-mode styling, regardless of whether the app's current `View > Theme` setting is `Light`, `System`, or `Dark` when publishing. They do not follow the viewer's operating-system appearance setting and do not expose a website theme toggle.
+
+Board snapshots are exported for dark viewing. Boards with explicit canvas background colors keep those colors, including explicit white backgrounds; boards without an explicit background use the app dark background.
+
 ## Troubleshooting
 
 - If Wrangler is not authenticated, run `npx wrangler login`.
