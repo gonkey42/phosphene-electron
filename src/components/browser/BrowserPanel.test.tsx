@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   attachMock,
   setBoundsMock,
+  hideMock,
+  getStateMock,
   navigateMock,
   goBackMock,
   goForwardMock,
@@ -14,6 +16,8 @@ const {
 } = vi.hoisted(() => ({
   attachMock: vi.fn(),
   setBoundsMock: vi.fn(),
+  hideMock: vi.fn(),
+  getStateMock: vi.fn(),
   navigateMock: vi.fn(),
   goBackMock: vi.fn(),
   goForwardMock: vi.fn(),
@@ -24,10 +28,23 @@ const {
 }));
 let stateListener: ((state: unknown) => void) | undefined;
 
+function createDeferred<T>() {
+  let resolve: (value: T | PromiseLike<T>) => void = () => undefined;
+  let reject: (reason?: unknown) => void = () => undefined;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, resolve, reject };
+}
+
 vi.mock("../../platform/desktop-api", () => ({
   browser: {
     attach: attachMock,
     setBounds: setBoundsMock,
+    hide: hideMock,
+    getState: getStateMock,
     navigate: navigateMock,
     goBack: goBackMock,
     goForward: goForwardMock,
@@ -66,6 +83,8 @@ describe("BrowserPanel", () => {
   beforeEach(() => {
     attachMock.mockReset();
     setBoundsMock.mockReset();
+    hideMock.mockReset();
+    getStateMock.mockReset();
     navigateMock.mockReset();
     goBackMock.mockReset();
     goForwardMock.mockReset();
@@ -74,6 +93,15 @@ describe("BrowserPanel", () => {
     showAddressInputMenuMock.mockReset();
     attachMock.mockResolvedValue(undefined);
     setBoundsMock.mockResolvedValue(undefined);
+    hideMock.mockResolvedValue(undefined);
+    getStateMock.mockResolvedValue({
+      url: "",
+      title: "",
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false,
+      lastError: null,
+    });
     showAddressInputMenuMock.mockResolvedValue(undefined);
     stateListener = undefined;
   });
@@ -200,12 +228,14 @@ describe("BrowserPanel", () => {
   });
 
   it("renders a fallback alert when attach rejects", async () => {
+    const onNativeAttachError = vi.fn();
     attachMock.mockRejectedValueOnce(new Error("Browser view could not be created"));
 
-    render(<BrowserPanel />);
+    render(<BrowserPanel onNativeAttachError={onNativeAttachError} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Browser failed to load.");
     expect(screen.getByRole("alert")).toHaveTextContent("Browser view could not be created");
+    expect(onNativeAttachError).toHaveBeenCalledWith(expect.any(Error));
   });
 
   it("renders a fallback alert when attach throws synchronously", async () => {
@@ -241,6 +271,113 @@ describe("BrowserPanel", () => {
     });
 
     expect(setBoundsMock).not.toHaveBeenCalled();
+  });
+
+  it("does not attach or expose tabbable controls while hidden", () => {
+    render(<BrowserPanel visible={false} />);
+
+    expect(attachMock).not.toHaveBeenCalled();
+    expect(setBoundsMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("browser-panel")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Browser address")).not.toBeInTheDocument();
+  });
+
+  it("hydrates cached browser state before attaching a visible panel", async () => {
+    const onNativeAttachComplete = vi.fn();
+    getStateMock.mockResolvedValueOnce({
+      url: "https://cached.example.com",
+      title: "Cached",
+      canGoBack: true,
+      canGoForward: false,
+      isLoading: false,
+      lastError: null,
+    });
+
+    render(<BrowserPanel onNativeAttachComplete={onNativeAttachComplete} />);
+
+    await waitFor(() => {
+      expect(getStateMock).toHaveBeenCalledTimes(1);
+      expect(attachMock).toHaveBeenCalledTimes(1);
+    });
+    expect(onNativeAttachComplete).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Browser address")).toHaveValue("https://cached.example.com");
+    expect(screen.getByRole("button", { name: "Back" })).not.toBeDisabled();
+  });
+
+  it("does not attach when hidden before cached browser state resolves", async () => {
+    const cachedState = createDeferred<{
+      url: string;
+      title: string;
+      canGoBack: boolean;
+      canGoForward: boolean;
+      isLoading: boolean;
+      lastError: string | null;
+    }>();
+    getStateMock.mockReturnValueOnce(cachedState.promise);
+
+    const { unmount } = render(<BrowserPanel />);
+
+    await waitFor(() => {
+      expect(getStateMock).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+
+    await act(async () => {
+      cachedState.resolve({
+        url: "https://late.example.com",
+        title: "Late",
+        canGoBack: false,
+        canGoForward: false,
+        isLoading: false,
+        lastError: null,
+      });
+      await cachedState.promise;
+    });
+
+    expect(attachMock).not.toHaveBeenCalled();
+  });
+
+  it("does not report native attach failure after unmount", async () => {
+    const attachFailure = createDeferred<void>();
+    const onNativeAttachError = vi.fn();
+    attachMock.mockReturnValueOnce(attachFailure.promise);
+
+    const { unmount } = render(<BrowserPanel onNativeAttachError={onNativeAttachError} />);
+
+    await waitFor(() => {
+      expect(attachMock).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+
+    await act(async () => {
+      attachFailure.reject(new Error("late attach failed"));
+      await attachFailure.promise.catch(() => undefined);
+    });
+
+    expect(onNativeAttachError).not.toHaveBeenCalled();
+  });
+
+  it("does not report native attach success after unmount", async () => {
+    const attachSuccess = createDeferred<void>();
+    const onNativeAttachComplete = vi.fn();
+    attachMock.mockReturnValueOnce(attachSuccess.promise);
+
+    const { unmount } = render(<BrowserPanel onNativeAttachComplete={onNativeAttachComplete} />);
+
+    await waitFor(() => {
+      expect(attachMock).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+
+    await act(async () => {
+      attachSuccess.resolve();
+      await attachSuccess.promise;
+    });
+
+    expect(onNativeAttachComplete).not.toHaveBeenCalled();
   });
 
   it("updates browser bounds when the host size changes during window resize", async () => {
@@ -281,12 +418,15 @@ describe("BrowserPanel", () => {
       fireEvent(window, new Event("resize"));
 
       await waitFor(() => {
-        expect(setBoundsMock).toHaveBeenCalledWith({
-          x: 12,
-          y: 24,
-          width: 360,
-          height: 240,
-        });
+        expect(setBoundsMock).toHaveBeenCalledWith(
+          {
+            x: 12,
+            y: 24,
+            width: 360,
+            height: 240,
+          },
+          attachMock.mock.calls[0]?.[1],
+        );
       });
     } finally {
       window.ResizeObserver = originalResizeObserver;
@@ -353,7 +493,9 @@ describe("BrowserPanel", () => {
       unmount();
 
       expect(disconnectMock).toHaveBeenCalledTimes(1);
-      expect(destroyMock).toHaveBeenCalledTimes(1);
+      expect(hideMock).toHaveBeenCalledTimes(1);
+      expect(hideMock).toHaveBeenCalledWith(attachMock.mock.calls[0]?.[1]);
+      expect(destroyMock).not.toHaveBeenCalled();
 
       act(() => {
         resizeObserverCallback?.([] as ResizeObserverEntry[], {} as ResizeObserver);
@@ -418,6 +560,7 @@ describe("BrowserPanel", () => {
 
     expect(attachMock).not.toHaveBeenCalled();
     expect(destroyMock).not.toHaveBeenCalled();
+    expect(hideMock).not.toHaveBeenCalled();
     expect(screen.getByTestId("browser-panel-shell")).toBeInTheDocument();
     expect(screen.queryByLabelText("Browser address")).not.toBeInTheDocument();
   });

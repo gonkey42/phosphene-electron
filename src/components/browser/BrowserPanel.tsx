@@ -9,6 +9,7 @@ type BrowserPanelMode = "live" | "shell";
 
 const DEFAULT_HOME_URL = "https://start.duckduckgo.com/";
 const DEFAULT_SEARCH_BASE = "https://duckduckgo.com/?q=";
+let browserOwnerSequence = 0;
 
 const initialBrowserState: BrowserState = {
   url: "",
@@ -53,29 +54,60 @@ function shouldPreserveDraftOnBlur(nextTarget: EventTarget | null) {
   return nextTarget instanceof HTMLElement && nextTarget.dataset.browserKeepDraft === "true";
 }
 
+function createBrowserOwnerToken() {
+  browserOwnerSequence += 1;
+  return `browser-panel-${browserOwnerSequence}`;
+}
+
 type BrowserPanelProps = {
   mode?: BrowserPanelMode;
+  visible?: boolean;
+  onNativeAttachComplete?: () => void;
+  onNativeAttachError?: (error: unknown) => void;
 };
 
-export function BrowserPanel({ mode = "live" }: BrowserPanelProps) {
+export function BrowserPanel({
+  mode = "live",
+  visible = true,
+  onNativeAttachComplete,
+  onNativeAttachError,
+}: BrowserPanelProps) {
   if (mode === "shell") {
     return <BrowserPanelShell />;
   }
 
-  return <LiveBrowserPanel />;
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <LiveBrowserPanel
+      onNativeAttachComplete={onNativeAttachComplete}
+      onNativeAttachError={onNativeAttachError}
+    />
+  );
 }
 
-function LiveBrowserPanel() {
+function LiveBrowserPanel({
+  onNativeAttachComplete,
+  onNativeAttachError,
+}: {
+  onNativeAttachComplete?: () => void;
+  onNativeAttachError?: (error: unknown) => void;
+}) {
   const resolvedTheme = useAppStore((state) => state.resolvedTheme);
   const setFocus = useAppStore((state) => state.setFocus);
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const ownerTokenRef = useRef<string | null>(null);
   const isEditingAddressRef = useRef(false);
-  const isDisposedRef = useRef(false);
+  const isMountedRef = useRef(false);
+  const effectGenerationRef = useRef(0);
   const [addressValue, setAddressValue] = useState("");
   const [browserState, setBrowserState] = useState(initialBrowserState);
+  ownerTokenRef.current ??= createBrowserOwnerToken();
 
   const reportBrowserError = (error: unknown, fallbackMessage: string) => {
-    if (isDisposedRef.current) {
+    if (!isMountedRef.current) {
       return;
     }
 
@@ -95,6 +127,14 @@ function LiveBrowserPanel() {
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const unsubscribe = browser.onStateChanged((state) => {
       setBrowserState(state);
       if (!isEditingAddressRef.current) {
@@ -106,34 +146,63 @@ function LiveBrowserPanel() {
   }, []);
 
   useEffect(() => {
-    isDisposedRef.current = false;
+    effectGenerationRef.current += 1;
+    const effectGeneration = effectGenerationRef.current;
+    const isCurrentEffect = () => effectGenerationRef.current === effectGeneration;
 
     const host = hostRef.current;
     if (!host) {
       return;
     }
 
-    const runBrowserTask = (task: () => Promise<void>) => {
-      if (isDisposedRef.current) {
+    const runBrowserTask = (
+      task: () => Promise<void>,
+      options: {
+        fallbackMessage?: string;
+        onError?: (error: unknown) => void;
+      } = {},
+    ) => {
+      if (!isCurrentEffect()) {
         return Promise.resolve();
       }
 
       return Promise.resolve()
         .then(() => {
-          if (isDisposedRef.current) {
+          if (!isCurrentEffect()) {
             return;
           }
 
           return task();
         })
         .catch((error) => {
-          reportBrowserError(error, "Browser view could not be created");
+          if (isCurrentEffect()) {
+            reportBrowserError(error, options.fallbackMessage ?? "Browser view could not be created");
+            options.onError?.(error);
+          }
         });
     };
 
-    const syncBounds = () => runBrowserTask(() => browser.setBounds(getBrowserBounds(host)));
+    const syncBounds = () =>
+      runBrowserTask(() => browser.setBounds(getBrowserBounds(host), ownerTokenRef.current ?? undefined));
 
-    void runBrowserTask(() => browser.attach(getBrowserBounds(host)));
+    void runBrowserTask(async () => {
+      const state = await browser.getState();
+      if (isCurrentEffect()) {
+        setBrowserState((currentState) => (currentState.lastError ? currentState : state));
+        if (!isEditingAddressRef.current) {
+          setAddressValue(state.url);
+        }
+      }
+
+      if (!isCurrentEffect()) {
+        return;
+      }
+
+      await browser.attach(getBrowserBounds(host), ownerTokenRef.current ?? undefined);
+      if (isCurrentEffect()) {
+        onNativeAttachComplete?.();
+      }
+    }, { onError: onNativeAttachError });
 
     const handleWindowResize = () => {
       void syncBounds();
@@ -150,12 +219,12 @@ function LiveBrowserPanel() {
     window.addEventListener("resize", handleWindowResize);
 
     return () => {
-      isDisposedRef.current = true;
+      effectGenerationRef.current += 1;
       observer?.disconnect();
       window.removeEventListener("resize", handleWindowResize);
-      void browser.destroy();
+      void Promise.resolve(browser.hide(ownerTokenRef.current ?? undefined)).catch(() => undefined);
     };
-  }, []);
+  }, [onNativeAttachComplete, onNativeAttachError]);
 
   return (
     <section

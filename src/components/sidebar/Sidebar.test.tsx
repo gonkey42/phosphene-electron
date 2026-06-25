@@ -9,6 +9,7 @@ vi.mock("./BoardList", () => ({
   BoardList: (props: {
     workspaceId?: string;
     onBoardSelect?: (boardId: string | null) => void;
+    isVisible?: boolean;
   }) => {
     boardListMock(props);
     return <div data-testid="board-list" />;
@@ -26,6 +27,7 @@ describe("Sidebar", () => {
     expect(boardListMock).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       onBoardSelect,
+      isVisible: true,
     });
   });
 

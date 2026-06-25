@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createBoard,
@@ -12,6 +12,7 @@ import { formatRelativeUpdatedTime } from "../../lib/date-format";
 import { useCancellableEffect } from "../../hooks/use-cancellable-effect";
 import { useErrorReporter } from "../../hooks/use-error-reporter";
 import { useInlineRename } from "../../hooks/use-inline-rename";
+import { useSafeDelete } from "../../hooks/use-safe-delete";
 import { clearSharedErrorChannel } from "../../hooks/shared-error-store";
 import { useAppStore } from "../../stores/app-store";
 
@@ -20,6 +21,7 @@ import "./BoardList.css";
 interface BoardListProps {
   workspaceId?: string;
   onBoardSelect?: (boardId: string | null) => void;
+  isVisible?: boolean;
 }
 
 const BOARD_LOAD_ERROR_CHANNEL = "board-list:load";
@@ -28,7 +30,11 @@ const BOARD_CREATE_ERROR_CHANNEL = "board-list:create";
 const BOARD_RENAME_ERROR_CHANNEL = "board-list:rename";
 const BOARD_DELETE_ERROR_CHANNEL = "board-list:delete";
 
-export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: BoardListProps) {
+export function BoardList({
+  workspaceId: providedWorkspaceId,
+  onBoardSelect,
+  isVisible = true,
+}: BoardListProps) {
   const storeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const activeWorkspaceId = providedWorkspaceId ?? storeWorkspaceId;
   const activeBoardId = useAppStore((state) =>
@@ -41,6 +47,7 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
   const setActiveBoard = useAppStore((state) => state.setActiveBoard);
   const setActiveBoardForWorkspace = useAppStore((state) => state.setActiveBoardForWorkspace);
   const setBoards = useAppStore((state) => state.setBoards);
+  const cancelArmedDelete = useAppStore((state) => state.cancelArmedDelete);
   const reportError = useErrorReporter("BoardList");
   const [boards, setLocalBoards] = useState<BoardListItem[]>([]);
   const onBoardSelectRef = useRef(onBoardSelect);
@@ -172,6 +179,21 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
   );
 
   useEffect(() => {
+    if (isVisible) {
+      return;
+    }
+
+    cancelRename();
+    const { armedDeleteTarget } = useAppStore.getState();
+    if (
+      armedDeleteTarget?.kind === "board" &&
+      armedDeleteTarget.workspaceId === activeWorkspaceId
+    ) {
+      cancelArmedDelete();
+    }
+  }, [activeWorkspaceId, cancelArmedDelete, cancelRename, isVisible]);
+
+  useEffect(() => {
     if (!activeWorkspaceId || boardListRefresh.workspaceId !== activeWorkspaceId) {
       return;
     }
@@ -180,6 +202,8 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
   }, [activeWorkspaceId, boardListRefresh.nonce, boardListRefresh.workspaceId, refreshBoards]);
 
   async function handleCreateBoard() {
+    cancelArmedDelete();
+
     const workspaceIdAtStart = activeWorkspaceId;
     const nextName = `Board ${boards.length + 1}`;
 
@@ -207,9 +231,12 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
     }
   }
 
-  async function handleDeleteBoard(boardId: string) {
+  async function handleDeleteBoard(boardId: string, workspaceIdAtStart = activeWorkspaceId) {
     try {
-      const workspaceIdAtStart = activeWorkspaceId;
+      if (hasWorkspaceChanged(workspaceIdAtStart)) {
+        return;
+      }
+
       await deleteBoard(boardId);
 
       clearSharedErrorChannel(BOARD_DELETE_ERROR_CHANNEL);
@@ -237,7 +264,7 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
 
       await refreshBoards(workspaceIdAtStart);
     } catch (error) {
-      reportError("Failed to delete board", error, { workspaceId: activeWorkspaceId ?? null }, {
+      reportError("Failed to delete board", error, { workspaceId: workspaceIdAtStart }, {
         channel: BOARD_DELETE_ERROR_CHANNEL,
       });
     }
@@ -286,11 +313,25 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
           {boards.map((board) => {
             const isActive = board.id === activeBoardId;
             const isEditing = editingBoardId === board.id;
+            const selectBoard = () => {
+              if (activeWorkspaceId) {
+                setActiveBoardForWorkspace(activeWorkspaceId, board.id);
+              } else {
+                setActiveBoard(board.id);
+              }
+              onBoardSelect?.(board.id);
+            };
 
             return (
               <li
                 key={board.id}
-                className={`board-list__item${isActive ? " board-list__item--active" : ""}`}
+                className={[
+                  "board-list__item",
+                  isActive ? "board-list__item--active" : "",
+                  isEditing ? "board-list__item--editing" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               >
                 {isEditing ? (
                   <form
@@ -333,14 +374,7 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
                   <button
                     type="button"
                     className={`board-list__item-button${isActive ? " board-list__item-button--active" : ""}`}
-                    onClick={() => {
-                      if (activeWorkspaceId) {
-                        setActiveBoardForWorkspace(activeWorkspaceId, board.id);
-                      } else {
-                        setActiveBoard(board.id);
-                      }
-                      onBoardSelect?.(board.id);
-                    }}
+                    onClick={selectBoard}
                   >
                     <span className="board-list__item-name">{board.name}</span>
                   </button>
@@ -352,23 +386,30 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
                   </time>
                 </div>
 
-                <div className="board-list__item-actions">
-                  <button
-                    type="button"
-                    className="board-list__action-button"
-                    onClick={() => startRename(board.id, board.name)}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    type="button"
-                    className="board-list__action-button"
-                    onClick={() => {
-                      void handleDeleteBoard(board.id);
-                    }}
-                  >
-                    Delete
-                  </button>
+                <div
+                  className="board-list__item-actions"
+                  data-reachable="always"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  {!isEditing ? (
+                    <button
+                      type="button"
+                      className="board-list__action-button"
+                      onClick={() => {
+                        cancelArmedDelete();
+                        startRename(board.id, board.name);
+                      }}
+                    >
+                      Rename
+                    </button>
+                  ) : null}
+                  <BoardDeleteButton
+                    boardId={board.id}
+                    boardName={board.name}
+                    workspaceId={board.workspace_id}
+                    onConfirm={handleDeleteBoard}
+                  />
                 </div>
               </li>
             );
@@ -376,5 +417,51 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
         </ul>
       )}
     </section>
+  );
+}
+
+function BoardDeleteButton({
+  boardId,
+  boardName,
+  workspaceId,
+  onConfirm,
+}: {
+  boardId: string;
+  boardName: string;
+  workspaceId: string | null;
+  onConfirm: (boardId: string, workspaceId: string | null) => Promise<void>;
+}) {
+  const target = useMemo(
+    () => ({ kind: "board" as const, id: boardId, workspaceId, label: boardName }),
+    [boardId, boardName, workspaceId],
+  );
+  const safeDelete = useSafeDelete({
+    target,
+    onConfirm: () => onConfirm(boardId, workspaceId),
+  });
+  const { onClick, onKeyDown, ...buttonProps } = safeDelete.buttonProps;
+  const actionLabel = safeDelete.isPending
+    ? `Deleting ${boardName}`
+    : safeDelete.isArmed
+      ? `Confirm delete ${boardName}`
+      : `Delete ${boardName}`;
+
+  return (
+    <button
+      type="button"
+      className="board-list__action-button"
+      aria-label={actionLabel}
+      {...buttonProps}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick(event);
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        onKeyDown(event);
+      }}
+    >
+      {safeDelete.isPending ? "Deleting..." : safeDelete.isArmed ? "Delete?" : "Delete"}
+    </button>
   );
 }

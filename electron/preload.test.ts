@@ -67,7 +67,16 @@ type ExposedDesktop = {
   };
   browser: {
     attach(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
-    setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+    setBounds(bounds: { x: number; y: number; width: number; height: number }, ownerToken?: string): Promise<void>;
+    hide(): Promise<void>;
+    getState(): Promise<{
+      url: string;
+      title: string;
+      canGoBack: boolean;
+      canGoForward: boolean;
+      isLoading: boolean;
+      lastError: string | null;
+    }>;
     navigate(url: string): Promise<void>;
     goBack(): Promise<void>;
     goForward(): Promise<void>;
@@ -236,6 +245,8 @@ describe("preload filesystem IPC", () => {
         browser: expect.objectContaining({
           attach: expect.any(Function),
           setBounds: expect.any(Function),
+          hide: expect.any(Function),
+          getState: expect.any(Function),
           navigate: expect.any(Function),
           goBack: expect.any(Function),
           goForward: expect.any(Function),
@@ -466,12 +477,28 @@ describe("preload filesystem IPC", () => {
   it("exposes browser bridge methods in the desktop API", async () => {
     await import("./preload");
 
+    const desktop = exposeInMainWorldMock.mock.calls[0]?.[1] as ExposedDesktop;
+    const state = {
+      url: "https://example.com",
+      title: "Example",
+      canGoBack: true,
+      canGoForward: false,
+      isLoading: false,
+      lastError: null,
+    };
+    invokeMock.mockResolvedValueOnce(undefined).mockResolvedValueOnce(state);
+
+    await expect(desktop.browser.hide()).resolves.toBeUndefined();
+    await expect(desktop.browser.getState()).resolves.toBe(state);
+
     expect(exposeInMainWorldMock).toHaveBeenCalledWith(
       "desktop",
       expect.objectContaining({
         browser: expect.objectContaining({
           attach: expect.any(Function),
           setBounds: expect.any(Function),
+          hide: expect.any(Function),
+          getState: expect.any(Function),
           navigate: expect.any(Function),
           goBack: expect.any(Function),
           goForward: expect.any(Function),
@@ -481,6 +508,8 @@ describe("preload filesystem IPC", () => {
         }),
       }),
     );
+    expect(invokeMock).toHaveBeenCalledWith("browser:hide");
+    expect(invokeMock).toHaveBeenCalledWith("browser:get-state");
   });
 
   it("exposes context menu bridge methods in the desktop API", async () => {

@@ -102,7 +102,7 @@
 }
 
 .workspace-tab-bar__tab-row .workspace-publish-controls {
-  max-width: 17rem;
+  max-width: none;
 }
 
 .workspace-tab-bar__close-button,
@@ -132,8 +132,9 @@
 
 .workspace-tab-bar__close-button {
   flex: 0 0 auto;
-  height: 1.75rem;
-  width: 1.75rem;
+  height: 1.625rem;
+  width: 1.625rem;
+  -webkit-app-region: no-drag;
 }
 
 .workspace-tab-bar__create-button {
@@ -149,10 +150,40 @@
   color: var(--app-text);
 }
 
+.workspace-tab-bar__close-button:disabled {
+  color: var(--app-text-muted);
+  cursor: default;
+  opacity: 0.55;
+}
+
+.workspace-tab-bar__close-button:disabled:hover {
+  background: var(--app-surface);
+  border-color: var(--app-border);
+  color: var(--app-text-muted);
+}
+
 .workspace-tab-bar__tab-button:focus-visible,
 .workspace-tab-bar__rename-input:focus-visible,
 .workspace-tab-bar__close-button:focus-visible,
 .workspace-tab-bar__create-button:focus-visible {
   outline: 2px solid var(--app-text);
   outline-offset: 2px;
+}
+
+.workspace-tab-bar__delete-reason {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+@media (pointer: coarse) {
+  .workspace-tab-bar__close-button,
+  .workspace-tab-bar__create-button {
+    height: 2.5rem;
+    width: 2.5rem;
+  }
 }

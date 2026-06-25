@@ -103,6 +103,7 @@ type LifecycleSharedState = {
   listenersBound: boolean;
   pendingWorkHandlers: Set<PendingWorkHandler>;
 };
+let currentBrowserOwnerToken: string | null = null;
 
 type LifecycleWindow = Window & {
   [LIFECYCLE_READY_FLAG]?: boolean;
@@ -281,11 +282,25 @@ export const lifecycle = {
 };
 
 export const browser = {
-  attach(bounds: BrowserBounds) {
-    return getDesktop().browser.attach(bounds);
+  async attach(bounds: BrowserBounds, ownerToken?: string) {
+    await getDesktop().browser.attach(bounds, ownerToken);
+    if (ownerToken) {
+      currentBrowserOwnerToken = ownerToken;
+    }
   },
-  setBounds(bounds: BrowserBounds) {
-    return getDesktop().browser.setBounds(bounds);
+  setBounds(bounds: BrowserBounds, ownerToken?: string) {
+    const resolvedOwnerToken = ownerToken ?? currentBrowserOwnerToken ?? undefined;
+    return getDesktop().browser.setBounds(bounds, resolvedOwnerToken);
+  },
+  async hide(ownerToken?: string) {
+    const resolvedOwnerToken = ownerToken ?? currentBrowserOwnerToken ?? undefined;
+    await getDesktop().browser.hide(resolvedOwnerToken);
+    if (!resolvedOwnerToken || resolvedOwnerToken === currentBrowserOwnerToken) {
+      currentBrowserOwnerToken = null;
+    }
+  },
+  getState() {
+    return getDesktop().browser.getState();
   },
   navigate(url: string) {
     return getDesktop().browser.navigate(url);

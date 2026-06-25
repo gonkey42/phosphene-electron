@@ -17,3 +17,87 @@
   visibility: hidden;
   pointer-events: none;
 }
+
+.workspace-sidebar-shell {
+  display: flex;
+  flex: 0 0 18rem;
+  min-height: 0;
+  overflow: hidden;
+  width: 18rem;
+}
+
+.workspace-sidebar-shell--hidden {
+  flex-basis: 0;
+  pointer-events: none;
+  visibility: hidden;
+  width: 0;
+}
+
+.workspace-canvas-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.workspace-canvas-controls {
+  align-items: center;
+  bottom: clamp(4.5rem, 8vh, 6rem);
+  display: flex;
+  gap: 6px;
+  position: absolute;
+  right: clamp(0.75rem, 2vw, 1.25rem);
+  z-index: 4;
+}
+
+.workspace-canvas-control {
+  align-items: center;
+  background: color-mix(in srgb, var(--app-surface) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--app-border) 74%, var(--app-text));
+  border-radius: 6px;
+  color: var(--app-text);
+  display: inline-flex;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  justify-content: center;
+  letter-spacing: 0;
+  line-height: 1;
+  min-height: 28px;
+  min-width: 28px;
+  padding: 0;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.workspace-canvas-control:hover,
+.workspace-canvas-control:focus-visible {
+  background: var(--app-surface-elevated, var(--app-surface));
+  border-color: var(--app-text);
+}
+
+.workspace-canvas-control:focus-visible {
+  outline: 2px solid var(--app-accent, #2563eb);
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .workspace-canvas-controls {
+    bottom: clamp(5.25rem, 12vh, 7rem);
+    right: 0.75rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .workspace-canvas-controls {
+    gap: 8px;
+  }
+
+  .workspace-canvas-control {
+    min-height: 42px;
+    min-width: 42px;
+  }
+}

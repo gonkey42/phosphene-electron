@@ -119,6 +119,11 @@ describe("AppShell", () => {
       status: "idle",
       initializationError: null,
       initialized: false,
+      armedDeleteTarget: null,
+      armedDeleteToken: null,
+      deletePendingToken: null,
+      deleteAnnouncement: null,
+      deleteEligibility: { state: "allowed" },
     });
   });
 
@@ -239,6 +244,50 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("keyboard-provider")).toBeInTheDocument();
     expect(keyboardProviderMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    "cancel",
+    "confirm",
+    "expiration",
+    "success",
+    "failure",
+    "no-op reset",
+  ] as const)("shows the armed delete announcement and clears it on %s", async (scenario) => {
+    listWorkspacesMock.mockResolvedValue([]);
+
+    const { AppShell } = await import("./AppShell");
+    const { useAppStore } = await import("../stores/app-store");
+    render(<AppShell />);
+
+    await screen.findByTestId("keyboard-provider");
+
+    let token = "";
+    act(() => {
+      token = useAppStore
+        .getState()
+        .armDeleteTarget({ kind: "workspace", id: "workspace-1", label: "Home" });
+    });
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(status).toHaveTextContent("Home");
+
+    act(() => {
+      const state = useAppStore.getState();
+      if (scenario === "cancel" || scenario === "expiration") {
+        state.cancelArmedDelete();
+        return;
+      }
+
+      expect(state.markDeletePending(token)).toBe(true);
+
+      if (scenario === "success" || scenario === "failure" || scenario === "no-op reset") {
+        state.clearDeletePending(token);
+      }
+    });
+
+    expect(status).toBeEmptyDOMElement();
   });
 
   it("does not trigger a second workspace load after startup completes with an empty list", async () => {
