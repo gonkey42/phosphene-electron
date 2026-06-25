@@ -149,6 +149,10 @@ function WorkspacePage({
   const setFocus = useAppStore((state) => state.setFocus);
   const [layoutResetVersion, setLayoutResetVersion] = useState(0);
   const wasActiveRef = useRef(isActive);
+  const previousPanelVisibilityRef = useRef<{
+    boardsVisible: boolean;
+    browserVisible: boolean;
+  } | null>(null);
   const sidebarShellRef = useRef<HTMLDivElement | null>(null);
   const boardsToggleRef = useRef<HTMLButtonElement | null>(null);
   const browserToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -182,9 +186,36 @@ function WorkspacePage({
     boardsToggleRef.current?.focus();
   }, [layout.boardsVisible]);
 
+  useEffect(() => {
+    const nextVisibility = {
+      boardsVisible: layout.boardsVisible,
+      browserVisible: layout.browserVisible,
+    };
+    const previousVisibility = previousPanelVisibilityRef.current;
+    previousPanelVisibilityRef.current = nextVisibility;
+
+    if (!isActive || !isLoaded || !previousVisibility) {
+      return;
+    }
+
+    if (
+      previousVisibility.boardsVisible !== nextVisibility.boardsVisible ||
+      previousVisibility.browserVisible !== nextVisibility.browserVisible
+    ) {
+      notifyPanelVisibilityChange();
+    }
+  }, [isActive, isLoaded, layout.boardsVisible, layout.browserVisible]);
+
   if (!isLoaded) {
     return null;
   }
+
+  const boardsPanelId = `${workspaceId}-boards-panel`;
+  const browserPanelId = `${workspaceId}-secondary`;
+  const browserRegionIsRendered = isActive || isExiting;
+  const focusControlLabel =
+    layout.boardsVisible || layout.browserVisible ? "Focus canvas" : "Restore panels";
+  const inactiveTabIndex = isActive ? undefined : -1;
 
   const handleBoardsToggle = () => {
     const nextVisible = !layout.boardsVisible;
@@ -204,6 +235,17 @@ function WorkspacePage({
       setFocus("global");
     }
 
+    void setBrowserVisible(nextVisible);
+  };
+
+  const handleCanvasFocusToggle = () => {
+    const nextVisible = !layout.boardsVisible && !layout.browserVisible;
+
+    if (!nextVisible) {
+      setFocus("global");
+    }
+
+    setBoardsVisible(nextVisible);
     void setBrowserVisible(nextVisible);
   };
 
@@ -230,6 +272,7 @@ function WorkspacePage({
     <>
       <div
         ref={sidebarShellRef}
+        id={boardsPanelId}
         className={`workspace-sidebar-shell${layout.boardsVisible ? "" : " workspace-sidebar-shell--hidden"}`}
         aria-hidden={!layout.boardsVisible}
         inert={!layout.boardsVisible}
@@ -241,28 +284,6 @@ function WorkspacePage({
         />
       </div>
       <main style={workspaceMainStyle} tabIndex={-1}>
-        <div className="workspace-panel-toggles">
-          <button
-            ref={boardsToggleRef}
-            type="button"
-            className="workspace-panel-toggle"
-            aria-label={layout.boardsVisible ? "Hide boards" : "Show boards"}
-            aria-pressed={layout.boardsVisible}
-            onClick={handleBoardsToggle}
-          >
-            Boards
-          </button>
-          <button
-            ref={browserToggleRef}
-            type="button"
-            className="workspace-panel-toggle"
-            aria-label={layout.browserVisible ? "Hide browser" : "Show browser"}
-            aria-pressed={layout.browserVisible}
-            onClick={handleBrowserToggle}
-          >
-            Browser
-          </button>
-        </div>
         <PanelLayout
           workspaceId={workspaceId}
           defaultPrimarySize={layout.primaryPanelSize}
@@ -271,7 +292,47 @@ function WorkspacePage({
           onLayoutApplied={confirmBrowserLayoutApplied}
           onLayoutApplyError={handleBrowserLayoutApplyFailure}
           onLayoutChange={handleLayoutChange}
-          primaryContent={<CanvasPanel workspaceId={workspaceId} isInteractive={isActive} />}
+          primaryContent={
+            <div className="workspace-canvas-shell">
+              <CanvasPanel workspaceId={workspaceId} isInteractive={isActive} />
+              <div className="workspace-canvas-controls" role="group" aria-label="Canvas panel controls">
+                <button
+                  ref={boardsToggleRef}
+                  type="button"
+                  className="workspace-canvas-control workspace-canvas-control--boards"
+                  aria-controls={boardsPanelId}
+                  aria-expanded={layout.boardsVisible}
+                  aria-label={layout.boardsVisible ? "Hide boards panel" : "Show boards panel"}
+                  tabIndex={inactiveTabIndex}
+                  onClick={handleBoardsToggle}
+                >
+                  {"<"}
+                </button>
+                <button
+                  type="button"
+                  className="workspace-canvas-control workspace-canvas-control--focus"
+                  aria-label={focusControlLabel}
+                  aria-pressed={!layout.boardsVisible && !layout.browserVisible}
+                  tabIndex={inactiveTabIndex}
+                  onClick={handleCanvasFocusToggle}
+                >
+                  []
+                </button>
+                <button
+                  ref={browserToggleRef}
+                  type="button"
+                  className="workspace-canvas-control workspace-canvas-control--browser"
+                  aria-controls={browserRegionIsRendered ? browserPanelId : undefined}
+                  aria-expanded={layout.browserVisible}
+                  aria-label={layout.browserVisible ? "Hide browser panel" : "Show browser panel"}
+                  tabIndex={inactiveTabIndex}
+                  onClick={handleBrowserToggle}
+                >
+                  {">"}
+                </button>
+              </div>
+            </div>
+          }
           secondaryContent={
             isActive ? (
               <BrowserPanel
@@ -385,4 +446,14 @@ function notifyWorkspaceActivationLayoutChange() {
   }
 
   window.dispatchEvent(new Event("resize"));
+}
+
+function notifyPanelVisibilityChange() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
 }

@@ -1,10 +1,17 @@
+import { readFileSync } from "node:fs";
+
 import type { HTMLAttributes, ReactNode } from "react";
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync } from "react-dom";
 
-const { sidebarMock, canvasPanelMock, motionDivMock, panelLayoutMock } = vi.hoisted(() => ({
+const {
+  sidebarMock,
+  canvasPanelMock,
+  motionDivMock,
+  panelLayoutMock,
+} = vi.hoisted(() => ({
   sidebarMock: vi.fn(),
   canvasPanelMock: vi.fn(),
   motionDivMock: vi.fn(),
@@ -226,7 +233,11 @@ vi.mock("../layout/PanelLayout", () => ({
     return (
       <section data-testid={`panel-layout-${workspaceId}`}>
         <div data-testid={`panel-layout-primary-${workspaceId}`}>{primaryContent}</div>
-        <div data-testid={`panel-layout-secondary-${workspaceId}`}>{secondaryContent}</div>
+        {secondaryContent ? (
+          <div id={`${workspaceId}-secondary`} data-testid={`panel-layout-secondary-${workspaceId}`}>
+            {secondaryContent}
+          </div>
+        ) : null}
       </section>
     );
   },
@@ -239,6 +250,55 @@ vi.mock("../../hooks/use-workspace-layout", () => ({
 import { useAppStore } from "../../stores/app-store";
 
 import { WorkspaceContainer } from "./WorkspaceContainer";
+
+interface RenderedCssRule {
+  mediaText: string | null;
+  selectorText: string;
+  style: CSSStyleDeclaration;
+}
+
+function collectRenderedCssRules(
+  ruleList: CSSRuleList,
+  renderedRules: RenderedCssRule[],
+  mediaText: string | null = null,
+) {
+  Array.from(ruleList).forEach((rule) => {
+    if ("selectorText" in rule && "style" in rule) {
+      renderedRules.push({
+        mediaText,
+        selectorText: String(rule.selectorText),
+        style: rule.style as CSSStyleDeclaration,
+      });
+    }
+
+    if ("cssRules" in rule) {
+      const nextMediaText = "conditionText" in rule ? String(rule.conditionText) : mediaText;
+      collectRenderedCssRules(rule.cssRules as CSSRuleList, renderedRules, nextMediaText);
+    }
+  });
+}
+
+function getRenderedCssRule(
+  selector: string,
+  mediaMatches: (mediaText: string | null) => boolean = (mediaText) => mediaText === null,
+  styleMatches: (style: CSSStyleDeclaration) => boolean = () => true,
+) {
+  const renderedRules: RenderedCssRule[] = [];
+  Array.from(document.styleSheets).forEach((styleSheet) => {
+    collectRenderedCssRules(styleSheet.cssRules, renderedRules);
+  });
+  const rule = renderedRules.find((candidate) => {
+    const selectorMatches = candidate.selectorText
+      .split(",")
+      .map((part) => part.trim())
+      .includes(selector);
+
+    return selectorMatches && mediaMatches(candidate.mediaText) && styleMatches(candidate.style);
+  });
+
+  expect(rule).not.toBeUndefined();
+  return rule!.style;
+}
 
 describe("WorkspaceContainer", () => {
   const workspaceUpdateActiveBoardMocks = {
@@ -391,6 +451,74 @@ describe("WorkspaceContainer", () => {
   afterEach(() => {
     cleanup();
   });
+
+  type TestWorkspaceLayout = {
+    primaryPanelSize: number;
+    lastVisiblePrimaryPanelSize: number;
+    boardsVisible: boolean;
+    browserVisible: boolean;
+    activeBoardId: string | null;
+  };
+
+  const getDefaultTestLayout = (workspaceId: string): TestWorkspaceLayout => ({
+    primaryPanelSize: workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+    lastVisiblePrimaryPanelSize:
+      workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+    boardsVisible: true,
+    browserVisible: true,
+    activeBoardId: null,
+  });
+
+  const mockWorkspaceLayouts = (
+    getOverrides: (workspaceId: string) => Partial<TestWorkspaceLayout>,
+  ) => {
+    useWorkspaceLayoutMock.mockImplementation((workspaceId: string) => ({
+      layout: {
+        ...getDefaultTestLayout(workspaceId),
+        ...getOverrides(workspaceId),
+      },
+      isLoaded: true,
+      updatePanelSize: vi.fn(),
+      updateActiveBoard:
+        workspaceUpdateActiveBoardMocks[
+          workspaceId as keyof typeof workspaceUpdateActiveBoardMocks
+        ],
+      setBoardsVisible:
+        workspaceSetBoardsVisibleMocks[
+          workspaceId as keyof typeof workspaceSetBoardsVisibleMocks
+        ],
+      toggleBoardsVisible: vi.fn(),
+      setBrowserVisible:
+        workspaceSetBrowserVisibleMocks[
+          workspaceId as keyof typeof workspaceSetBrowserVisibleMocks
+        ],
+      toggleBrowserVisible: vi.fn(),
+      setBothPanelsVisible: vi.fn(),
+      toggleCanvasFocusMode: vi.fn(),
+      ensureBrowserHidden:
+        workspaceEnsureBrowserHiddenMocks[
+          workspaceId as keyof typeof workspaceEnsureBrowserHiddenMocks
+        ],
+      confirmBrowserRestored:
+        workspaceConfirmBrowserRestoredMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserRestoredMocks
+        ],
+      confirmBrowserLayoutApplied:
+        workspaceConfirmBrowserLayoutAppliedMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserLayoutAppliedMocks
+        ],
+      handleBrowserRestoreFailure:
+        workspaceHandleBrowserRestoreFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserRestoreFailureMocks
+        ],
+      handleBrowserLayoutApplyFailure:
+        workspaceHandleBrowserLayoutApplyFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserLayoutApplyFailureMocks
+        ],
+      flushPendingLayoutSave:
+        workspaceFlushLayoutMocks[workspaceId as keyof typeof workspaceFlushLayoutMocks],
+    }));
+  };
 
   it("mounts the active workspace plus immediate neighbors on first render", () => {
     const { container } = render(<WorkspaceContainer />);
@@ -582,6 +710,237 @@ describe("WorkspaceContainer", () => {
     expect(workspaceEnsureBrowserHiddenMocks["workspace-3"]).toHaveBeenCalledTimes(1);
   });
 
+  it("renders the canvas corner controls inside the active primary panel shell", () => {
+    render(<WorkspaceContainer />);
+
+    const activePrimaryPanel = screen.getByTestId("panel-layout-primary-workspace-3");
+    const inactivePrimaryPanel = screen.getByTestId("panel-layout-primary-workspace-2");
+    const boardsButton = within(activePrimaryPanel).getByRole("button", {
+      name: "Hide boards panel",
+    });
+    const focusButton = within(activePrimaryPanel).getByRole("button", {
+      name: "Focus canvas",
+    });
+    const browserButton = within(activePrimaryPanel).getByRole("button", {
+      name: "Hide browser panel",
+    });
+
+    expect(boardsButton).toHaveTextContent("<");
+    expect(focusButton).toHaveTextContent("[]");
+    expect(browserButton).toHaveTextContent(">");
+    expect(boardsButton.closest(".workspace-canvas-shell")).toBe(activePrimaryPanel.firstChild);
+    expect(boardsButton.closest(".workspace-canvas-controls")).toHaveAttribute(
+      "role",
+      "group",
+    );
+    expect(
+      within(inactivePrimaryPanel).getByRole("button", {
+        hidden: true,
+        name: "Hide boards panel",
+      }),
+    ).toHaveAttribute("tabindex", "-1");
+    expect(
+      within(inactivePrimaryPanel).getByRole("button", {
+        hidden: true,
+        name: "Hide browser panel",
+      }),
+    ).not.toHaveAttribute("aria-controls");
+    expect(screen.queryByRole("button", { name: "Boards" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Browser" })).not.toBeInTheDocument();
+  });
+
+  it("wires accessible state and workspace-scoped controlled regions for active controls", () => {
+    render(<WorkspaceContainer />);
+
+    const activePage = screen.getByTestId("workspace-page-motion-workspace-3");
+    const boardsButton = within(activePage).getByRole("button", {
+      name: "Hide boards panel",
+    });
+    const browserButton = within(activePage).getByRole("button", {
+      name: "Hide browser panel",
+    });
+
+    expect(boardsButton).toHaveAttribute("aria-expanded", "true");
+    expect(boardsButton).toHaveAttribute("aria-controls", "workspace-3-boards-panel");
+    expect(document.getElementById("workspace-3-boards-panel")).toContainElement(
+      screen.getByTestId("sidebar-workspace-3"),
+    );
+    expect(browserButton).toHaveAttribute("aria-expanded", "true");
+    expect(browserButton).toHaveAttribute("aria-controls", "workspace-3-secondary");
+    expect(document.getElementById("workspace-3-secondary")).toContainElement(
+      screen.getByTestId("browser-panel-live"),
+    );
+  });
+
+  it("toggles boards and browser panels independently from the corner controls", () => {
+    render(<WorkspaceContainer />);
+
+    const activePage = screen.getByTestId("workspace-page-motion-workspace-3");
+
+    fireEvent.click(within(activePage).getByRole("button", { name: "Hide boards panel" }));
+    expect(workspaceSetBoardsVisibleMocks["workspace-3"]).toHaveBeenCalledWith(false);
+    expect(workspaceSetBrowserVisibleMocks["workspace-3"]).not.toHaveBeenCalled();
+
+    fireEvent.click(within(activePage).getByRole("button", { name: "Hide browser panel" }));
+    expect(workspaceSetBrowserVisibleMocks["workspace-3"]).toHaveBeenCalledWith(false);
+    expect(workspaceSetBoardsVisibleMocks["workspace-3"]).toHaveBeenCalledTimes(1);
+  });
+
+  it("collapses mixed panel state first and restores both panels when both are hidden", () => {
+    mockWorkspaceLayouts((workspaceId) =>
+      workspaceId === "workspace-3" ? { boardsVisible: false, browserVisible: true } : {},
+    );
+
+    const { rerender } = render(<WorkspaceContainer />);
+
+    fireEvent.click(
+      within(screen.getByTestId("workspace-page-motion-workspace-3")).getByRole("button", {
+        name: "Focus canvas",
+      }),
+    );
+
+    expect(workspaceSetBoardsVisibleMocks["workspace-3"]).toHaveBeenCalledWith(false);
+    expect(workspaceSetBrowserVisibleMocks["workspace-3"]).toHaveBeenCalledWith(false);
+
+    workspaceSetBoardsVisibleMocks["workspace-3"].mockClear();
+    workspaceSetBrowserVisibleMocks["workspace-3"].mockClear();
+    mockWorkspaceLayouts((workspaceId) =>
+      workspaceId === "workspace-3"
+        ? { boardsVisible: false, browserVisible: false, primaryPanelSize: 100 }
+        : {},
+    );
+
+    rerender(<WorkspaceContainer />);
+
+    fireEvent.click(
+      within(screen.getByTestId("workspace-page-motion-workspace-3")).getByRole("button", {
+        name: "Restore panels",
+      }),
+    );
+
+    expect(workspaceSetBoardsVisibleMocks["workspace-3"]).toHaveBeenCalledWith(true);
+    expect(workspaceSetBrowserVisibleMocks["workspace-3"]).toHaveBeenCalledWith(true);
+  });
+
+  it("dispatches a resize event on the next animation frame after panel toggles", () => {
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+    let animationFrameCallback: FrameRequestCallback | null = null;
+    const requestAnimationFrameSpy = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback: FrameRequestCallback) => {
+        animationFrameCallback = callback;
+        return 1;
+      });
+
+    try {
+      const { rerender } = render(<WorkspaceContainer />);
+
+      fireEvent.click(
+        within(screen.getByTestId("workspace-page-motion-workspace-3")).getByRole("button", {
+          name: "Hide boards panel",
+        }),
+      );
+
+      expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
+      expect(dispatchEventSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "resize" }),
+      );
+
+      mockWorkspaceLayouts((workspaceId) =>
+        workspaceId === "workspace-3" ? { boardsVisible: false } : {},
+      );
+      rerender(<WorkspaceContainer />);
+
+      expect(requestAnimationFrameSpy).toHaveBeenCalledWith(expect.any(Function));
+      act(() => {
+        animationFrameCallback?.(performance.now());
+      });
+
+      expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(Event));
+      const lastDispatchCall = dispatchEventSpy.mock.calls[dispatchEventSpy.mock.calls.length - 1];
+      expect(lastDispatchCall?.[0].type).toBe("resize");
+    } finally {
+      requestAnimationFrameSpy.mockRestore();
+      dispatchEventSpy.mockRestore();
+    }
+  });
+
+  it("keeps visible focus on the focus control while collapsing both panels", () => {
+    render(<WorkspaceContainer />);
+    const focusButton = within(screen.getByTestId("workspace-page-motion-workspace-3")).getByRole(
+      "button",
+      {
+        name: "Focus canvas",
+      },
+    );
+
+    focusButton.focus();
+    fireEvent.click(focusButton);
+
+    expect(focusButton).toHaveFocus();
+    expect(workspaceSetBoardsVisibleMocks["workspace-3"]).toHaveBeenCalledWith(false);
+    expect(workspaceSetBrowserVisibleMocks["workspace-3"]).toHaveBeenCalledWith(false);
+  });
+
+  it("keeps the canvas mounted when side panel visibility changes", () => {
+    const { rerender } = render(<WorkspaceContainer />);
+    const activeCanvas = screen.getByTestId("canvas-workspace-3");
+
+    mockWorkspaceLayouts((workspaceId) =>
+      workspaceId === "workspace-3"
+        ? {
+            boardsVisible: false,
+            browserVisible: false,
+            primaryPanelSize: 100,
+          }
+        : {},
+    );
+
+    rerender(<WorkspaceContainer />);
+
+    expect(screen.getByTestId("canvas-workspace-3")).toBe(activeCanvas);
+  });
+
+  it("uses contrast and hit-target classes with CSS-backed fine and coarse sizing", () => {
+    const styleElement = document.createElement("style");
+    styleElement.textContent = readFileSync(
+      "src/components/workspace/WorkspaceContainer.css",
+      "utf8",
+    );
+    document.head.append(styleElement);
+    const { container } = render(<WorkspaceContainer />);
+    const cluster = container.querySelector(".workspace-canvas-controls");
+    const button = screen.getByRole("button", { name: "Hide boards panel" });
+
+    try {
+      const clusterStyle = getRenderedCssRule(".workspace-canvas-controls");
+      const controlStyle = getRenderedCssRule(".workspace-canvas-control");
+      const focusedControlStyle = getRenderedCssRule(
+        ".workspace-canvas-control:focus-visible",
+        undefined,
+        (style) => style.cssText.includes("outline"),
+      );
+      const coarseControlStyle = getRenderedCssRule(
+        ".workspace-canvas-control",
+        (mediaText) => mediaText?.includes("pointer: coarse") ?? false,
+      );
+
+      expect(cluster).toBeInTheDocument();
+      expect(button).toHaveClass("workspace-canvas-control", "workspace-canvas-control--boards");
+      expect(clusterStyle.opacity).toBe("");
+      expect(controlStyle.opacity).toBe("");
+      expect(controlStyle.color).toBe("var(--app-text)");
+      expect(controlStyle.background).not.toBe("");
+      expect(controlStyle.minHeight).toBe("28px");
+      expect(controlStyle.minWidth).toBe("28px");
+      expect(focusedControlStyle.cssText).toContain("outline");
+      expect(coarseControlStyle.minHeight).toBe("42px");
+      expect(coarseControlStyle.minWidth).toBe("42px");
+    } finally {
+      styleElement.remove();
+    }
+  });
+
   it("moves DOM focus out of the sidebar when the boards panel is hidden programmatically", async () => {
     let activeBoardsVisible = true;
     useWorkspaceLayoutMock.mockImplementation((workspaceId: string) => ({
@@ -644,7 +1003,7 @@ describe("WorkspaceContainer", () => {
     await waitFor(() => {
       expect(
         within(screen.getByTestId("workspace-page-motion-workspace-3")).getByRole("button", {
-          name: "Show boards",
+          name: "Show boards panel",
         }),
       ).toHaveFocus();
     });
@@ -719,7 +1078,7 @@ describe("WorkspaceContainer", () => {
 
     const activePage = screen.getByTestId("workspace-page-motion-workspace-3");
     const hideBrowserButton = within(activePage).getByRole("button", {
-      name: "Hide browser",
+      name: "Hide browser panel",
     });
 
     fireEvent.click(hideBrowserButton);
@@ -745,7 +1104,7 @@ describe("WorkspaceContainer", () => {
     expect(useAppStore.getState().focus).toBe("global");
     expect(
       within(screen.getByTestId("workspace-page-motion-workspace-3")).getByRole("button", {
-        name: "Hide browser",
+        name: "Hide browser panel",
       }),
     ).toHaveFocus();
     expect(workspaceSetBrowserVisibleMocks["workspace-3"]).toHaveBeenCalledWith(false);
