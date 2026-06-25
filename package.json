@@ -79,7 +79,7 @@
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^4.1.4",
-    "wait-on": "^9.0.4"
+    "wait-on": "^9.0.5"
   },
   "overrides": {
     "@excalidraw/excalidraw": {
