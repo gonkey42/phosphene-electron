@@ -17,3 +17,38 @@
   visibility: hidden;
   pointer-events: none;
 }
+
+.workspace-sidebar-shell {
+  display: flex;
+  flex: 0 0 18rem;
+  min-height: 0;
+  overflow: hidden;
+  width: 18rem;
+}
+
+.workspace-sidebar-shell--hidden {
+  flex-basis: 0;
+  pointer-events: none;
+  visibility: hidden;
+  width: 0;
+}
+
+.workspace-panel-toggles {
+  display: flex;
+  gap: 6px;
+  left: 10px;
+  position: absolute;
+  top: 10px;
+  z-index: 4;
+}
+
+.workspace-panel-toggle {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  color: var(--app-text);
+  font: inherit;
+  font-size: 0.78rem;
+  min-height: 28px;
+  padding: 0 8px;
+}

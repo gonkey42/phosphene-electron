@@ -1,6 +1,7 @@
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { Group, Panel, Separator, useGroupRef } from "react-resizable-panels";
 import type { Layout } from "react-resizable-panels";
 
 import "./PanelLayout.css";
@@ -10,6 +11,10 @@ type PanelLayoutProps = {
   primaryContent: ReactNode;
   secondaryContent?: ReactNode;
   defaultPrimarySize?: number;
+  browserVisible?: boolean;
+  layoutResetVersion?: number;
+  onLayoutApplied?: () => void;
+  onLayoutApplyError?: (error: unknown) => void;
   onLayoutChange?: (sizes: Layout) => void;
 };
 
@@ -18,9 +23,61 @@ export function PanelLayout({
   primaryContent,
   secondaryContent,
   defaultPrimarySize = 75,
+  browserVisible = true,
+  layoutResetVersion = 0,
+  onLayoutApplied,
+  onLayoutApplyError,
   onLayoutChange,
 }: PanelLayoutProps) {
-  const defaultSecondarySize = 100 - defaultPrimarySize;
+  const primaryPanelId = `${workspaceId}-primary`;
+  const secondaryPanelId = `${workspaceId}-secondary`;
+  const visiblePrimarySize = clampPercent(defaultPrimarySize, 30, 85);
+  const primarySize = browserVisible ? visiblePrimarySize : 100;
+  const secondarySize = browserVisible ? 100 - visiblePrimarySize : 0;
+  const groupRef = useGroupRef();
+  const isApplyingLayoutRef = useRef(false);
+  const groupLayout = useMemo(
+    () => ({
+      [primaryPanelId]: primarySize,
+      [secondaryPanelId]: secondarySize,
+    }),
+    [primaryPanelId, primarySize, secondaryPanelId, secondarySize],
+  );
+  const normalizedLayoutChanged = useCallback(
+    (layout: Layout) => {
+      if (isApplyingLayoutRef.current) {
+        return;
+      }
+
+      onLayoutChange?.({
+        primary: layout[primaryPanelId] ?? primarySize,
+        secondary: layout[secondaryPanelId] ?? secondarySize,
+      });
+    },
+    [onLayoutChange, primaryPanelId, primarySize, secondaryPanelId, secondarySize],
+  );
+
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) {
+      return;
+    }
+
+    try {
+      isApplyingLayoutRef.current = true;
+      const appliedLayout = group.setLayout(groupLayout);
+      isApplyingLayoutRef.current = false;
+      if (!areLayoutsEquivalent(appliedLayout, groupLayout)) {
+        onLayoutApplyError?.(new Error("Browser panel layout did not apply"));
+        return;
+      }
+
+      onLayoutApplied?.();
+    } catch (error) {
+      isApplyingLayoutRef.current = false;
+      onLayoutApplyError?.(error);
+    }
+  }, [groupLayout, groupRef, layoutResetVersion, onLayoutApplied, onLayoutApplyError]);
 
   if (!secondaryContent) {
     return (
@@ -35,28 +92,54 @@ export function PanelLayout({
   return (
     <Group
       className="panel-layout"
+      defaultLayout={groupLayout}
+      groupRef={groupRef}
       id={`workspace-layout-${workspaceId}`}
-      onLayoutChanged={onLayoutChange}
+      onLayoutChanged={normalizedLayoutChanged}
       orientation="horizontal"
     >
       <Panel
         className="panel-primary"
-        defaultSize={defaultPrimarySize}
-        id="primary"
-        minSize={30}
+        defaultSize={`${primarySize}%`}
+        id={primaryPanelId}
+        minSize="30%"
         style={{ position: "relative" }}
       >
         {primaryContent}
       </Panel>
-      <Separator className="panel-resize-handle" />
+      <Separator
+        aria-controls={secondaryPanelId}
+        className="panel-resize-handle"
+        disabled={!browserVisible}
+        hidden={!browserVisible}
+      />
       <Panel
         className="panel-secondary"
-        defaultSize={defaultSecondarySize}
-        id="secondary"
-        minSize={15}
+        collapsedSize="0%"
+        collapsible
+        defaultSize={`${secondarySize}%`}
+        disabled={!browserVisible}
+        id={secondaryPanelId}
+        minSize="15%"
       >
         {secondaryContent}
       </Panel>
     </Group>
   );
+}
+
+function clampPercent(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return 75;
+  }
+
+  return Math.min(max, Math.max(min, value));
+}
+
+function areLayoutsEquivalent(actualLayout: Layout, expectedLayout: Layout): boolean {
+  return Object.entries(expectedLayout).every(([panelId, expectedSize]) => {
+    const actualSize = actualLayout[panelId];
+
+    return Number.isFinite(actualSize) && Math.abs(actualSize - expectedSize) <= 0.01;
+  });
 }

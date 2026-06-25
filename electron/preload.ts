@@ -268,11 +268,23 @@ contextBridge.exposeInMainWorld("desktop", {
     },
   },
   browser: {
-    attach(bounds: BrowserBounds) {
-      return ipcRenderer.invoke("browser:attach", bounds);
+    attach(bounds: BrowserBounds, ownerToken?: string) {
+      return ownerToken
+        ? ipcRenderer.invoke("browser:attach", bounds, ownerToken)
+        : ipcRenderer.invoke("browser:attach", bounds);
     },
-    setBounds(bounds: BrowserBounds) {
-      return ipcRenderer.invoke("browser:set-bounds", bounds);
+    setBounds(bounds: BrowserBounds, ownerToken?: string) {
+      return ownerToken
+        ? ipcRenderer.invoke("browser:set-bounds", bounds, ownerToken)
+        : ipcRenderer.invoke("browser:set-bounds", bounds);
+    },
+    hide(ownerToken?: string) {
+      return ownerToken
+        ? ipcRenderer.invoke("browser:hide", ownerToken)
+        : ipcRenderer.invoke("browser:hide");
+    },
+    getState() {
+      return ipcRenderer.invoke("browser:get-state");
     },
     navigate(url: string) {
       return ipcRenderer.invoke("browser:navigate", url);

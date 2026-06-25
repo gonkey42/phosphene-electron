@@ -90,6 +90,7 @@ export function WorkspaceContainer() {
               isActive,
             })}
             aria-hidden={!isInteractive}
+            inert={!isInteractive}
             onAnimationComplete={() => {
               if (isActive) {
                 notifyWorkspaceActivationLayoutChange();
@@ -131,9 +132,26 @@ function WorkspacePage({
   isActive: boolean;
   isExiting: boolean;
 }) {
-  const { layout, isLoaded, updatePanelSize, updateActiveBoard, flushPendingLayoutSave } =
-    useWorkspaceLayout(workspaceId);
+  const {
+    layout,
+    isLoaded,
+    updatePanelSize,
+    updateActiveBoard,
+    setBoardsVisible,
+    setBrowserVisible,
+    ensureBrowserHidden,
+    confirmBrowserRestored,
+    confirmBrowserLayoutApplied,
+    handleBrowserRestoreFailure,
+    handleBrowserLayoutApplyFailure,
+    flushPendingLayoutSave,
+  } = useWorkspaceLayout(workspaceId);
+  const setFocus = useAppStore((state) => state.setFocus);
+  const [layoutResetVersion, setLayoutResetVersion] = useState(0);
   const wasActiveRef = useRef(isActive);
+  const sidebarShellRef = useRef<HTMLDivElement | null>(null);
+  const boardsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const browserToggleRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (wasActiveRef.current && !isActive) {
@@ -148,20 +166,123 @@ function WorkspacePage({
     wasActiveRef.current = isActive;
   }, [flushPendingLayoutSave, isActive, workspaceId]);
 
+  useEffect(() => {
+    if (!isActive || !isLoaded || layout.browserVisible) {
+      return;
+    }
+
+    void ensureBrowserHidden();
+  }, [ensureBrowserHidden, isActive, isLoaded, layout.browserVisible]);
+
+  useEffect(() => {
+    if (layout.boardsVisible || !sidebarShellRef.current?.contains(document.activeElement)) {
+      return;
+    }
+
+    boardsToggleRef.current?.focus();
+  }, [layout.boardsVisible]);
+
   if (!isLoaded) {
     return null;
   }
 
+  const handleBoardsToggle = () => {
+    const nextVisible = !layout.boardsVisible;
+
+    if (!nextVisible && sidebarShellRef.current?.contains(document.activeElement)) {
+      boardsToggleRef.current?.focus();
+    }
+
+    setBoardsVisible(nextVisible);
+  };
+
+  const handleBrowserToggle = () => {
+    const nextVisible = !layout.browserVisible;
+
+    if (!nextVisible) {
+      browserToggleRef.current?.focus();
+      setFocus("global");
+    }
+
+    void setBrowserVisible(nextVisible);
+  };
+
+  const handleLayoutChange = (sizes: Parameters<typeof updatePanelSize>[0]) => {
+    if ((sizes.secondary ?? 100 - (sizes.primary ?? layout.primaryPanelSize)) <= 0) {
+      if (!layout.browserVisible) {
+        return;
+      }
+
+      setFocus("global");
+      browserToggleRef.current?.focus();
+      void setBrowserVisible(false).then((didHide) => {
+        if (!didHide) {
+          setLayoutResetVersion((currentVersion) => currentVersion + 1);
+        }
+      });
+      return;
+    }
+
+    updatePanelSize(sizes);
+  };
+
   return (
     <>
-      <Sidebar workspaceId={workspaceId} onBoardSelect={updateActiveBoard} />
-      <main style={workspaceMainStyle}>
+      <div
+        ref={sidebarShellRef}
+        className={`workspace-sidebar-shell${layout.boardsVisible ? "" : " workspace-sidebar-shell--hidden"}`}
+        aria-hidden={!layout.boardsVisible}
+        inert={!layout.boardsVisible}
+      >
+        <Sidebar
+          workspaceId={workspaceId}
+          onBoardSelect={updateActiveBoard}
+          isVisible={layout.boardsVisible}
+        />
+      </div>
+      <main style={workspaceMainStyle} tabIndex={-1}>
+        <div className="workspace-panel-toggles">
+          <button
+            ref={boardsToggleRef}
+            type="button"
+            className="workspace-panel-toggle"
+            aria-label={layout.boardsVisible ? "Hide boards" : "Show boards"}
+            aria-pressed={layout.boardsVisible}
+            onClick={handleBoardsToggle}
+          >
+            Boards
+          </button>
+          <button
+            ref={browserToggleRef}
+            type="button"
+            className="workspace-panel-toggle"
+            aria-label={layout.browserVisible ? "Hide browser" : "Show browser"}
+            aria-pressed={layout.browserVisible}
+            onClick={handleBrowserToggle}
+          >
+            Browser
+          </button>
+        </div>
         <PanelLayout
           workspaceId={workspaceId}
           defaultPrimarySize={layout.primaryPanelSize}
-          onLayoutChange={updatePanelSize}
+          browserVisible={layout.browserVisible}
+          layoutResetVersion={layoutResetVersion}
+          onLayoutApplied={confirmBrowserLayoutApplied}
+          onLayoutApplyError={handleBrowserLayoutApplyFailure}
+          onLayoutChange={handleLayoutChange}
           primaryContent={<CanvasPanel workspaceId={workspaceId} isInteractive={isActive} />}
-          secondaryContent={isActive ? <BrowserPanel /> : isExiting ? <BrowserPanel mode="shell" /> : undefined}
+          secondaryContent={
+            isActive ? (
+              <BrowserPanel
+                visible={layout.browserVisible}
+                onNativeAttachComplete={confirmBrowserRestored}
+                onNativeAttachError={handleBrowserRestoreFailure}
+              />
+            ) : isExiting ? (
+              <BrowserPanel mode="shell" />
+            ) : undefined
+          }
         />
       </main>
     </>

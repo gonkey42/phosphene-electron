@@ -118,8 +118,10 @@ type DesktopBrowserState = {
 };
 
 interface DesktopBrowserAPI {
-  attach(bounds: DesktopBrowserBounds): Promise<void>;
-  setBounds(bounds: DesktopBrowserBounds): Promise<void>;
+  attach(bounds: DesktopBrowserBounds, ownerToken?: string): Promise<void>;
+  setBounds(bounds: DesktopBrowserBounds, ownerToken?: string): Promise<void>;
+  hide(ownerToken?: string): Promise<void>;
+  getState(): Promise<DesktopBrowserState>;
   navigate(url: string): Promise<void>;
   goBack(): Promise<void>;
   goForward(): Promise<void>;

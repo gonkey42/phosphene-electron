@@ -1,6 +1,6 @@
 import type { HTMLAttributes, ReactNode } from "react";
 
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushSync } from "react-dom";
 
@@ -20,6 +20,69 @@ const { useWorkspaceLayoutMock } = vi.hoisted(() => ({
 }));
 
 const workspaceFlushLayoutMocks = {
+  "workspace-1": vi.fn(),
+  "workspace-2": vi.fn(),
+  "workspace-3": vi.fn(),
+  "workspace-4": vi.fn(),
+  "workspace-5": vi.fn(),
+  "workspace-6": vi.fn(),
+};
+
+const workspaceSetBoardsVisibleMocks = {
+  "workspace-1": vi.fn(),
+  "workspace-2": vi.fn(),
+  "workspace-3": vi.fn(),
+  "workspace-4": vi.fn(),
+  "workspace-5": vi.fn(),
+  "workspace-6": vi.fn(),
+};
+
+const workspaceSetBrowserVisibleMocks = {
+  "workspace-1": vi.fn(),
+  "workspace-2": vi.fn(),
+  "workspace-3": vi.fn(),
+  "workspace-4": vi.fn(),
+  "workspace-5": vi.fn(),
+  "workspace-6": vi.fn(),
+};
+
+const workspaceEnsureBrowserHiddenMocks = {
+  "workspace-1": vi.fn(),
+  "workspace-2": vi.fn(),
+  "workspace-3": vi.fn(),
+  "workspace-4": vi.fn(),
+  "workspace-5": vi.fn(),
+  "workspace-6": vi.fn(),
+};
+
+const workspaceConfirmBrowserRestoredMocks = {
+  "workspace-1": vi.fn(),
+  "workspace-2": vi.fn(),
+  "workspace-3": vi.fn(),
+  "workspace-4": vi.fn(),
+  "workspace-5": vi.fn(),
+  "workspace-6": vi.fn(),
+};
+
+const workspaceConfirmBrowserLayoutAppliedMocks = {
+  "workspace-1": vi.fn(),
+  "workspace-2": vi.fn(),
+  "workspace-3": vi.fn(),
+  "workspace-4": vi.fn(),
+  "workspace-5": vi.fn(),
+  "workspace-6": vi.fn(),
+};
+
+const workspaceHandleBrowserRestoreFailureMocks = {
+  "workspace-1": vi.fn(),
+  "workspace-2": vi.fn(),
+  "workspace-3": vi.fn(),
+  "workspace-4": vi.fn(),
+  "workspace-5": vi.fn(),
+  "workspace-6": vi.fn(),
+};
+
+const workspaceHandleBrowserLayoutApplyFailureMocks = {
   "workspace-1": vi.fn(),
   "workspace-2": vi.fn(),
   "workspace-3": vi.fn(),
@@ -82,12 +145,18 @@ vi.mock("../sidebar/Sidebar", () => ({
   Sidebar: ({
     workspaceId,
     onBoardSelect,
+    isVisible,
   }: {
     workspaceId?: string;
     onBoardSelect?: (boardId: string | null) => void;
+    isVisible?: boolean;
   }) => {
-    sidebarMock({ workspaceId, onBoardSelect });
-    return <aside data-testid={`sidebar-${workspaceId ?? "none"}`} />;
+    sidebarMock({ workspaceId, onBoardSelect, isVisible });
+    return (
+      <aside data-testid={`sidebar-${workspaceId ?? "none"}`}>
+        <button type="button">Inside sidebar</button>
+      </aside>
+    );
   },
 }));
 
@@ -105,8 +174,18 @@ vi.mock("../canvas/CanvasPanel", () => ({
 }));
 
 vi.mock("../browser/BrowserPanel", () => ({
-  BrowserPanel: ({ mode }: { mode?: "live" | "shell" }) => {
-    browserPanelMock({ mode });
+  BrowserPanel: ({
+    mode,
+    visible,
+    onNativeAttachComplete,
+    onNativeAttachError,
+  }: {
+    mode?: "live" | "shell";
+    visible?: boolean;
+    onNativeAttachComplete?: () => void;
+    onNativeAttachError?: (error: unknown) => void;
+  }) => {
+    browserPanelMock({ mode, visible, onNativeAttachComplete, onNativeAttachError });
     return <div data-testid={mode === "shell" ? "browser-panel-shell" : "browser-panel-live"} />;
   },
 }));
@@ -117,18 +196,30 @@ vi.mock("../layout/PanelLayout", () => ({
     primaryContent,
     secondaryContent,
     defaultPrimarySize,
+    browserVisible,
+    layoutResetVersion,
+    onLayoutApplied,
+    onLayoutApplyError,
     onLayoutChange,
   }: {
     workspaceId: string;
     primaryContent: ReactNode;
     secondaryContent?: ReactNode;
     defaultPrimarySize?: number;
-    onLayoutChange?: (sizes: number[]) => void;
+    browserVisible?: boolean;
+    layoutResetVersion?: number;
+    onLayoutApplied?: () => void;
+    onLayoutApplyError?: (error: unknown) => void;
+    onLayoutChange?: (sizes: { primary?: number; secondary?: number }) => void;
   }) => {
     panelLayoutMock({
       workspaceId,
       hasSecondaryContent: Boolean(secondaryContent),
       defaultPrimarySize,
+      browserVisible,
+      layoutResetVersion,
+      onLayoutApplied,
+      onLayoutApplyError,
       onLayoutChange,
     });
 
@@ -178,6 +269,54 @@ describe("WorkspaceContainer", () => {
     workspaceFlushLayoutMocks["workspace-4"].mockReset();
     workspaceFlushLayoutMocks["workspace-5"].mockReset();
     workspaceFlushLayoutMocks["workspace-6"].mockReset();
+    workspaceSetBoardsVisibleMocks["workspace-1"].mockReset();
+    workspaceSetBoardsVisibleMocks["workspace-2"].mockReset();
+    workspaceSetBoardsVisibleMocks["workspace-3"].mockReset();
+    workspaceSetBoardsVisibleMocks["workspace-4"].mockReset();
+    workspaceSetBoardsVisibleMocks["workspace-5"].mockReset();
+    workspaceSetBoardsVisibleMocks["workspace-6"].mockReset();
+    workspaceSetBrowserVisibleMocks["workspace-1"].mockReset();
+    workspaceSetBrowserVisibleMocks["workspace-2"].mockReset();
+    workspaceSetBrowserVisibleMocks["workspace-3"].mockReset();
+    workspaceSetBrowserVisibleMocks["workspace-4"].mockReset();
+    workspaceSetBrowserVisibleMocks["workspace-5"].mockReset();
+    workspaceSetBrowserVisibleMocks["workspace-6"].mockReset();
+    workspaceSetBrowserVisibleMocks["workspace-1"].mockResolvedValue(true);
+    workspaceSetBrowserVisibleMocks["workspace-2"].mockResolvedValue(true);
+    workspaceSetBrowserVisibleMocks["workspace-3"].mockResolvedValue(true);
+    workspaceSetBrowserVisibleMocks["workspace-4"].mockResolvedValue(true);
+    workspaceSetBrowserVisibleMocks["workspace-5"].mockResolvedValue(true);
+    workspaceSetBrowserVisibleMocks["workspace-6"].mockResolvedValue(true);
+    workspaceEnsureBrowserHiddenMocks["workspace-1"].mockReset();
+    workspaceEnsureBrowserHiddenMocks["workspace-2"].mockReset();
+    workspaceEnsureBrowserHiddenMocks["workspace-3"].mockReset();
+    workspaceEnsureBrowserHiddenMocks["workspace-4"].mockReset();
+    workspaceEnsureBrowserHiddenMocks["workspace-5"].mockReset();
+    workspaceEnsureBrowserHiddenMocks["workspace-6"].mockReset();
+    workspaceConfirmBrowserRestoredMocks["workspace-1"].mockReset();
+    workspaceConfirmBrowserRestoredMocks["workspace-2"].mockReset();
+    workspaceConfirmBrowserRestoredMocks["workspace-3"].mockReset();
+    workspaceConfirmBrowserRestoredMocks["workspace-4"].mockReset();
+    workspaceConfirmBrowserRestoredMocks["workspace-5"].mockReset();
+    workspaceConfirmBrowserRestoredMocks["workspace-6"].mockReset();
+    workspaceConfirmBrowserLayoutAppliedMocks["workspace-1"].mockReset();
+    workspaceConfirmBrowserLayoutAppliedMocks["workspace-2"].mockReset();
+    workspaceConfirmBrowserLayoutAppliedMocks["workspace-3"].mockReset();
+    workspaceConfirmBrowserLayoutAppliedMocks["workspace-4"].mockReset();
+    workspaceConfirmBrowserLayoutAppliedMocks["workspace-5"].mockReset();
+    workspaceConfirmBrowserLayoutAppliedMocks["workspace-6"].mockReset();
+    workspaceHandleBrowserRestoreFailureMocks["workspace-1"].mockReset();
+    workspaceHandleBrowserRestoreFailureMocks["workspace-2"].mockReset();
+    workspaceHandleBrowserRestoreFailureMocks["workspace-3"].mockReset();
+    workspaceHandleBrowserRestoreFailureMocks["workspace-4"].mockReset();
+    workspaceHandleBrowserRestoreFailureMocks["workspace-5"].mockReset();
+    workspaceHandleBrowserRestoreFailureMocks["workspace-6"].mockReset();
+    workspaceHandleBrowserLayoutApplyFailureMocks["workspace-1"].mockReset();
+    workspaceHandleBrowserLayoutApplyFailureMocks["workspace-2"].mockReset();
+    workspaceHandleBrowserLayoutApplyFailureMocks["workspace-3"].mockReset();
+    workspaceHandleBrowserLayoutApplyFailureMocks["workspace-4"].mockReset();
+    workspaceHandleBrowserLayoutApplyFailureMocks["workspace-5"].mockReset();
+    workspaceHandleBrowserLayoutApplyFailureMocks["workspace-6"].mockReset();
     workspaceFlushLayoutMocks["workspace-1"].mockResolvedValue(undefined);
     workspaceFlushLayoutMocks["workspace-2"].mockResolvedValue(undefined);
     workspaceFlushLayoutMocks["workspace-3"].mockResolvedValue(undefined);
@@ -201,6 +340,9 @@ describe("WorkspaceContainer", () => {
     useWorkspaceLayoutMock.mockImplementation((workspaceId: string) => ({
       layout: {
         primaryPanelSize: workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+        lastVisiblePrimaryPanelSize: workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+        boardsVisible: true,
+        browserVisible: true,
         activeBoardId: null,
       },
       isLoaded: true,
@@ -208,6 +350,38 @@ describe("WorkspaceContainer", () => {
       updateActiveBoard:
         workspaceUpdateActiveBoardMocks[
           workspaceId as keyof typeof workspaceUpdateActiveBoardMocks
+        ],
+      setBoardsVisible:
+        workspaceSetBoardsVisibleMocks[
+          workspaceId as keyof typeof workspaceSetBoardsVisibleMocks
+        ],
+      toggleBoardsVisible: vi.fn(),
+      setBrowserVisible:
+        workspaceSetBrowserVisibleMocks[
+          workspaceId as keyof typeof workspaceSetBrowserVisibleMocks
+        ],
+      toggleBrowserVisible: vi.fn(),
+      setBothPanelsVisible: vi.fn(),
+      toggleCanvasFocusMode: vi.fn(),
+      ensureBrowserHidden:
+        workspaceEnsureBrowserHiddenMocks[
+          workspaceId as keyof typeof workspaceEnsureBrowserHiddenMocks
+        ],
+      confirmBrowserRestored:
+        workspaceConfirmBrowserRestoredMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserRestoredMocks
+        ],
+      confirmBrowserLayoutApplied:
+        workspaceConfirmBrowserLayoutAppliedMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserLayoutAppliedMocks
+        ],
+      handleBrowserRestoreFailure:
+        workspaceHandleBrowserRestoreFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserRestoreFailureMocks
+        ],
+      handleBrowserLayoutApplyFailure:
+        workspaceHandleBrowserLayoutApplyFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserLayoutApplyFailureMocks
         ],
       flushPendingLayoutSave:
         workspaceFlushLayoutMocks[workspaceId as keyof typeof workspaceFlushLayoutMocks],
@@ -247,14 +421,17 @@ describe("WorkspaceContainer", () => {
     expect(sidebarMock).toHaveBeenNthCalledWith(1, {
       workspaceId: "workspace-2",
       onBoardSelect: workspaceUpdateActiveBoardMocks["workspace-2"],
+      isVisible: true,
     });
     expect(sidebarMock).toHaveBeenNthCalledWith(2, {
       workspaceId: "workspace-3",
       onBoardSelect: workspaceUpdateActiveBoardMocks["workspace-3"],
+      isVisible: true,
     });
     expect(sidebarMock).toHaveBeenNthCalledWith(3, {
       workspaceId: "workspace-4",
       onBoardSelect: workspaceUpdateActiveBoardMocks["workspace-4"],
+      isVisible: true,
     });
     expect(canvasPanelMock).toHaveBeenCalledTimes(3);
     expect(canvasPanelMock).toHaveBeenNthCalledWith(1, {
@@ -279,18 +456,30 @@ describe("WorkspaceContainer", () => {
       workspaceId: "workspace-2",
       hasSecondaryContent: false,
       defaultPrimarySize: 42,
+      browserVisible: true,
+      layoutResetVersion: 0,
+      onLayoutApplied: workspaceConfirmBrowserLayoutAppliedMocks["workspace-2"],
+      onLayoutApplyError: workspaceHandleBrowserLayoutApplyFailureMocks["workspace-2"],
       onLayoutChange: expect.any(Function),
     });
     expect(panelLayoutMock).toHaveBeenNthCalledWith(2, {
       workspaceId: "workspace-3",
       hasSecondaryContent: true,
       defaultPrimarySize: 52,
+      browserVisible: true,
+      layoutResetVersion: 0,
+      onLayoutApplied: workspaceConfirmBrowserLayoutAppliedMocks["workspace-3"],
+      onLayoutApplyError: workspaceHandleBrowserLayoutApplyFailureMocks["workspace-3"],
       onLayoutChange: expect.any(Function),
     });
     expect(panelLayoutMock).toHaveBeenNthCalledWith(3, {
       workspaceId: "workspace-4",
       hasSecondaryContent: false,
       defaultPrimarySize: 60,
+      browserVisible: true,
+      layoutResetVersion: 0,
+      onLayoutApplied: workspaceConfirmBrowserLayoutAppliedMocks["workspace-4"],
+      onLayoutApplyError: workspaceHandleBrowserLayoutApplyFailureMocks["workspace-4"],
       onLayoutChange: expect.any(Function),
     });
 
@@ -314,6 +503,280 @@ describe("WorkspaceContainer", () => {
     });
 
     expect(screen.getAllByTestId("browser-panel-live")).toHaveLength(1);
+  });
+
+  it("passes collapsed sidebar and browser visibility from persisted workspace layout", () => {
+    useWorkspaceLayoutMock.mockImplementation((workspaceId: string) => ({
+      layout: {
+        primaryPanelSize: workspaceId === "workspace-3" ? 100 : workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+        lastVisiblePrimaryPanelSize: workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+        boardsVisible: workspaceId !== "workspace-3",
+        browserVisible: workspaceId !== "workspace-3",
+        activeBoardId: null,
+      },
+      isLoaded: true,
+      updatePanelSize: vi.fn(),
+      updateActiveBoard:
+        workspaceUpdateActiveBoardMocks[
+          workspaceId as keyof typeof workspaceUpdateActiveBoardMocks
+        ],
+      setBoardsVisible: vi.fn(),
+      toggleBoardsVisible: vi.fn(),
+      setBrowserVisible:
+        workspaceSetBrowserVisibleMocks[
+          workspaceId as keyof typeof workspaceSetBrowserVisibleMocks
+        ],
+      toggleBrowserVisible: vi.fn(),
+      setBothPanelsVisible: vi.fn(),
+      toggleCanvasFocusMode: vi.fn(),
+      ensureBrowserHidden:
+        workspaceEnsureBrowserHiddenMocks[
+          workspaceId as keyof typeof workspaceEnsureBrowserHiddenMocks
+        ],
+      confirmBrowserRestored:
+        workspaceConfirmBrowserRestoredMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserRestoredMocks
+        ],
+      confirmBrowserLayoutApplied:
+        workspaceConfirmBrowserLayoutAppliedMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserLayoutAppliedMocks
+        ],
+      handleBrowserRestoreFailure:
+        workspaceHandleBrowserRestoreFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserRestoreFailureMocks
+        ],
+      handleBrowserLayoutApplyFailure:
+        workspaceHandleBrowserLayoutApplyFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserLayoutApplyFailureMocks
+        ],
+      flushPendingLayoutSave:
+        workspaceFlushLayoutMocks[workspaceId as keyof typeof workspaceFlushLayoutMocks],
+    }));
+
+    render(<WorkspaceContainer />);
+
+    expect(sidebarMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-3",
+        isVisible: false,
+      }),
+    );
+    expect(panelLayoutMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-3",
+        hasSecondaryContent: true,
+        browserVisible: false,
+        defaultPrimarySize: 100,
+      }),
+    );
+    expect(browserPanelMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: undefined,
+        visible: false,
+      }),
+    );
+    const activeSidebarShell = screen.getByTestId("sidebar-workspace-3").parentElement;
+    expect(activeSidebarShell).toHaveClass("workspace-sidebar-shell--hidden");
+    expect(activeSidebarShell).toHaveAttribute("aria-hidden", "true");
+    expect(activeSidebarShell).toHaveAttribute("inert");
+    expect(workspaceEnsureBrowserHiddenMocks["workspace-3"]).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves DOM focus out of the sidebar when the boards panel is hidden programmatically", async () => {
+    let activeBoardsVisible = true;
+    useWorkspaceLayoutMock.mockImplementation((workspaceId: string) => ({
+      layout: {
+        primaryPanelSize: workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+        lastVisiblePrimaryPanelSize: workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+        boardsVisible: workspaceId === "workspace-3" ? activeBoardsVisible : true,
+        browserVisible: true,
+        activeBoardId: null,
+      },
+      isLoaded: true,
+      updatePanelSize: vi.fn(),
+      updateActiveBoard:
+        workspaceUpdateActiveBoardMocks[
+          workspaceId as keyof typeof workspaceUpdateActiveBoardMocks
+        ],
+      setBoardsVisible:
+        workspaceSetBoardsVisibleMocks[
+          workspaceId as keyof typeof workspaceSetBoardsVisibleMocks
+        ],
+      toggleBoardsVisible: vi.fn(),
+      setBrowserVisible:
+        workspaceSetBrowserVisibleMocks[
+          workspaceId as keyof typeof workspaceSetBrowserVisibleMocks
+        ],
+      toggleBrowserVisible: vi.fn(),
+      setBothPanelsVisible: vi.fn(),
+      toggleCanvasFocusMode: vi.fn(),
+      ensureBrowserHidden:
+        workspaceEnsureBrowserHiddenMocks[
+          workspaceId as keyof typeof workspaceEnsureBrowserHiddenMocks
+        ],
+      confirmBrowserRestored:
+        workspaceConfirmBrowserRestoredMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserRestoredMocks
+        ],
+      confirmBrowserLayoutApplied:
+        workspaceConfirmBrowserLayoutAppliedMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserLayoutAppliedMocks
+        ],
+      handleBrowserRestoreFailure:
+        workspaceHandleBrowserRestoreFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserRestoreFailureMocks
+        ],
+      handleBrowserLayoutApplyFailure:
+        workspaceHandleBrowserLayoutApplyFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserLayoutApplyFailureMocks
+        ],
+      flushPendingLayoutSave:
+        workspaceFlushLayoutMocks[workspaceId as keyof typeof workspaceFlushLayoutMocks],
+    }));
+
+    const { rerender } = render(<WorkspaceContainer />);
+    const activePage = screen.getByTestId("workspace-page-motion-workspace-3");
+    within(activePage).getByRole("button", { name: "Inside sidebar" }).focus();
+
+    activeBoardsVisible = false;
+    rerender(<WorkspaceContainer />);
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId("workspace-page-motion-workspace-3")).getByRole("button", {
+          name: "Show boards",
+        }),
+      ).toHaveFocus();
+    });
+  });
+
+  it("hides the native browser view when switching to a workspace with a persisted hidden browser", async () => {
+    useWorkspaceLayoutMock.mockImplementation((workspaceId: string) => ({
+      layout: {
+        primaryPanelSize: workspaceId === "workspace-5" ? 100 : workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+        lastVisiblePrimaryPanelSize: workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+        boardsVisible: true,
+        browserVisible: workspaceId !== "workspace-5",
+        activeBoardId: null,
+      },
+      isLoaded: true,
+      updatePanelSize: vi.fn(),
+      updateActiveBoard:
+        workspaceUpdateActiveBoardMocks[
+          workspaceId as keyof typeof workspaceUpdateActiveBoardMocks
+        ],
+      setBoardsVisible:
+        workspaceSetBoardsVisibleMocks[
+          workspaceId as keyof typeof workspaceSetBoardsVisibleMocks
+        ],
+      toggleBoardsVisible: vi.fn(),
+      setBrowserVisible:
+        workspaceSetBrowserVisibleMocks[
+          workspaceId as keyof typeof workspaceSetBrowserVisibleMocks
+        ],
+      toggleBrowserVisible: vi.fn(),
+      setBothPanelsVisible: vi.fn(),
+      toggleCanvasFocusMode: vi.fn(),
+      ensureBrowserHidden:
+        workspaceEnsureBrowserHiddenMocks[
+          workspaceId as keyof typeof workspaceEnsureBrowserHiddenMocks
+        ],
+      confirmBrowserRestored:
+        workspaceConfirmBrowserRestoredMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserRestoredMocks
+        ],
+      confirmBrowserLayoutApplied:
+        workspaceConfirmBrowserLayoutAppliedMocks[
+          workspaceId as keyof typeof workspaceConfirmBrowserLayoutAppliedMocks
+        ],
+      handleBrowserRestoreFailure:
+        workspaceHandleBrowserRestoreFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserRestoreFailureMocks
+        ],
+      handleBrowserLayoutApplyFailure:
+        workspaceHandleBrowserLayoutApplyFailureMocks[
+          workspaceId as keyof typeof workspaceHandleBrowserLayoutApplyFailureMocks
+        ],
+      flushPendingLayoutSave:
+        workspaceFlushLayoutMocks[workspaceId as keyof typeof workspaceFlushLayoutMocks],
+    }));
+
+    render(<WorkspaceContainer />);
+
+    act(() => {
+      useAppStore.setState({ activeWorkspaceId: "workspace-5" });
+    });
+
+    await waitFor(() => {
+      expect(workspaceEnsureBrowserHiddenMocks["workspace-5"]).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("moves logical focus out of the browser before hiding the browser panel", () => {
+    useAppStore.setState({ focus: "browser" });
+
+    render(<WorkspaceContainer />);
+
+    const activePage = screen.getByTestId("workspace-page-motion-workspace-3");
+    const hideBrowserButton = within(activePage).getByRole("button", {
+      name: "Hide browser",
+    });
+
+    fireEvent.click(hideBrowserButton);
+
+    expect(useAppStore.getState().focus).toBe("global");
+    expect(hideBrowserButton).toHaveFocus();
+    expect(workspaceSetBrowserVisibleMocks["workspace-3"]).toHaveBeenCalledWith(false);
+  });
+
+  it("moves logical focus out of the browser when panel layout collapses the browser", () => {
+    useAppStore.setState({ focus: "browser" });
+
+    render(<WorkspaceContainer />);
+
+    const activePanelCall = panelLayoutMock.mock.calls.find(
+      ([props]) => props.workspaceId === "workspace-3",
+    )?.[0] as { onLayoutChange?: (sizes: { primary?: number; secondary?: number }) => void };
+
+    act(() => {
+      activePanelCall.onLayoutChange?.({ primary: 100, secondary: 0 });
+    });
+
+    expect(useAppStore.getState().focus).toBe("global");
+    expect(
+      within(screen.getByTestId("workspace-page-motion-workspace-3")).getByRole("button", {
+        name: "Hide browser",
+      }),
+    ).toHaveFocus();
+    expect(workspaceSetBrowserVisibleMocks["workspace-3"]).toHaveBeenCalledWith(false);
+  });
+
+  it("requests a rendered split reset when layout collapse cannot hide the native browser", async () => {
+    workspaceSetBrowserVisibleMocks["workspace-3"].mockResolvedValueOnce(false);
+
+    render(<WorkspaceContainer />);
+
+    const activePanelCall = panelLayoutMock.mock.calls.find(
+      ([props]) => props.workspaceId === "workspace-3",
+    )?.[0] as { onLayoutChange?: (sizes: { primary?: number; secondary?: number }) => void };
+
+    act(() => {
+      activePanelCall.onLayoutChange?.({ primary: 100, secondary: 0 });
+    });
+
+    await waitFor(() => {
+      const activePanelCalls = panelLayoutMock.mock.calls
+        .map(([props]) => props)
+        .filter((props) => props.workspaceId === "workspace-3");
+
+      expect(activePanelCalls[activePanelCalls.length - 1]).toEqual(
+        expect.objectContaining({
+          browserVisible: true,
+          defaultPrimarySize: 52,
+          layoutResetVersion: 1,
+        }),
+      );
+    });
   });
 
   it("keeps the outgoing workspace split layout during its exit animation without live browser ownership", () => {
@@ -374,10 +837,12 @@ describe("WorkspaceContainer", () => {
         "aria-hidden",
         "true",
       );
+      expect(screen.getByTestId("workspace-page-motion-workspace-3")).toHaveAttribute("inert");
       expect(screen.getByTestId("workspace-page-motion-workspace-5")).toHaveAttribute(
         "aria-hidden",
         "false",
       );
+      expect(screen.getByTestId("workspace-page-motion-workspace-5")).not.toHaveAttribute("inert");
     } finally {
       vi.useRealTimers();
     }
@@ -509,6 +974,9 @@ describe("WorkspaceContainer", () => {
         return {
           layout: {
             primaryPanelSize: 60,
+            lastVisiblePrimaryPanelSize: 60,
+            boardsVisible: true,
+            browserVisible: true,
             activeBoardId: null,
           },
           isLoaded: false,
@@ -518,12 +986,16 @@ describe("WorkspaceContainer", () => {
       }
 
       return {
-        layout: {
-          primaryPanelSize:
-            workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
-          activeBoardId: null,
-        },
-        isLoaded: true,
+          layout: {
+            primaryPanelSize:
+              workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+            lastVisiblePrimaryPanelSize:
+              workspacePrimarySizes[workspaceId as keyof typeof workspacePrimarySizes],
+            boardsVisible: true,
+            browserVisible: true,
+            activeBoardId: null,
+          },
+          isLoaded: true,
         updatePanelSize: vi.fn(),
         updateActiveBoard: vi.fn(),
       };

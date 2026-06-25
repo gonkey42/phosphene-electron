@@ -433,6 +433,8 @@ describe("electron main close flushing", () => {
 
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:attach", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:set-bounds", expect.any(Function));
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:hide", expect.any(Function));
+    expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:get-state", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:navigate", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:back", expect.any(Function));
     expect(ipcMainHandleMock).toHaveBeenCalledWith("browser:forward", expect.any(Function));
@@ -936,6 +938,594 @@ describe("electron main close flushing", () => {
 
     expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(null);
     expect(attachedView.webContents.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides browser views without destroying them and reuses the same view on attach", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const hideHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:hide",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+    const navigateHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:navigate",
+    )?.[1];
+    const backHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:back",
+    )?.[1];
+    const forwardHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:forward",
+    )?.[1];
+    const reloadHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:reload",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+    );
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+
+    await hideHandler?.({ sender: windowInstance.webContents } as never);
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(null);
+    expect(attachedView.webContents.close).not.toHaveBeenCalled();
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+    );
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 0, height: 0 },
+    );
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(null);
+    expect(attachedView.setBounds).toHaveBeenCalledTimes(1);
+
+    await navigateHandler?.({ sender: windowInstance.webContents } as never, "https://example.com/hidden");
+    await backHandler?.({ sender: windowInstance.webContents } as never);
+    await forwardHandler?.({ sender: windowInstance.webContents } as never);
+    await reloadHandler?.({ sender: windowInstance.webContents } as never);
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(null);
+    expect(attachedView.webContents.loadURL).toHaveBeenCalledWith("https://example.com/hidden");
+    expect(attachedView.webContents.reload).toHaveBeenCalledTimes(1);
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+    );
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(attachedView);
+    expect(attachedView.setBounds).toHaveBeenLastCalledWith({
+      x: 12,
+      y: 24,
+      width: 320,
+      height: 240,
+    });
+  });
+
+  it("does not mark browser hidden when native detach fails", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const hideHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:hide",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+    );
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+    browserWindowSetBrowserViewMock.mockImplementationOnce(() => {
+      throw new Error("detach failed");
+    });
+
+    await expect(hideHandler?.({ sender: windowInstance.webContents } as never)).rejects.toThrow(
+      "detach failed",
+    );
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+    );
+
+    expect(attachedView.setBounds).toHaveBeenLastCalledWith({
+      x: 12,
+      y: 24,
+      width: 320,
+      height: 240,
+    });
+  });
+
+  it("keeps a hidden browser view hidden when restore reattach fails", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const hideHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:hide",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+    );
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+
+    await hideHandler?.({ sender: windowInstance.webContents } as never);
+    browserWindowSetBrowserViewMock.mockImplementationOnce(() => {
+      throw new Error("reattach failed");
+    });
+
+    await expect(
+      attachHandler?.(
+        { sender: windowInstance.webContents } as never,
+        { x: 12, y: 24, width: 320, height: 240 },
+      ),
+    ).rejects.toThrow("reattach failed");
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+    );
+
+    expect(attachedView.setBounds).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps hidden bookkeeping when existing-view restore reattach throws", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const hideHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:hide",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+    );
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+    await hideHandler?.({ sender: windowInstance.webContents } as never);
+    browserWindowSetBrowserViewMock.mockImplementationOnce(() => {
+      throw new Error("reattach failed");
+    });
+
+    await expect(
+      attachHandler?.(
+        { sender: windowInstance.webContents } as never,
+        { x: 12, y: 24, width: 320, height: 240 },
+      ),
+    ).rejects.toThrow("reattach failed");
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+    );
+
+    expect(attachedView.setBounds).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans up hidden bookkeeping path when initial browser view creation attach throws", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+
+    browserWindowSetBrowserViewMock.mockImplementationOnce(() => {
+      throw new Error("initial attach failed");
+    });
+
+    await expect(
+      attachHandler?.(
+        { sender: windowInstance.webContents } as never,
+        { x: 0, y: 0, width: 640, height: 480 },
+      ),
+    ).rejects.toThrow("initial attach failed");
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+    );
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-hides a browser view when restore bounds fail and allows attach retry", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const hideHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:hide",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+    );
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+
+    await hideHandler?.({ sender: windowInstance.webContents } as never);
+    attachedView.setBounds.mockImplementationOnce(() => {
+      throw new Error("bounds failed");
+    });
+
+    await expect(
+      attachHandler?.(
+        { sender: windowInstance.webContents } as never,
+        { x: 12, y: 24, width: 320, height: 240 },
+      ),
+    ).rejects.toThrow("bounds failed");
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(null);
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+    );
+
+    expect(attachedView.setBounds).toHaveBeenCalledTimes(2);
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+    );
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(attachedView);
+    expect(attachedView.setBounds).toHaveBeenLastCalledWith({
+      x: 12,
+      y: 24,
+      width: 320,
+      height: 240,
+    });
+  });
+
+  it("keeps an already visible browser attached when a newer attach bounds update fails", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+    const hideHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:hide",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+      "current-owner",
+    );
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+    attachedView.setBounds.mockImplementationOnce(() => {
+      throw new Error("visible bounds failed");
+    });
+
+    await expect(
+      attachHandler?.(
+        { sender: windowInstance.webContents } as never,
+        { x: 12, y: 24, width: 320, height: 240 },
+        "new-owner",
+      ),
+    ).rejects.toThrow("visible bounds failed");
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(attachedView);
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 14, y: 28, width: 340, height: 260 },
+      "current-owner",
+    );
+
+    expect(attachedView.setBounds).toHaveBeenLastCalledWith({
+      x: 14,
+      y: 28,
+      width: 340,
+      height: 260,
+    });
+
+    await hideHandler?.({ sender: windowInstance.webContents } as never, "new-owner");
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(attachedView);
+
+    await hideHandler?.({ sender: windowInstance.webContents } as never, "current-owner");
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(null);
+  });
+
+  it("does not mark hidden if attach rollback detach fails for a previously visible view", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+      "current-owner",
+    );
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+    attachedView.setBounds.mockImplementationOnce(() => {
+      throw new Error("visible bounds failed");
+    });
+    browserWindowSetBrowserViewMock
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => {
+        throw new Error("rollback restore failed");
+      });
+
+    await expect(
+      attachHandler?.(
+        { sender: windowInstance.webContents } as never,
+        { x: 12, y: 24, width: 320, height: 240 },
+        "new-owner",
+      ),
+    ).rejects.toThrow("rollback restore failed");
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 14, y: 28, width: 340, height: 260 },
+      "current-owner",
+    );
+
+    expect(attachedView.setBounds).toHaveBeenLastCalledWith({
+      x: 14,
+      y: 28,
+      width: 340,
+      height: 260,
+    });
+  });
+
+  it("ignores stale owner cleanup after a newer browser attach", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const hideHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:hide",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+      "old-owner",
+    );
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+      "new-owner",
+    );
+    await hideHandler?.({ sender: windowInstance.webContents } as never);
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(attachedView);
+
+    await hideHandler?.({ sender: windowInstance.webContents } as never, "old-owner");
+
+    expect(browserWindowSetBrowserViewMock).toHaveBeenLastCalledWith(attachedView);
+  });
+
+  it("ignores stale owner bounds updates after a newer browser attach", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const attachHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:attach",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 640, height: 480 },
+      "old-owner",
+    );
+    const attachedView = browserWindowSetBrowserViewMock.mock.calls[0]?.[0] as BrowserViewMock;
+
+    await attachHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+      "new-owner",
+    );
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 24, y: 48, width: 360, height: 280 },
+    );
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 24, y: 48, width: 360, height: 280 },
+      "old-owner",
+    );
+
+    expect(attachedView.setBounds).toHaveBeenCalledTimes(2);
+    expect(attachedView.setBounds).toHaveBeenLastCalledWith({
+      x: 12,
+      y: 24,
+      width: 320,
+      height: 240,
+    });
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 24, y: 48, width: 360, height: 280 },
+      "new-owner",
+    );
+
+    expect(attachedView.setBounds).toHaveBeenCalledTimes(3);
+    expect(attachedView.setBounds).toHaveBeenLastCalledWith({
+      x: 24,
+      y: 48,
+      width: 360,
+      height: 280,
+    });
+  });
+
+  it("returns cached browser state without creating a view", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const getStateHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:get-state",
+    )?.[1];
+
+    await expect(getStateHandler?.({ sender: windowInstance.webContents } as never)).resolves.toEqual({
+      url: "",
+      title: "",
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false,
+      lastError: null,
+    });
+    expect(browserWindowSetBrowserViewMock).not.toHaveBeenCalled();
+  });
+
+  it("does not create a browser view for hidden zero bounds", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 0, y: 0, width: 0, height: 0 },
+    );
+
+    expect(browserWindowSetBrowserViewMock).not.toHaveBeenCalled();
+  });
+
+  it("does not create a browser view after hide runs before attach", async () => {
+    const windowInstance = new BrowserWindowMock();
+    browserWindowFromWebContentsMock.mockReturnValue(windowInstance);
+
+    await import("./main");
+    await waitForAsyncEffects();
+    await waitForAsyncEffects();
+
+    const hideHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:hide",
+    )?.[1];
+    const setBoundsHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:set-bounds",
+    )?.[1];
+    const navigateHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:navigate",
+    )?.[1];
+    const backHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:back",
+    )?.[1];
+    const forwardHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:forward",
+    )?.[1];
+    const reloadHandler = ipcMainHandleMock.mock.calls.find(
+      ([channel]) => channel === "browser:reload",
+    )?.[1];
+
+    await hideHandler?.({ sender: windowInstance.webContents } as never);
+    await setBoundsHandler?.(
+      { sender: windowInstance.webContents } as never,
+      { x: 12, y: 24, width: 320, height: 240 },
+    );
+    await navigateHandler?.({ sender: windowInstance.webContents } as never, "https://example.com");
+    await backHandler?.({ sender: windowInstance.webContents } as never);
+    await forwardHandler?.({ sender: windowInstance.webContents } as never);
+    await reloadHandler?.({ sender: windowInstance.webContents } as never);
+
+    expect(browserWindowSetBrowserViewMock).not.toHaveBeenCalled();
   });
 
   it("cleans up browser bookkeeping when the owning window closes", async () => {

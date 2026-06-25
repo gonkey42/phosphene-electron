@@ -21,6 +21,7 @@ import "./BoardList.css";
 interface BoardListProps {
   workspaceId?: string;
   onBoardSelect?: (boardId: string | null) => void;
+  isVisible?: boolean;
 }
 
 const BOARD_LOAD_ERROR_CHANNEL = "board-list:load";
@@ -29,7 +30,11 @@ const BOARD_CREATE_ERROR_CHANNEL = "board-list:create";
 const BOARD_RENAME_ERROR_CHANNEL = "board-list:rename";
 const BOARD_DELETE_ERROR_CHANNEL = "board-list:delete";
 
-export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: BoardListProps) {
+export function BoardList({
+  workspaceId: providedWorkspaceId,
+  onBoardSelect,
+  isVisible = true,
+}: BoardListProps) {
   const storeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
   const activeWorkspaceId = providedWorkspaceId ?? storeWorkspaceId;
   const activeBoardId = useAppStore((state) =>
@@ -172,6 +177,21 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
       setBoards,
     ],
   );
+
+  useEffect(() => {
+    if (isVisible) {
+      return;
+    }
+
+    cancelRename();
+    const { armedDeleteTarget } = useAppStore.getState();
+    if (
+      armedDeleteTarget?.kind === "board" &&
+      armedDeleteTarget.workspaceId === activeWorkspaceId
+    ) {
+      cancelArmedDelete();
+    }
+  }, [activeWorkspaceId, cancelArmedDelete, cancelRename, isVisible]);
 
   useEffect(() => {
     if (!activeWorkspaceId || boardListRefresh.workspaceId !== activeWorkspaceId) {

@@ -1316,6 +1316,45 @@ describe("BoardList", () => {
     });
   });
 
+  it("cancels an armed board delete, but not an armed workspace delete, when hidden", async () => {
+    listBoardsMock.mockResolvedValue([createBoardItem()]);
+
+    useAppStore
+      .getState()
+      .armDeleteTarget({
+        kind: "workspace",
+        id: activeWorkspaceId,
+        label: "Home",
+      });
+
+    const { rerender } = render(<BoardList isVisible={false} />);
+
+    await waitFor(() => {
+      expect(useAppStore.getState().armedDeleteTarget).toEqual({
+        kind: "workspace",
+        id: activeWorkspaceId,
+        label: "Home",
+      });
+    });
+
+    rerender(<BoardList isVisible />);
+
+    useAppStore
+      .getState()
+      .armDeleteTarget({
+        kind: "board",
+        id: "board-1",
+        workspaceId: activeWorkspaceId,
+        label: "Sketches",
+      });
+
+    rerender(<BoardList isVisible={false} />);
+
+    await waitFor(() => {
+      expect(useAppStore.getState().armedDeleteTarget).toBeNull();
+    });
+  });
+
   it("formats relative updated times", async () => {
     vi.spyOn(Date, "now").mockReturnValue(new Date("2026-03-29T12:00:00Z").getTime());
     listBoardsMock.mockResolvedValue([

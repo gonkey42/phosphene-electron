@@ -26,6 +26,8 @@ export type BrowserState = {
 const browserViews = new Map<number, BrowserView>();
 const browserStates = new Map<number, BrowserState>();
 const browserCleanup = new Map<number, () => void>();
+const hiddenBrowserWindows = new Set<number>();
+const browserOwnerTokens = new Map<number, string>();
 
 const ALLOWED_BROWSER_URL_SCHEMES = new Set(["http:", "https:", "about:"]);
 
@@ -59,6 +61,16 @@ function getWindowForEvent(event: IpcMainInvokeEvent): BrowserWindow | null {
 
 function getBrowserState(windowId: number): BrowserState {
   return browserStates.get(windowId) ?? createDefaultState();
+}
+
+function isZeroBrowserBounds(bounds: BrowserBounds): boolean {
+  return bounds.width <= 0 || bounds.height <= 0;
+}
+
+function isBrowserOwnerRequestAllowed(windowId: number, ownerToken?: string): boolean {
+  const currentOwnerToken = browserOwnerTokens.get(windowId);
+
+  return currentOwnerToken ? ownerToken === currentOwnerToken : ownerToken === undefined;
 }
 
 function updateBrowserState(window: BrowserWindow, nextState: Partial<BrowserState>) {
@@ -96,15 +108,23 @@ function teardownBrowserView(
 
   browserViews.delete(window.id);
   browserStates.delete(window.id);
+  hiddenBrowserWindows.delete(window.id);
+  browserOwnerTokens.delete(window.id);
 
   if (options.notifyRenderer) {
     updateBrowserState(window, createDefaultState());
   }
 }
 
-function ensureBrowserView(window: BrowserWindow): BrowserView {
+function ensureBrowserView(
+  window: BrowserWindow,
+  options: { reattachHidden: boolean } = { reattachHidden: false },
+): BrowserView {
   const existingView = browserViews.get(window.id);
   if (existingView) {
+    if (options.reattachHidden || !hiddenBrowserWindows.has(window.id)) {
+      window.setBrowserView(existingView);
+    }
     return existingView;
   }
 
@@ -188,12 +208,64 @@ function ensureBrowserView(window: BrowserWindow): BrowserView {
     window.off("closed", handleWindowClosed);
   });
 
-  window.setBrowserView(browserView);
   browserViews.set(window.id, browserView);
   browserStates.set(window.id, createDefaultState());
+  window.setBrowserView(browserView);
   updateBrowserState(window, createDefaultState());
 
   return browserView;
+}
+
+function restoreBrowserAttachSnapshot(
+  window: BrowserWindow,
+  snapshot: {
+    view: BrowserView | undefined;
+    hidden: boolean;
+    ownerToken: string | undefined;
+  },
+) {
+  const currentView = browserViews.get(window.id);
+  if (currentView && currentView !== snapshot.view) {
+    teardownBrowserView(window, {
+      notifyRenderer: false,
+      closeWebContents: true,
+    });
+  }
+
+  if (snapshot.view) {
+    browserViews.set(window.id, snapshot.view);
+    if (snapshot.hidden) {
+      hiddenBrowserWindows.add(window.id);
+      try {
+        window.setBrowserView(null);
+      } catch (rollbackError) {
+        hiddenBrowserWindows.delete(window.id);
+        throw rollbackError;
+      }
+    } else {
+      window.setBrowserView(snapshot.view);
+      hiddenBrowserWindows.delete(window.id);
+    }
+  } else {
+    browserViews.delete(window.id);
+    if (snapshot.hidden) {
+      hiddenBrowserWindows.add(window.id);
+      try {
+        window.setBrowserView(null);
+      } catch (rollbackError) {
+        hiddenBrowserWindows.delete(window.id);
+        throw rollbackError;
+      }
+    } else {
+      hiddenBrowserWindows.delete(window.id);
+    }
+  }
+
+  if (snapshot.ownerToken) {
+    browserOwnerTokens.set(window.id, snapshot.ownerToken);
+  } else {
+    browserOwnerTokens.delete(window.id);
+  }
 }
 
 export function registerBrowserIPC() {
@@ -214,24 +286,75 @@ export function registerBrowserIPC() {
     ]).popup({ window });
   });
 
-  ipcMain.handle("browser:attach", async (event, bounds: BrowserBounds) => {
+  ipcMain.handle("browser:attach", async (event, bounds: BrowserBounds, ownerToken?: string) => {
     const window = getWindowForEvent(event);
     if (!window) {
       throw new Error("Browser attach requested without an owning BrowserWindow");
     }
 
-    const browserView = ensureBrowserView(window);
-    browserView.setBounds(bounds);
+    const attachSnapshot = {
+      view: browserViews.get(window.id),
+      hidden: hiddenBrowserWindows.has(window.id),
+      ownerToken: browserOwnerTokens.get(window.id),
+    };
+
+    try {
+      const browserView = ensureBrowserView(window, { reattachHidden: true });
+      browserView.setBounds(bounds);
+      hiddenBrowserWindows.delete(window.id);
+      if (ownerToken) {
+        browserOwnerTokens.set(window.id, ownerToken);
+      } else {
+        browserOwnerTokens.delete(window.id);
+      }
+    } catch (error) {
+      restoreBrowserAttachSnapshot(window, attachSnapshot);
+      throw error;
+    }
   });
 
-  ipcMain.handle("browser:set-bounds", async (event, bounds: BrowserBounds) => {
+  ipcMain.handle("browser:set-bounds", async (event, bounds: BrowserBounds, ownerToken?: string) => {
     const window = getWindowForEvent(event);
     if (!window) {
       return;
     }
 
-    const browserView = ensureBrowserView(window);
+    if (!isBrowserOwnerRequestAllowed(window.id, ownerToken)) {
+      return;
+    }
+
+    const browserView = browserViews.get(window.id);
+    if (!browserView || hiddenBrowserWindows.has(window.id) || isZeroBrowserBounds(bounds)) {
+      return;
+    }
+
     browserView.setBounds(bounds);
+  });
+
+  ipcMain.handle("browser:hide", async (event, ownerToken?: string) => {
+    const window = getWindowForEvent(event);
+    if (!window) {
+      return;
+    }
+
+    if (!isBrowserOwnerRequestAllowed(window.id, ownerToken)) {
+      return;
+    }
+
+    if (browserViews.has(window.id)) {
+      window.setBrowserView(null);
+    }
+    hiddenBrowserWindows.add(window.id);
+    browserOwnerTokens.delete(window.id);
+  });
+
+  ipcMain.handle("browser:get-state", async (event) => {
+    const window = getWindowForEvent(event);
+    if (!window) {
+      return createDefaultState();
+    }
+
+    return getBrowserState(window.id);
   });
 
   ipcMain.handle("browser:navigate", async (event, url: string) => {
@@ -242,7 +365,11 @@ export function registerBrowserIPC() {
 
     assertAllowedBrowserUrl(url);
 
-    const browserView = ensureBrowserView(window);
+    const browserView = browserViews.get(window.id);
+    if (!browserView) {
+      return;
+    }
+
     await browserView.webContents.loadURL(url);
   });
 
@@ -252,7 +379,11 @@ export function registerBrowserIPC() {
       return;
     }
 
-    const browserView = ensureBrowserView(window);
+    const browserView = browserViews.get(window.id);
+    if (!browserView) {
+      return;
+    }
+
     if (browserView.webContents.canGoBack()) {
       browserView.webContents.goBack();
     }
@@ -264,7 +395,11 @@ export function registerBrowserIPC() {
       return;
     }
 
-    const browserView = ensureBrowserView(window);
+    const browserView = browserViews.get(window.id);
+    if (!browserView) {
+      return;
+    }
+
     if (browserView.webContents.canGoForward()) {
       browserView.webContents.goForward();
     }
@@ -276,7 +411,11 @@ export function registerBrowserIPC() {
       return;
     }
 
-    const browserView = ensureBrowserView(window);
+    const browserView = browserViews.get(window.id);
+    if (!browserView) {
+      return;
+    }
+
     browserView.webContents.reload();
   });
 
