@@ -1,7 +1,7 @@
 {
   "name": "phosphene",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Electron desktop canvas workspace built on Excalidraw with SQLite persistence and filesystem-backed images.",
   "author": "gonkey42",
   "type": "module",
