@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createBoard,
@@ -12,6 +12,7 @@ import { formatRelativeUpdatedTime } from "../../lib/date-format";
 import { useCancellableEffect } from "../../hooks/use-cancellable-effect";
 import { useErrorReporter } from "../../hooks/use-error-reporter";
 import { useInlineRename } from "../../hooks/use-inline-rename";
+import { useSafeDelete } from "../../hooks/use-safe-delete";
 import { clearSharedErrorChannel } from "../../hooks/shared-error-store";
 import { useAppStore } from "../../stores/app-store";
 
@@ -41,6 +42,7 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
   const setActiveBoard = useAppStore((state) => state.setActiveBoard);
   const setActiveBoardForWorkspace = useAppStore((state) => state.setActiveBoardForWorkspace);
   const setBoards = useAppStore((state) => state.setBoards);
+  const cancelArmedDelete = useAppStore((state) => state.cancelArmedDelete);
   const reportError = useErrorReporter("BoardList");
   const [boards, setLocalBoards] = useState<BoardListItem[]>([]);
   const onBoardSelectRef = useRef(onBoardSelect);
@@ -180,6 +182,8 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
   }, [activeWorkspaceId, boardListRefresh.nonce, boardListRefresh.workspaceId, refreshBoards]);
 
   async function handleCreateBoard() {
+    cancelArmedDelete();
+
     const workspaceIdAtStart = activeWorkspaceId;
     const nextName = `Board ${boards.length + 1}`;
 
@@ -356,19 +360,19 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
                   <button
                     type="button"
                     className="board-list__action-button"
-                    onClick={() => startRename(board.id, board.name)}
+                    onClick={() => {
+                      cancelArmedDelete();
+                      startRename(board.id, board.name);
+                    }}
                   >
                     Rename
                   </button>
-                  <button
-                    type="button"
-                    className="board-list__action-button"
-                    onClick={() => {
-                      void handleDeleteBoard(board.id);
-                    }}
-                  >
-                    Delete
-                  </button>
+                  <BoardDeleteButton
+                    boardId={board.id}
+                    boardName={board.name}
+                    workspaceId={activeWorkspaceId}
+                    onConfirm={handleDeleteBoard}
+                  />
                 </div>
               </li>
             );
@@ -376,5 +380,32 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
         </ul>
       )}
     </section>
+  );
+}
+
+function BoardDeleteButton({
+  boardId,
+  boardName,
+  workspaceId,
+  onConfirm,
+}: {
+  boardId: string;
+  boardName: string;
+  workspaceId: string | null;
+  onConfirm: (boardId: string) => Promise<void>;
+}) {
+  const target = useMemo(
+    () => ({ kind: "board" as const, id: boardId, workspaceId, label: boardName }),
+    [boardId, boardName, workspaceId],
+  );
+  const safeDelete = useSafeDelete({
+    target,
+    onConfirm: () => onConfirm(boardId),
+  });
+
+  return (
+    <button type="button" className="board-list__action-button" {...safeDelete.buttonProps}>
+      {safeDelete.isPending ? "Deleting..." : safeDelete.isArmed ? "Delete?" : "Delete"}
+    </button>
   );
 }

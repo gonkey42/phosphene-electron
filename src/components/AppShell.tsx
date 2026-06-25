@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 
 import { runDailyBackup } from "../lib/backup";
 import { loadActiveWorkspaceId, saveActiveWorkspaceId } from "../lib/active-workspace-setting";
@@ -17,10 +18,23 @@ import { SharedErrorBanner } from "./shared/SharedErrorBanner";
 
 const APP_INIT_ERROR_CHANNEL = "app-shell:init";
 
+const liveRegionStyle: CSSProperties = {
+  border: 0,
+  clip: "rect(0 0 0 0)",
+  height: 1,
+  margin: -1,
+  overflow: "hidden",
+  padding: 0,
+  position: "absolute",
+  whiteSpace: "nowrap",
+  width: 1,
+};
+
 export function AppShell() {
   const status = useAppStore((state) => state.status);
   const initializationError = useAppStore((state) => state.initializationError);
   const activeWorkspaceId = useAppStore((state) => state.activeWorkspaceId);
+  const deleteAnnouncement = useAppStore((state) => state.deleteAnnouncement);
   const setInitializationState = useAppStore((state) => state.setInitializationState);
   const setWorkspaces = useAppStore((state) => state.setWorkspaces);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
@@ -118,6 +132,9 @@ export function AppShell() {
   return (
     <KeyboardProvider>
       <div className={shellClassName}>
+        <div role="status" aria-live="polite" aria-atomic="true" style={liveRegionStyle}>
+          {deleteAnnouncement ?? ""}
+        </div>
         <SharedErrorBanner />
         <WorkspaceTabBar />
         <WorkspaceContainer />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import {
   createWorkspace,
@@ -11,6 +11,7 @@ import {
 import { useCancellableEffect } from "../../hooks/use-cancellable-effect";
 import { useErrorReporter } from "../../hooks/use-error-reporter";
 import { useInlineRename } from "../../hooks/use-inline-rename";
+import { useSafeDelete } from "../../hooks/use-safe-delete";
 import { clearSharedErrorChannel } from "../../hooks/shared-error-store";
 import { useAppStore } from "../../stores/app-store";
 import { WorkspacePublishControls } from "../publish/WorkspacePublishControls";
@@ -40,6 +41,7 @@ export function WorkspaceTabBar() {
   const initialized = useAppStore((state) => state.initialized);
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const setWorkspaces = useAppStore((state) => state.setWorkspaces);
+  const cancelArmedDelete = useAppStore((state) => state.cancelArmedDelete);
   const reportError = useErrorReporter("WorkspaceTabBar");
   const draftInputRef = useRef<HTMLInputElement | null>(null);
   const hasAttemptedInitialLoadRef = useRef(false);
@@ -182,6 +184,8 @@ export function WorkspaceTabBar() {
   }, [editingWorkspaceId]);
 
   async function handleCreateWorkspace() {
+    cancelArmedDelete();
+
     try {
       const nextName = `Workspace ${workspaces.length + 1}`;
       const workspaceId = await createWorkspace(nextName);
@@ -297,6 +301,7 @@ export function WorkspaceTabBar() {
                         setActiveWorkspace(workspace.id);
                       }}
                       onDoubleClick={() => {
+                        cancelArmedDelete();
                         startRename(workspace.id, workspace.name);
                       }}
                     >
@@ -312,16 +317,11 @@ export function WorkspaceTabBar() {
                 )}
 
                 {workspaces.length > 1 ? (
-                  <button
-                    type="button"
-                    className="workspace-tab-bar__close-button"
-                    aria-label={`Delete ${workspace.name}`}
-                    onClick={() => {
-                      void handleDeleteWorkspace(workspace.id);
-                    }}
-                  >
-                    ×
-                  </button>
+                  <WorkspaceDeleteButton
+                    workspaceId={workspace.id}
+                    workspaceName={workspace.name}
+                    onConfirm={handleDeleteWorkspace}
+                  />
                 ) : null}
               </div>
             </li>
@@ -341,5 +341,41 @@ export function WorkspaceTabBar() {
         </li>
       </ul>
     </header>
+  );
+}
+
+function WorkspaceDeleteButton({
+  workspaceId,
+  workspaceName,
+  onConfirm,
+}: {
+  workspaceId: string;
+  workspaceName: string;
+  onConfirm: (workspaceId: string) => Promise<void>;
+}) {
+  const target = useMemo(
+    () => ({ kind: "workspace" as const, id: workspaceId, label: workspaceName }),
+    [workspaceId, workspaceName],
+  );
+  const safeDelete = useSafeDelete({
+    target,
+    onConfirm: () => onConfirm(workspaceId),
+  });
+
+  return (
+    <button
+      type="button"
+      className="workspace-tab-bar__close-button"
+      aria-label={
+        safeDelete.isPending
+          ? `Deleting ${workspaceName}`
+          : safeDelete.isArmed
+            ? `Confirm delete ${workspaceName}`
+            : `Delete ${workspaceName}`
+      }
+      {...safeDelete.buttonProps}
+    >
+      {safeDelete.isPending ? "..." : safeDelete.isArmed ? "×?" : "×"}
+    </button>
   );
 }

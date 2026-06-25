@@ -66,6 +66,15 @@ function createBoardItem(
   };
 }
 
+function createDeferred<T = void>() {
+  let resolve: (value: T | PromiseLike<T>) => void = () => undefined;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
+
 describe("BoardList", () => {
   beforeEach(() => {
     clearSharedErrors();
@@ -214,7 +223,9 @@ describe("BoardList", () => {
     expect(boardItem).not.toBeNull();
 
     fireEvent.mouseEnter(boardItem!);
-    fireEvent.click(within(boardItem!).getByRole("button", { name: "Delete" }));
+    const deleteButton = within(boardItem!).getByRole("button", { name: "Delete" });
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
 
     await waitFor(() => {
       expect(deleteBoardMock).toHaveBeenCalledWith("board-1");
@@ -534,7 +545,9 @@ describe("BoardList", () => {
 
     expect(screen.getByRole("textbox", { name: "Board name" })).toBeInTheDocument();
 
-    fireEvent.click(within(boardItem as HTMLElement).getByRole("button", { name: "Delete" }));
+    const deleteButton = within(boardItem as HTMLElement).getByRole("button", { name: "Delete" });
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
 
     await waitFor(() => {
       expect(deleteBoardMock).toHaveBeenCalledWith("board-1");
@@ -560,9 +573,11 @@ describe("BoardList", () => {
     render(<BoardList />);
 
     const boardButton = await screen.findByRole("button", { name: /Sketches/ });
-    fireEvent.click(
-      within(boardButton.parentElement as HTMLElement).getByRole("button", { name: "Delete" }),
-    );
+    const deleteButton = within(boardButton.parentElement as HTMLElement).getByRole("button", {
+      name: "Delete",
+    });
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
 
     expect(deleteBoardMock).toHaveBeenCalledWith("board-1");
     expect(await screen.findByRole("button", { name: /Notes/ })).toBeInTheDocument();
@@ -570,6 +585,37 @@ describe("BoardList", () => {
       [activeWorkspaceId]: null,
     });
     expect(useAppStore.getState().activeBoardId).toBeNull();
+  });
+
+  it("shows a pending delete label while a board delete is in flight", async () => {
+    const pendingDelete = createDeferred();
+
+    listBoardsMock.mockResolvedValueOnce([createBoardItem()]).mockResolvedValueOnce([]);
+    deleteBoardMock.mockReturnValue(pendingDelete.promise);
+
+    render(<BoardList />);
+
+    const boardButton = await screen.findByRole("button", { name: /Sketches/ });
+    const deleteButton = within(boardButton.parentElement as HTMLElement).getByRole("button", {
+      name: "Delete",
+    });
+
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
+
+    expect(deleteBoardMock).toHaveBeenCalledWith("board-1");
+    expect(
+      within(boardButton.parentElement as HTMLElement).getByRole("button", {
+        name: "Deleting...",
+      }),
+    ).toHaveAttribute("aria-busy", "true");
+
+    await act(async () => {
+      pendingDelete.resolve();
+      await pendingDelete.promise;
+    });
+
+    expect(await screen.findByText("No boards yet.")).toBeInTheDocument();
   });
 
   it("logs delete failures without surfacing them", async () => {
@@ -587,9 +633,11 @@ describe("BoardList", () => {
     render(<BoardList />);
 
     const boardButton = await screen.findByRole("button", { name: /Sketches/ });
-    fireEvent.click(
-      within(boardButton.parentElement as HTMLElement).getByRole("button", { name: "Delete" }),
-    );
+    const deleteButton = within(boardButton.parentElement as HTMLElement).getByRole("button", {
+      name: "Delete",
+    });
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
 
     await waitFor(() => {
       expect(getSharedErrors()).toEqual([

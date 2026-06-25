@@ -19,6 +19,7 @@ export function useKeyboardShortcuts() {
   const setActiveWorkspace = useAppStore((state) => state.setActiveWorkspace);
   const setWorkspaces = useAppStore((state) => state.setWorkspaces);
   const requestBoardListRefresh = useAppStore((state) => state.requestBoardListRefresh);
+  const cancelArmedDelete = useAppStore((state) => state.cancelArmedDelete);
   const reportError = useErrorReporter("KeyboardShortcuts");
 
   const setVisibleWorkspaces = useCallback(
@@ -76,6 +77,7 @@ export function useKeyboardShortcuts() {
       if (numberKey >= 1 && numberKey <= 9 && numberKey <= workspaces.length) {
         event.preventDefault();
         event.stopPropagation();
+        cancelArmedDelete();
         setActiveWorkspace(workspaces[numberKey - 1].id);
         return;
       }
@@ -88,6 +90,7 @@ export function useKeyboardShortcuts() {
         if (currentIndex > 0) {
           event.preventDefault();
           event.stopPropagation();
+          cancelArmedDelete();
           setActiveWorkspace(workspaces[currentIndex - 1].id);
         }
         return;
@@ -101,6 +104,7 @@ export function useKeyboardShortcuts() {
         if (currentIndex >= 0 && currentIndex < workspaces.length - 1) {
           event.preventDefault();
           event.stopPropagation();
+          cancelArmedDelete();
           setActiveWorkspace(workspaces[currentIndex + 1].id);
         }
         return;
@@ -109,6 +113,7 @@ export function useKeyboardShortcuts() {
       if (event.key.toLowerCase() === "t") {
         event.preventDefault();
         event.stopPropagation();
+        cancelArmedDelete();
 
         try {
           const nextWorkspaceName = `Workspace ${workspaces.length + 1}`;
@@ -145,6 +150,7 @@ export function useKeyboardShortcuts() {
       if (event.key.toLowerCase() === "n" && activeWorkspaceId) {
         event.preventDefault();
         event.stopPropagation();
+        cancelArmedDelete();
 
         try {
           const boardId = await createBoard("New Board", activeWorkspaceId);
@@ -160,6 +166,7 @@ export function useKeyboardShortcuts() {
     },
     [
       activeWorkspaceId,
+      cancelArmedDelete,
       focus,
       initialized,
       refreshWorkspaces,

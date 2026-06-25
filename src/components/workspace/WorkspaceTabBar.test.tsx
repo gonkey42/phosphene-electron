@@ -66,6 +66,15 @@ function createWorkspaceItem(
   };
 }
 
+function createDeferred<T = void>() {
+  let resolve: (value: T | PromiseLike<T>) => void = () => undefined;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
+
 function setPlatform(platform: string) {
   Object.defineProperty(window.navigator, "platform", {
     configurable: true,
@@ -512,11 +521,46 @@ describe("WorkspaceTabBar", () => {
     render(<WorkspaceTabBar />);
 
     await screen.findByRole("button", { name: "Projects" });
-    fireEvent.click(screen.getByRole("button", { name: "Delete Projects" }));
+    const deleteButton = screen.getByRole("button", { name: "Delete Projects" });
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
 
     expect(deleteWorkspaceMock).toHaveBeenCalledWith("workspace-2");
     expect(await screen.findByRole("button", { name: "Archive" })).toBeInTheDocument();
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-1");
+  });
+
+  it("shows compact pending state while a workspace delete is in flight", async () => {
+    const pendingDelete = createDeferred<boolean>();
+
+    listWorkspacesMock
+      .mockResolvedValueOnce([
+        createWorkspaceItem(),
+        createWorkspaceItem({ id: "workspace-2", name: "Projects", icon: "🗂️", position: 1 }),
+      ])
+      .mockResolvedValueOnce([createWorkspaceItem()]);
+    deleteWorkspaceMock.mockReturnValue(pendingDelete.promise);
+
+    useAppStore.setState({ activeWorkspaceId: "workspace-2" });
+
+    render(<WorkspaceTabBar />);
+
+    await screen.findByRole("button", { name: "Projects" });
+    const deleteButton = screen.getByRole("button", { name: "Delete Projects" });
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
+
+    const pendingButton = screen.getByRole("button", { name: "Deleting Projects" });
+    expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    expect(pendingButton).toHaveTextContent("...");
+
+    await act(async () => {
+      pendingDelete.resolve(true);
+      await pendingDelete.promise;
+    });
+
+    expect(await screen.findByRole("button", { name: "Home" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Projects" })).not.toBeInTheDocument();
   });
 
   it("removes a deleted workspace and falls back to a visible workspace when reload fails", async () => {
@@ -536,7 +580,9 @@ describe("WorkspaceTabBar", () => {
     render(<WorkspaceTabBar />);
 
     await screen.findByRole("button", { name: "Projects" });
-    fireEvent.click(screen.getByRole("button", { name: "Delete Projects" }));
+    const deleteButton = screen.getByRole("button", { name: "Delete Projects" });
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
 
     await waitFor(() => {
       expect(deleteWorkspaceMock).toHaveBeenCalledWith("workspace-2");

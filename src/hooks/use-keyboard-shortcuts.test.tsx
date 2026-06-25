@@ -77,6 +77,11 @@ describe("useKeyboardShortcuts", () => {
       boardListRefresh: { workspaceId: null, nonce: 0 },
       focus: "global",
       initialized: true,
+      armedDeleteTarget: null,
+      armedDeleteToken: null,
+      deletePendingToken: null,
+      deleteAnnouncement: null,
+      deleteEligibility: { state: "allowed" },
     });
   });
 
@@ -121,6 +126,31 @@ describe("useKeyboardShortcuts", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it("cancels an armed delete before switching to a workspace by keyboard index", () => {
+    renderHook(() => useKeyboardShortcuts());
+    useAppStore
+      .getState()
+      .armDeleteTarget({ kind: "workspace", id: "workspace-1", label: "Home" });
+
+    const event = new KeyboardEvent("keydown", {
+      key: "2",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      window.dispatchEvent(event);
+    });
+
+    expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
+    expect(useAppStore.getState()).toMatchObject({
+      armedDeleteTarget: null,
+      armedDeleteToken: null,
+      deleteAnnouncement: null,
+    });
+  });
+
   it("moves between adjacent workspaces with bracket shortcuts", () => {
     renderHook(() => useKeyboardShortcuts());
 
@@ -149,6 +179,49 @@ describe("useKeyboardShortcuts", () => {
     });
 
     expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-1");
+  });
+
+  it("cancels an armed delete before bracket workspace switching shortcuts", () => {
+    renderHook(() => useKeyboardShortcuts());
+    useAppStore
+      .getState()
+      .armDeleteTarget({ kind: "workspace", id: "workspace-1", label: "Home" });
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "]",
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-2");
+    expect(useAppStore.getState().armedDeleteTarget).toBeNull();
+
+    useAppStore
+      .getState()
+      .armDeleteTarget({ kind: "board", id: "board-1", workspaceId: "workspace-2", label: "Plan" });
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "[",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-1");
+    expect(useAppStore.getState()).toMatchObject({
+      armedDeleteTarget: null,
+      armedDeleteToken: null,
+      deleteAnnouncement: null,
+    });
   });
 
   it("does not handle shortcuts while the canvas owns focus", () => {
@@ -224,6 +297,36 @@ describe("useKeyboardShortcuts", () => {
     ]);
   });
 
+  it("cancels an armed delete before creating a workspace from the shortcut", async () => {
+    useAppStore
+      .getState()
+      .armDeleteTarget({ kind: "workspace", id: "workspace-1", label: "Home" });
+    createWorkspaceMock.mockImplementation(async () => {
+      expect(useAppStore.getState().armedDeleteTarget).toBeNull();
+      expect(useAppStore.getState().armedDeleteToken).toBeNull();
+      return "workspace-3";
+    });
+    listWorkspacesMock.mockResolvedValue([
+      { id: "workspace-1", name: "Home", icon: "🏠", position: 0 },
+      { id: "workspace-2", name: "Research", icon: "🔎", position: 1 },
+      { id: "workspace-3", name: "Workspace 3", icon: null, position: 2 },
+    ]);
+    renderHook(() => useKeyboardShortcuts());
+
+    fireEvent.keyDown(window, {
+      key: "t",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    await waitFor(() => {
+      expect(createWorkspaceMock).toHaveBeenCalledWith("Workspace 3");
+      expect(useAppStore.getState().activeWorkspaceId).toBe("workspace-3");
+    });
+    expect(useAppStore.getState().deleteAnnouncement).toBeNull();
+  });
+
   it("keeps the keyboard-created workspace visible and active when reload fails", async () => {
     const reloadError = new Error("workspace refresh failed");
     createWorkspaceMock.mockResolvedValue("workspace-3");
@@ -288,6 +391,31 @@ describe("useKeyboardShortcuts", () => {
         "workspace-1": "board-9",
       });
     });
+  });
+
+  it("cancels an armed delete before creating a board from the shortcut", async () => {
+    useAppStore
+      .getState()
+      .armDeleteTarget({ kind: "board", id: "board-1", workspaceId: "workspace-1", label: "Plan" });
+    createBoardMock.mockImplementation(async () => {
+      expect(useAppStore.getState().armedDeleteTarget).toBeNull();
+      expect(useAppStore.getState().armedDeleteToken).toBeNull();
+      return "board-9";
+    });
+    renderHook(() => useKeyboardShortcuts());
+
+    fireEvent.keyDown(window, {
+      key: "n",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    await waitFor(() => {
+      expect(createBoardMock).toHaveBeenCalledWith("New Board", "workspace-1");
+      expect(useAppStore.getState().activeBoardId).toBe("board-9");
+    });
+    expect(useAppStore.getState().deleteAnnouncement).toBeNull();
   });
 
   it("keeps the board list selection in sync after a keyboard-created board", async () => {
