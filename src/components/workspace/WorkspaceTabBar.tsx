@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef } from "react";
 
 import {
   createWorkspace,
@@ -12,8 +12,10 @@ import { useCancellableEffect } from "../../hooks/use-cancellable-effect";
 import { useErrorReporter } from "../../hooks/use-error-reporter";
 import { useInlineRename } from "../../hooks/use-inline-rename";
 import { useSafeDelete } from "../../hooks/use-safe-delete";
+import { useWorkspacePublish } from "../../hooks/use-workspace-publish";
 import { clearSharedErrorChannel } from "../../hooks/shared-error-store";
 import { useAppStore } from "../../stores/app-store";
+import type { DeleteEligibility } from "../../stores/app-store";
 import { WorkspacePublishControls } from "../publish/WorkspacePublishControls";
 import "./WorkspaceTabBar.css";
 
@@ -320,6 +322,7 @@ export function WorkspaceTabBar() {
                   <WorkspaceDeleteButton
                     workspaceId={workspace.id}
                     workspaceName={workspace.name}
+                    workspaceCount={workspaces.length}
                     onConfirm={handleDeleteWorkspace}
                   />
                 ) : null}
@@ -347,35 +350,94 @@ export function WorkspaceTabBar() {
 function WorkspaceDeleteButton({
   workspaceId,
   workspaceName,
+  workspaceCount,
   onConfirm,
 }: {
   workspaceId: string;
   workspaceName: string;
+  workspaceCount: number;
   onConfirm: (workspaceId: string) => Promise<void>;
 }) {
+  const reasonId = useId();
+  const publishState = useWorkspacePublish(workspaceId);
+  const deletePendingToken = useAppStore((state) => state.deletePendingToken);
   const target = useMemo(
     () => ({ kind: "workspace" as const, id: workspaceId, label: workspaceName }),
     [workspaceId, workspaceName],
   );
+  const eligibility = getWorkspaceDeleteEligibility({
+    workspaceCount,
+    publishEligibility: publishState.deleteEligibility,
+    isDeleteBusy: Boolean(deletePendingToken),
+  });
   const safeDelete = useSafeDelete({
     target,
+    eligibility,
     onConfirm: () => onConfirm(workspaceId),
   });
+  const unavailableReason = safeDelete.isPending
+    ? "Workspace delete is in progress."
+    : eligibility.state === "allowed"
+      ? null
+      : eligibility.reason;
+  const buttonLabel = safeDelete.isPending
+    ? `Deleting ${workspaceName}`
+    : unavailableReason
+      ? `Delete ${workspaceName} unavailable: ${unavailableReason}`
+      : safeDelete.isArmed
+        ? `Confirm delete ${workspaceName}`
+        : `Delete ${workspaceName}`;
+  const buttonProps = unavailableReason
+    ? {
+        "aria-busy": safeDelete.buttonProps["aria-busy"],
+        "aria-pressed": safeDelete.buttonProps["aria-pressed"],
+      }
+    : safeDelete.buttonProps;
 
   return (
-    <button
-      type="button"
-      className="workspace-tab-bar__close-button"
-      aria-label={
-        safeDelete.isPending
-          ? `Deleting ${workspaceName}`
-          : safeDelete.isArmed
-            ? `Confirm delete ${workspaceName}`
-            : `Delete ${workspaceName}`
-      }
-      {...safeDelete.buttonProps}
-    >
-      {safeDelete.isPending ? "..." : safeDelete.isArmed ? "×?" : "×"}
-    </button>
+    <>
+      <button
+        type="button"
+        className="workspace-tab-bar__close-button"
+        aria-describedby={unavailableReason ? reasonId : undefined}
+        aria-label={buttonLabel}
+        disabled={Boolean(unavailableReason)}
+        title={unavailableReason ?? undefined}
+        {...buttonProps}
+      >
+        {safeDelete.isPending ? "..." : safeDelete.isArmed ? "x?" : "x"}
+      </button>
+      {unavailableReason ? (
+        <span id={reasonId} className="workspace-tab-bar__delete-reason">
+          {unavailableReason}
+        </span>
+      ) : null}
+    </>
   );
+}
+
+function getWorkspaceDeleteEligibility({
+  workspaceCount,
+  publishEligibility,
+  isDeleteBusy,
+}: {
+  workspaceCount: number;
+  publishEligibility: DeleteEligibility;
+  isDeleteBusy: boolean;
+}): DeleteEligibility {
+  if (workspaceCount <= 1) {
+    return {
+      state: "blocked",
+      reason: "At least one workspace must remain.",
+    };
+  }
+
+  if (isDeleteBusy) {
+    return {
+      state: "unknown",
+      reason: "A workspace delete is already in progress.",
+    };
+  }
+
+  return publishEligibility;
 }
