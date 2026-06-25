@@ -211,9 +211,12 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
     }
   }
 
-  async function handleDeleteBoard(boardId: string) {
+  async function handleDeleteBoard(boardId: string, workspaceIdAtStart = activeWorkspaceId) {
     try {
-      const workspaceIdAtStart = activeWorkspaceId;
+      if (hasWorkspaceChanged(workspaceIdAtStart)) {
+        return;
+      }
+
       await deleteBoard(boardId);
 
       clearSharedErrorChannel(BOARD_DELETE_ERROR_CHANNEL);
@@ -241,7 +244,7 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
 
       await refreshBoards(workspaceIdAtStart);
     } catch (error) {
-      reportError("Failed to delete board", error, { workspaceId: activeWorkspaceId ?? null }, {
+      reportError("Failed to delete board", error, { workspaceId: workspaceIdAtStart }, {
         channel: BOARD_DELETE_ERROR_CHANNEL,
       });
     }
@@ -290,11 +293,25 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
           {boards.map((board) => {
             const isActive = board.id === activeBoardId;
             const isEditing = editingBoardId === board.id;
+            const selectBoard = () => {
+              if (activeWorkspaceId) {
+                setActiveBoardForWorkspace(activeWorkspaceId, board.id);
+              } else {
+                setActiveBoard(board.id);
+              }
+              onBoardSelect?.(board.id);
+            };
 
             return (
               <li
                 key={board.id}
-                className={`board-list__item${isActive ? " board-list__item--active" : ""}`}
+                className={[
+                  "board-list__item",
+                  isActive ? "board-list__item--active" : "",
+                  isEditing ? "board-list__item--editing" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               >
                 {isEditing ? (
                   <form
@@ -337,14 +354,7 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
                   <button
                     type="button"
                     className={`board-list__item-button${isActive ? " board-list__item-button--active" : ""}`}
-                    onClick={() => {
-                      if (activeWorkspaceId) {
-                        setActiveBoardForWorkspace(activeWorkspaceId, board.id);
-                      } else {
-                        setActiveBoard(board.id);
-                      }
-                      onBoardSelect?.(board.id);
-                    }}
+                    onClick={selectBoard}
                   >
                     <span className="board-list__item-name">{board.name}</span>
                   </button>
@@ -356,21 +366,28 @@ export function BoardList({ workspaceId: providedWorkspaceId, onBoardSelect }: B
                   </time>
                 </div>
 
-                <div className="board-list__item-actions">
-                  <button
-                    type="button"
-                    className="board-list__action-button"
-                    onClick={() => {
-                      cancelArmedDelete();
-                      startRename(board.id, board.name);
-                    }}
-                  >
-                    Rename
-                  </button>
+                <div
+                  className="board-list__item-actions"
+                  data-reachable="always"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  {!isEditing ? (
+                    <button
+                      type="button"
+                      className="board-list__action-button"
+                      onClick={() => {
+                        cancelArmedDelete();
+                        startRename(board.id, board.name);
+                      }}
+                    >
+                      Rename
+                    </button>
+                  ) : null}
                   <BoardDeleteButton
                     boardId={board.id}
                     boardName={board.name}
-                    workspaceId={activeWorkspaceId}
+                    workspaceId={board.workspace_id}
                     onConfirm={handleDeleteBoard}
                   />
                 </div>
@@ -392,7 +409,7 @@ function BoardDeleteButton({
   boardId: string;
   boardName: string;
   workspaceId: string | null;
-  onConfirm: (boardId: string) => Promise<void>;
+  onConfirm: (boardId: string, workspaceId: string | null) => Promise<void>;
 }) {
   const target = useMemo(
     () => ({ kind: "board" as const, id: boardId, workspaceId, label: boardName }),
@@ -400,11 +417,30 @@ function BoardDeleteButton({
   );
   const safeDelete = useSafeDelete({
     target,
-    onConfirm: () => onConfirm(boardId),
+    onConfirm: () => onConfirm(boardId, workspaceId),
   });
+  const { onClick, onKeyDown, ...buttonProps } = safeDelete.buttonProps;
+  const actionLabel = safeDelete.isPending
+    ? `Deleting ${boardName}`
+    : safeDelete.isArmed
+      ? `Confirm delete ${boardName}`
+      : `Delete ${boardName}`;
 
   return (
-    <button type="button" className="board-list__action-button" {...safeDelete.buttonProps}>
+    <button
+      type="button"
+      className="board-list__action-button"
+      aria-label={actionLabel}
+      {...buttonProps}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick(event);
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        onKeyDown(event);
+      }}
+    >
       {safeDelete.isPending ? "Deleting..." : safeDelete.isArmed ? "Delete?" : "Delete"}
     </button>
   );
